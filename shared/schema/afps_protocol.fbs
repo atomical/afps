@@ -1,0 +1,53 @@
+namespace afps.protocol;
+
+// FlatBuffers schema draft mirroring the current JSON protocol payloads.
+// TODO: Add Envelope + root_type when we migrate off JSON framing.
+
+table ClientHello {
+  protocol_version:int;
+  session_token:string;
+  connection_id:string;
+  build:string;
+}
+
+table ServerHello {
+  protocol_version:int;
+  connection_id:string;
+  client_id:string;
+  server_tick_rate:int;
+  snapshot_rate:int;
+  motd:string;
+  connection_nonce:string;
+}
+
+table InputCmd {
+  input_seq:int;
+  move_x:double;
+  move_y:double;
+  look_delta_x:double;
+  look_delta_y:double;
+  jump:bool;
+  fire:bool;
+  sprint:bool;
+}
+
+table StateSnapshot {
+  server_tick:int;
+  last_processed_input_seq:int;
+  client_id:string;
+  pos_x:double;
+  pos_y:double;
+}
+
+table Ping {
+  client_time_ms:double;
+}
+
+table Pong {
+  client_time_ms:double;
+}
+
+table Error {
+  code:string;
+  message:string;
+}

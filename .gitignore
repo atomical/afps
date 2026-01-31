@@ -1,0 +1,16 @@
+.DS_Store
+
+# Client
+client/node_modules
+client/dist
+client/public/wasm
+
+# Server
+server/build
+server/certs/*.pem
+
+# WASM
+shared/wasm/dist
+
+# Logs
+*.log

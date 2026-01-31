@@ -1,0 +1,26 @@
+{
+  "name": "afps-client",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
+    "wasm:build": "bash ../tools/wasm_sync.sh",
+    "wasm:parity": "node ../tools/wasm_parity_check.mjs",
+    "wasm:check": "npm run wasm:build && npm run wasm:parity"
+  },
+  "dependencies": {
+    "three": "^0.164.1"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^1.6.0",
+    "happy-dom": "^13.6.2",
+    "typescript": "^5.3.3",
+    "vite": "^5.1.4",
+    "vitest": "^1.6.0"
+  }
+}

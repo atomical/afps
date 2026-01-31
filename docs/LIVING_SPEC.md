@@ -11,7 +11,6 @@
 - **Last updated:** `2026-01-31 13:43:12 CT`
 - **Session author:** `codex`
 - **Current milestone:** `M0`
-- **CI note:** Skip CI work unless explicitly requested.
 - **Build status:** `client ✅` `server ✅` `e2e ❌`
 - **Coverage gates met:** `client ✅` `server ❌` `mutation ❌` `fuzz ❌`
 - **Netcode sanity:** `prediction ✅` `reconciliation ✅` `interpolation ✅`
