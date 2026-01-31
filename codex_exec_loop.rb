@@ -10,6 +10,9 @@
 #   USE_STDIN=0       # 1 to pipe prompt via stdin instead of argv
 #   STOP_ON_ERROR=0   # 1 to exit on first nonzero exit status
 #
+# Runtime hotkeys:
+#   q                # finish the current round, then exit
+#
 # NOTE: This script uses --dangerously-bypass-approvals-and-sandbox on purpose.
 
 require "open3"
@@ -51,19 +54,41 @@ Signal.trap("TERM") { stop = true; puts "\nStopping (TERM)..." }
 
 if STDIN.tty?
   Thread.new do
-    loop do
-      begin
-        ch = STDIN.getch
-      rescue IOError
-        break
-      end
-      next unless ch
-      if ch.downcase == "q"
-        stop_after_round = true
-        unless notified_exit_after_round
-          puts "\nExit requested. Will exit after this round finishes."
-          notified_exit_after_round = true
+    console = IO.console
+    Thread.exit unless console
+    original = nil
+    begin
+      original = IO.popen(["stty", "-g"], "r", in: console, err: File::NULL) { |p| p.read }.strip
+      configured = system("stty", "-icanon", "-echo", "min", "0", "time", "1", in: console, err: File::NULL)
+      Thread.exit unless configured
+
+      loop do
+        break if stop || stop_after_round
+        begin
+          ready = IO.select([console], nil, nil, 0.1)
+        rescue IOError, Errno::EBADF
+          break
         end
+        next unless ready
+        begin
+          ch = console.read_nonblock(1)
+        rescue IO::WaitReadable, EOFError, IOError
+          next
+        end
+        next unless ch
+        if ch.downcase == "q"
+          stop_after_round = true
+          unless notified_exit_after_round
+            puts "\nExit requested. Will exit after this round finishes."
+            notified_exit_after_round = true
+          end
+        end
+      end
+    rescue Errno::ENOTTY, IOError, SystemCallError
+      # Fall back silently if the console can't be configured.
+    ensure
+      if original && !original.empty?
+        system("stty", original, in: console, err: File::NULL)
       end
     end
   end
