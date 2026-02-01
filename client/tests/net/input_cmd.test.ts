@@ -13,6 +13,9 @@ describe('input cmd', () => {
       fire: false,
       sprint: true,
       dash: true,
+      grapple: true,
+      shield: true,
+      shockwave: true,
       weaponSlot: 1
     };
 
@@ -31,7 +34,10 @@ describe('input cmd', () => {
       jump: true,
       fire: false,
       sprint: true,
-      dash: true
+      dash: true,
+      grapple: true,
+      shield: true,
+      shockwave: true
     });
   });
 
@@ -45,6 +51,9 @@ describe('input cmd', () => {
       fire: true,
       sprint: false,
       dash: false,
+      grapple: false,
+      shield: false,
+      shockwave: false,
       weaponSlot: 0
     });
 
@@ -62,6 +71,9 @@ describe('input cmd', () => {
       fire: false,
       sprint: false,
       dash: false,
+      grapple: false,
+      shield: false,
+      shockwave: false,
       weaponSlot: 2
     });
 

@@ -8,9 +8,9 @@
 ---
 
 ## Status Header (update every session)
-- **Last updated:** `2026-02-01 11:26:04 CT`
+- **Last updated:** `2026-02-01 16:30:39 CT`
 - **Session author:** `codex`
-- **Current milestone:** `M0`
+- **Current milestone:** `M5`
 - **CI note:** Skip CI work unless explicitly requested.
 - **Build status:** `client ✅` `server ✅` `e2e ❌`
 - **Coverage gates met:** `client ✅` `server ❌` `mutation ❌` `fuzz ❌`
@@ -118,6 +118,8 @@
 - [2026-02-01 23:45:00 CT] (client-ui) Added keyframe interval to connection detail line and updated main flow test. (tests: npm test)
 - [2026-02-01 23:55:00 CT] (server-tests) Assert ServerHello includes snapshotKeyframeInterval in signaling handshake test. (tests: ctest)
 - [2026-02-02 00:05:00 CT] (server-tests) Verified non-default snapshot keyframe interval propagates through ServerHello. (tests: ctest)
+- [2026-02-01 11:56:00 CT] (sim-physics) Added playerHeight config, vertical capsule clamp + walkable ground threshold, and updated WASM ABI/tests/docs. (tests: npm test, ctest)
+- [2026-02-01 11:56:30 CT] (sim-physics) Synced JS prediction ceiling clamp with playerHeight and added coverage for upward clamp. (tests: npm test)
 - [2026-02-01 10:15:47 CT] (docs/client-ui) Documented physics scope and set initial weapon cooldown in HUD startup. (tests: npm test)
 - [2026-02-01 10:26:58 CT] (gameplay/net/ui) Added GameEvent hit confirmations, HUD hitmarker feedback, and updated protocol docs. (tests: npm test, ctest)
 - [2026-02-01 10:36:44 CT] (projectiles/net) Broadcast projectile spawn GameEvents, client spawns remote projectile VFX, and docs/schema updated. (tests: npm test, ctest)
@@ -175,6 +177,15 @@
 - [2026-02-01 11:23:46 CT] (map-tools) Added Retro Urban manifest validation script. (tests: python3 tools/validate_retro_urban_map.py)
 - [2026-02-01 11:24:40 CT] (map-tools) Added rotation/scale validation to Retro Urban manifest checker. (tests: python3 tools/validate_retro_urban_map.py)
 - [2026-02-01 11:26:04 CT] (docs/abilities) Expanded grapple rules, config, and netcode notes. (tests: none)
+- [2026-02-01 12:17:07 CT] (grapple-input) Wired grapple input through sampler/bindings, InputCmd, server parsing, sim/WASM step signatures, and docs. (tests: npm test, ctest)
+- [2026-02-01 12:45:00 CT] (grapple) Implemented grapple anchor raycast + rope pull in shared sim/JS, expanded WASM ABI with view angles, and added shared sim unit test. (tests: not run)
+- [2026-02-01 13:01:45 CT] (grapple-tests) Added JS prediction grapple edge-case coverage + wrapAngle guard refactor; client tests/coverage and server ctest pass.
+- [2026-02-01 13:25:10 CT] (grapple-tests) Added floor/ceiling plane raycast bounds handling in shared sim/JS, expanded grapple raycast edge-case coverage, and added shared sim attach behavior tests. (tests: npm test, ctest)
+- [2026-02-01 14:47:43 CT] (shield) Added shield input, cooldown/duration tracking, server damage reduction, updated WASM/protocol/docs, and expanded sim/combat tests. (tests: npm test, ctest)
+- [2026-02-01 16:11:00 CT] (ui) Added HUD vitals/score/ability shield display, net stats visibility toggle + storage, and WASM shield getters; updated settings/docs/tests. (tests: npm test)
+- [2026-02-01 16:26:22 CT] (rendering) Implemented base toon shading with MeshToonMaterial + gradient ramp, set sRGB output/tone mapping, and updated rendering docs/tests. (tests: npm test)
+- [2026-02-01 16:30:10 CT] (docs/rendering) Documented outline approaches in docs/OUTLINES.md and linked from docs/RENDERING.md. (tests: none)
+- [2026-02-01 16:30:39 CT] (docs/rendering) Added outline decision checklist entry referencing docs/OUTLINES.md. (tests: none)
 
 ---
 
@@ -192,6 +203,12 @@
   **Alternatives considered:** Google libwebrtc.  
   **Why this:** Smaller footprint and simpler build while meeting DataChannel requirements.  
   **Consequences:** If we add advanced media features later, we may need to reassess.
+
+- [2026-02-01 16:26:22 CT] **Decision:** Use `MeshToonMaterial` with a 1D `DataTexture` ramp (nearest filtered) and force sRGB output with no tone mapping.  
+  **Context:** Need a fast, low-overhead baseline for toon shading before outlines/post-processing.  
+  **Alternatives considered:** Custom `ShaderMaterial` ramp; full post-process quantization.  
+  **Why this:** Built-in toon material keeps code small and leverages Three.js lighting while preserving crisp bands.  
+  **Consequences:** Limited stylization until we add rim lighting/outlines or custom shaders.
 
 - [YYYY-MM-DD HH:mm:ss CT] **Decision:** …  
   **Context:** …  
@@ -585,13 +602,14 @@ Phase 2: add static triangle mesh + BVH sweeps.
 - [x] Add simple obstacle AABB collision (configurable rect)
 - [x] Add swept obstacle AABB collision (segment vs expanded AABB) to prevent tunneling
 - [x] Add swept arena/obstacle collision loop with slide (2D) as capsule sweep precursor
-- [ ] Implement capsule-vs-world sweep + slide
-- [ ] Implement ground detection with “walkable normal” threshold
+- [x] Implement capsule-vs-world sweep + slide (capsule height + vertical clamp + XY sweep)
+- [x] Implement ground detection with “walkable normal” threshold
 - [x] Implement dash (impulse + cooldown)
-- [ ] Implement grapple:
-  - raycast to hook point
-  - while active: apply spring/pull force and optionally clamp max rope length
-  - allow cancel
+- [x] Implement grapple:
+  - [x] Wire grapple input through client sampler/bindings, InputCmd, server parse, and sim/WASM step.
+  - [x] Raycast to hook point (view yaw/pitch) against arena/obstacle bounds.
+  - [x] While active: apply spring/pull force with rope-length clamp + damping.
+  - [x] Allow cancel on release/LOS break/max distance; apply cooldown on release.
 - [x] Scaffold WASM bindings (C API + TS wrapper)
 - [x] Expose shared sim step() to TS via WASM bindings
 - [x] Mirror same step() on server native build
@@ -694,7 +712,7 @@ Phase 2: add static triangle mesh + BVH sweeps.
 ### Grapple
 - Inputs: grapplePressed, grappleHeld, grappleReleased
 - Rules:
-  - raycast to valid surfaces within `grappleMaxDistance` (server authoritative)
+  - raycast from view yaw/pitch to valid surfaces within `grappleMaxDistance` (server authoritative)
   - attach point stored as world-space anchor + surface normal
   - while held: apply spring/pull force toward anchor (with damping)
   - optional rope length clamp (cannot extend beyond initial hit distance)
@@ -707,28 +725,33 @@ Phase 2: add static triangle mesh + BVH sweeps.
   - client predicts rope render + pull, server validates and corrects via snapshots
   - optional GameEvent: `GrappleAttach` / `GrappleRelease` for VFX/rope state
 - Tests:
+  - [x] Unit: grapple attaches to arena wall and cooldown on release (shared sim).
   - [ ] attaches only to allowed surfaces
   - [ ] consistent pull across client/server
-  - [ ] release conditions enforced (LOS break, max stretch, cooldown)
+  - [x] release conditions enforced (LOS break, max stretch, cooldown)
 
 ### Shield
 - Inputs: shieldPressed/held
 - Rules:
-  - duration + cooldown
-  - reduces incoming damage or blocks from direction
-  - server authoritative damage calc
+  - press activates shield for `shieldDuration` when off cooldown; releasing early cancels and starts cooldown
+  - reduces incoming damage by `shieldDamageMultiplier` (clamped 0..1); server authoritative damage calc
+  - no directional blocking yet
+- Config (shared sim):
+  - `shieldDuration`, `shieldCooldown`, `shieldDamageMultiplier`
 - Tests:
-  - [ ] damage reduction math
+  - [x] damage reduction math
+  - [x] duration + cooldown tracking (shared sim + JS prediction)
   - [ ] directionality (if used)
 
 ### Push / Shockwave
-- Inputs: abilityPressed
+- Inputs: shockwavePressed (edge-triggered)
 - Rules:
-  - radial impulse + optional small damage
-  - cooldown
-  - server clamps max impulse
+  - radial impulse + optional small damage (server authoritative)
+  - cooldown gate in shared sim; server applies impulse/damage falloff
+  - config: `shockwaveRadius`, `shockwaveImpulse`, `shockwaveCooldown`, `shockwaveDamage`
 - Tests:
-  - [ ] applies impulse to nearby players only
+  - [x] cooldown triggers on press (shared sim)
+  - [x] impulse/damage falloff for nearby players (server combat)
   - [ ] LOS rules (if required)
 
 ---
@@ -746,10 +769,10 @@ Options:
 3. Hybrid: toon material + baked AO
 
 Implementation steps
-- [ ] Choose toon approach (Decision Log)
-- [ ] Implement base toon material pipeline
-- [ ] Ensure consistent gamma/tonemapping
-- [ ] Add simple directional light + ambient
+- [x] Choose toon approach (Decision Log)
+- [x] Implement base toon material pipeline
+- [x] Ensure consistent gamma/tonemapping
+- [x] Add simple directional light + ambient
 - [ ] Add weapon/hand material with stronger outlines
 
 ### Outlines
@@ -757,6 +780,9 @@ Options:
 1. Post-process edge detection using depth+normal
 2. Three.js OutlinePass (selective)
 3. Inverted hull for specific meshes (weapon/hands)
+
+Outline docs
+- `docs/OUTLINES.md` (pros/cons + recommendation)
 
 Implementation steps
 - [ ] Choose outline approach (Decision Log)
@@ -784,9 +810,9 @@ Implementation approach
 - Minimal canvas for crosshair if needed
 
 Implementation steps
-- [ ] Define HUD state model (derived from sim + net)
+- [x] Define HUD state model (derived from sim + net)
 - [x] Implement UI components (crosshair + pointer lock hint + sensitivity + keybinds)
-- [ ] Bind to state updates at render rate
+- [x] Bind to state updates at render rate
 - [x] Add settings menu (sensitivity)
 - [x] Add settings menu (keybinds)
 
@@ -949,13 +975,13 @@ Server (C++):
 
 ## M4 — Abilities + polish
 - [x] Dash
-- [ ] Grapple
-- [ ] Shield
-- [ ] Shockwave/push
-- [ ] UI polish + settings
+- [x] Grapple
+- [x] Shield
+- [x] Shockwave/push
+- [x] UI polish + settings
 
 ## M5 — Stylized rendering + perf budgets
-- [ ] Toon shading
+- [x] Toon shading
 - [ ] Outlines
 - [ ] Performance tests and budgets enforced
 

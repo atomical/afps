@@ -15,8 +15,16 @@ export interface SimConfig {
   grappleCooldown: number;
   grappleMinAttachNormalY: number;
   grappleRopeSlack: number;
+  shieldDuration: number;
+  shieldCooldown: number;
+  shieldDamageMultiplier: number;
+  shockwaveRadius: number;
+  shockwaveImpulse: number;
+  shockwaveCooldown: number;
+  shockwaveDamage: number;
   arenaHalfSize: number;
   playerRadius: number;
+  playerHeight: number;
   obstacleMinX: number;
   obstacleMaxX: number;
   obstacleMinY: number;
@@ -38,8 +46,16 @@ export const DEFAULT_SIM_CONFIG: SimConfig = {
   grappleCooldown: 1,
   grappleMinAttachNormalY: 0.2,
   grappleRopeSlack: 0.5,
+  shieldDuration: 2,
+  shieldCooldown: 5,
+  shieldDamageMultiplier: 0.4,
+  shockwaveRadius: 6,
+  shockwaveImpulse: 10,
+  shockwaveCooldown: 6,
+  shockwaveDamage: 10,
   arenaHalfSize: 50,
   playerRadius: 0.5,
+  playerHeight: 1.7,
   obstacleMinX: 0,
   obstacleMaxX: 0,
   obstacleMinY: 0,
@@ -68,8 +84,17 @@ export const parseSimConfig = (value: unknown): SimConfig => {
   const grappleMinAttachNormalY =
     readNumber(record.grappleMinAttachNormalY) ?? DEFAULT_SIM_CONFIG.grappleMinAttachNormalY;
   const grappleRopeSlack = readNumber(record.grappleRopeSlack) ?? DEFAULT_SIM_CONFIG.grappleRopeSlack;
+  const shieldDuration = readNumber(record.shieldDuration) ?? DEFAULT_SIM_CONFIG.shieldDuration;
+  const shieldCooldown = readNumber(record.shieldCooldown) ?? DEFAULT_SIM_CONFIG.shieldCooldown;
+  const shieldDamageMultiplier =
+    readNumber(record.shieldDamageMultiplier) ?? DEFAULT_SIM_CONFIG.shieldDamageMultiplier;
+  const shockwaveRadius = readNumber(record.shockwaveRadius) ?? DEFAULT_SIM_CONFIG.shockwaveRadius;
+  const shockwaveImpulse = readNumber(record.shockwaveImpulse) ?? DEFAULT_SIM_CONFIG.shockwaveImpulse;
+  const shockwaveCooldown = readNumber(record.shockwaveCooldown) ?? DEFAULT_SIM_CONFIG.shockwaveCooldown;
+  const shockwaveDamage = readNumber(record.shockwaveDamage) ?? DEFAULT_SIM_CONFIG.shockwaveDamage;
   const arenaHalfSize = readNumber(record.arenaHalfSize) ?? DEFAULT_SIM_CONFIG.arenaHalfSize;
   const playerRadius = readNumber(record.playerRadius) ?? DEFAULT_SIM_CONFIG.playerRadius;
+  const playerHeight = readNumber(record.playerHeight) ?? DEFAULT_SIM_CONFIG.playerHeight;
   const obstacleMinX = readNumber(record.obstacleMinX) ?? DEFAULT_SIM_CONFIG.obstacleMinX;
   const obstacleMaxX = readNumber(record.obstacleMaxX) ?? DEFAULT_SIM_CONFIG.obstacleMaxX;
   const obstacleMinY = readNumber(record.obstacleMinY) ?? DEFAULT_SIM_CONFIG.obstacleMinY;
@@ -89,8 +114,16 @@ export const parseSimConfig = (value: unknown): SimConfig => {
     grappleCooldown,
     grappleMinAttachNormalY,
     grappleRopeSlack,
+    shieldDuration,
+    shieldCooldown,
+    shieldDamageMultiplier,
+    shockwaveRadius,
+    shockwaveImpulse,
+    shockwaveCooldown,
+    shockwaveDamage,
     arenaHalfSize,
     playerRadius,
+    playerHeight,
     obstacleMinX,
     obstacleMaxX,
     obstacleMinY,

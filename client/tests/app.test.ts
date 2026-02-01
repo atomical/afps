@@ -162,7 +162,8 @@ describe('createApp', () => {
       jump: false,
       fire: false,
       sprint: false,
-      dash: false
+      dash: false,
+      grapple: false, shield: false, shockwave: false
     });
 
     app.renderFrame(0, 1000);
@@ -192,7 +193,8 @@ describe('createApp', () => {
       jump: false,
       fire: true,
       sprint: false,
-      dash: false
+      dash: false,
+      grapple: false, shield: false, shockwave: false
     });
 
     expect(scene.children.length).toBe(4);
@@ -210,7 +212,8 @@ describe('createApp', () => {
       jump: false,
       fire: true,
       sprint: false,
-      dash: false
+      dash: false,
+      grapple: false, shield: false, shockwave: false
     });
     expect(scene.children.length).toBe(4);
 
@@ -242,6 +245,42 @@ describe('createApp', () => {
     expect(scene.children.length).toBe(3);
     app.renderFrame(0.6, 1000);
     expect(scene.children.length).toBe(3);
+  });
+
+  it('exposes ability cooldowns from prediction sim', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+
+    const initial = app.getAbilityCooldowns();
+    expect(initial.dash).toBe(0);
+    expect(initial.shockwave).toBe(0);
+    expect(initial.shieldCooldown).toBe(0);
+    expect(initial.shieldTimer).toBe(0);
+    expect(initial.shieldActive).toBe(false);
+
+    app.recordInput({
+      type: 'InputCmd',
+      inputSeq: 1,
+      moveX: 0,
+      moveY: 0,
+      lookDeltaX: 0,
+      lookDeltaY: 0,
+      viewYaw: 0,
+      viewPitch: 0,
+      weaponSlot: 0,
+      jump: false,
+      fire: false,
+      sprint: false,
+      dash: false,
+      grapple: false,
+      shield: false,
+      shockwave: true
+    });
+
+    const updated = app.getAbilityCooldowns();
+    expect(updated.shockwave).toBeGreaterThan(0);
+    expect(updated.shieldActive).toBe(false);
   });
 
   it('ignores server projectile VFX when payload is invalid', () => {
@@ -318,7 +357,8 @@ describe('createApp', () => {
       jump: false,
       fire: true,
       sprint: false,
-      dash: false
+      dash: false,
+      grapple: false, shield: false, shockwave: false
     });
 
     expect(scene.children.length).toBe(4);
@@ -345,7 +385,8 @@ describe('createApp', () => {
       jump: false,
       fire: true,
       sprint: false,
-      dash: false
+      dash: false,
+      grapple: false, shield: false, shockwave: false
     });
 
     expect(scene.children.length).toBe(3);
@@ -371,7 +412,8 @@ describe('createApp', () => {
       jump: false,
       fire: true,
       sprint: false,
-      dash: false
+      dash: false,
+      grapple: false, shield: false, shockwave: false
     });
 
     expect(scene.children.length).toBe(3);
@@ -397,7 +439,8 @@ describe('createApp', () => {
       jump: false,
       fire: true,
       sprint: false,
-      dash: false
+      dash: false,
+      grapple: false, shield: false, shockwave: false
     });
 
     expect(scene.children.length).toBe(3);
@@ -422,7 +465,8 @@ describe('createApp', () => {
       jump: true,
       fire: false,
       sprint: false,
-      dash: false
+      dash: false,
+      grapple: false, shield: false, shockwave: false
     });
 
     app.renderFrame(0, 1000);
@@ -450,7 +494,8 @@ describe('createApp', () => {
       jump: false,
       fire: false,
       sprint: false,
-      dash: false
+      dash: false,
+      grapple: false, shield: false, shockwave: false
     });
 
     app.renderFrame(0, 1000);
@@ -466,7 +511,19 @@ describe('createApp', () => {
 
     const sim = {
       step: vi.fn(),
-      getState: vi.fn(() => ({ x: 2, y: 3, z: 0, velX: 0, velY: 0, velZ: 0, dashCooldown: 0 })),
+      getState: vi.fn(() => ({
+        x: 2,
+        y: 3,
+        z: 0,
+        velX: 0,
+        velY: 0,
+        velZ: 0,
+        dashCooldown: 0,
+        shieldTimer: 0,
+        shieldCooldown: 0,
+        shieldActive: false,
+        shockwaveCooldown: 0
+      })),
       setState: vi.fn(),
       reset: vi.fn(),
       setConfig: vi.fn()
@@ -486,7 +543,8 @@ describe('createApp', () => {
       jump: false,
       fire: false,
       sprint: false,
-      dash: false
+      dash: false,
+      grapple: false, shield: false, shockwave: false
     });
     app.renderFrame(0, 1000);
 

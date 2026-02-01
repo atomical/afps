@@ -56,6 +56,9 @@ struct InputCmd {
   bool fire = false;
   bool sprint = false;
   bool dash = false;
+  bool grapple = false;
+  bool shield = false;
+  bool shockwave = false;
 };
 
 struct Ping {

@@ -63,6 +63,10 @@ canvas {
   color: #6f879f;
 }
 
+.status-overlay[data-metrics='hidden'] .status-metrics {
+  display: none;
+}
+
 .status-overlay[data-state='connected'] {
   border-color: rgba(76, 195, 255, 0.6);
 }
@@ -183,6 +187,23 @@ canvas {
   color: #8fa3b8;
 }
 
+.hud-vitals {
+  margin-top: 6px;
+  font-size: 10px;
+  color: #d7e7f6;
+}
+
+.hud-ammo {
+  margin-top: 2px;
+  color: #9db1c6;
+}
+
+.hud-score {
+  margin-top: 6px;
+  font-size: 10px;
+  color: #a8d0ff;
+}
+
 .hud-weapon {
   margin-top: 6px;
   font-size: 10px;
@@ -193,6 +214,16 @@ canvas {
   margin-top: 4px;
   font-size: 10px;
   color: #a9b6c6;
+}
+
+.hud-abilities {
+  margin-top: 6px;
+  font-size: 10px;
+  color: #b5c5d6;
+}
+
+.hud-ability + .hud-ability {
+  margin-top: 2px;
 }
 
 .hud-overlay[data-lock='locked'] .hud-lock {
@@ -252,6 +283,24 @@ canvas {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.settings-toggles {
+  margin-top: 6px;
+}
+
+.settings-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.settings-toggle input {
+  accent-color: #4cc3ff;
 }
 
 .settings-label {

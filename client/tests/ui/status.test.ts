@@ -28,6 +28,10 @@ describe('status overlay', () => {
     expect(overlay.element.textContent).toContain('rtt 10ms');
     overlay.setMetrics();
     expect(overlay.element.textContent).not.toContain('rtt 10ms');
+    overlay.setMetricsVisible(false);
+    expect(overlay.element.dataset.metrics).toBe('hidden');
+    overlay.setMetricsVisible(true);
+    expect(overlay.element.dataset.metrics).toBe('visible');
 
     overlay.setState('connected', 'ready');
     expect(overlay.element.textContent).toContain('Connected');

@@ -8,7 +8,9 @@ This document describes the current rendering setup and the planned toon + outli
 
 - Single Three.js scene with a cube and basic lighting.
 - Camera is first-person-ish and follows the predicted position.
-- No post-processing yet; standard `MeshStandardMaterial`.
+- No post-processing yet.
+- Base toon material in place using `MeshToonMaterial` + a small gradient ramp texture.
+- Renderer output color space is set to sRGB and tone mapping is disabled for consistent bands.
 
 ---
 
@@ -24,10 +26,10 @@ This document describes the current rendering setup and the planned toon + outli
 
 ### Approach
 
-- Start with a custom `MeshToonMaterial` or a small shader variant that:
-  - Quantizes N·L into 2–4 bands.
-  - Adds a soft rim light term for readability.
-- Keep roughness/metalness low to avoid noisy highlights.
+- Use `MeshToonMaterial` with a custom 1D gradient map:
+  - Quantize N·L into 4 bands via a `DataTexture` ramp.
+  - Keep it small (4x1), disable mipmaps, and use nearest filtering for crisp steps.
+- Defer rim lighting until outline pass is settled.
 
 ### Pipeline steps
 
@@ -46,6 +48,7 @@ This document describes the current rendering setup and the planned toon + outli
 
 - Use `EffectComposer` + `OutlinePass` as a first pass.
 - If performance is insufficient, migrate to a single-pass screen-space edge shader.
+- See `docs/OUTLINES.md` for a full tradeoff comparison.
 
 ### Tuning
 

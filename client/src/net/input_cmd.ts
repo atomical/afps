@@ -14,6 +14,9 @@ export interface InputCmd {
   fire: boolean;
   sprint: boolean;
   dash: boolean;
+  grapple: boolean;
+  shield: boolean;
+  shockwave: boolean;
 }
 
 const clampAxis = (value: number) => {
@@ -39,7 +42,10 @@ export const buildInputCmd = (inputSeq: number, sample: InputSample): InputCmd =
   jump: Boolean(sample.jump),
   fire: Boolean(sample.fire),
   sprint: Boolean(sample.sprint),
-  dash: Boolean(sample.dash)
+  dash: Boolean(sample.dash),
+  grapple: Boolean(sample.grapple),
+  shield: Boolean(sample.shield),
+  shockwave: Boolean(sample.shockwave)
 });
 
 export const serializeInputCmd = (cmd: InputCmd) => JSON.stringify(cmd);

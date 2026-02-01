@@ -14,6 +14,7 @@ type Config = {
   dashCooldown: number;
   arenaHalfSize: number;
   playerRadius: number;
+  playerHeight: number;
   obstacleMinX: number;
   obstacleMaxX: number;
   obstacleMinY: number;
@@ -30,6 +31,7 @@ const createFakeWasmSim = (speedScale = 1): WasmSimInstance => {
     friction: SIM_CONFIG.friction,
     arenaHalfSize: SIM_CONFIG.arenaHalfSize,
     playerRadius: SIM_CONFIG.playerRadius,
+    playerHeight: SIM_CONFIG.playerHeight,
     obstacleMinX: SIM_CONFIG.obstacleMinX,
     obstacleMaxX: SIM_CONFIG.obstacleMaxX,
     obstacleMinY: SIM_CONFIG.obstacleMinY,
@@ -441,17 +443,29 @@ const createFakeWasmSim = (speedScale = 1): WasmSimInstance => {
         state.velZ -= gravity * dt;
       }
       advanceWithCollisions(dt);
+      const playerHeight = Number.isFinite(config.playerHeight) && config.playerHeight >= 0 ? config.playerHeight : 0;
+      let ceilingZ = Number.POSITIVE_INFINITY;
+      if (Number.isFinite(config.arenaHalfSize) && config.arenaHalfSize > 0) {
+        const halfSize = Math.max(0, config.arenaHalfSize);
+        ceilingZ = Math.max(0, halfSize - playerHeight);
+      }
+
       state.z += state.velZ * dt;
       if (!Number.isFinite(state.z)) {
         state.z = 0;
         state.velZ = 0;
         state.grounded = true;
+      } else if (state.z > ceilingZ) {
+        state.z = ceilingZ;
+        if (state.velZ > 0) {
+          state.velZ = 0;
+        }
       } else if (state.z <= 0) {
         state.z = 0;
         if (state.velZ < 0) {
           state.velZ = 0;
         }
-        state.grounded = true;
+        state.grounded = 1 >= 0.7;
       } else {
         state.grounded = false;
       }
@@ -463,7 +477,10 @@ const createFakeWasmSim = (speedScale = 1): WasmSimInstance => {
       velX: state.velX,
       velY: state.velY,
       velZ: state.velZ,
-      dashCooldown: state.dashCooldown
+      dashCooldown: state.dashCooldown,
+      shieldCooldown: 0,
+      shieldTimer: 0,
+      shockwaveCooldown: 0
     }),
     reset: () => {
       state = { x: 0, y: 0, z: 0, velX: 0, velY: 0, velZ: 0, grounded: true, dashCooldown: 0 };
@@ -475,6 +492,7 @@ const createFakeWasmSim = (speedScale = 1): WasmSimInstance => {
         friction: (next as typeof SIM_CONFIG).friction,
         arenaHalfSize: (next as typeof SIM_CONFIG).arenaHalfSize,
         playerRadius: (next as typeof SIM_CONFIG).playerRadius,
+        playerHeight: (next as typeof SIM_CONFIG).playerHeight,
         obstacleMinX: (next as typeof SIM_CONFIG).obstacleMinX,
         obstacleMaxX: (next as typeof SIM_CONFIG).obstacleMaxX,
         obstacleMinY: (next as typeof SIM_CONFIG).obstacleMinY,
@@ -500,7 +518,18 @@ describe('runWasmParityCheck', () => {
     expect(result.deltaVx).toBeCloseTo(0);
     expect(result.deltaVy).toBeCloseTo(0);
     expect(result.deltaVz).toBeCloseTo(0);
-    expect(sim.getState()).toEqual({ x: 0, y: 0, z: 0, velX: 0, velY: 0, velZ: 0, dashCooldown: 0 });
+    expect(sim.getState()).toEqual({
+      x: 0,
+      y: 0,
+      z: 0,
+      velX: 0,
+      velY: 0,
+      velZ: 0,
+      dashCooldown: 0,
+      shieldCooldown: 0,
+      shieldTimer: 0,
+      shockwaveCooldown: 0
+    });
   });
 
   it('reports mismatch when sims diverge', () => {

@@ -34,6 +34,9 @@ table InputCmd {
   fire:bool;
   sprint:bool;
   dash:bool;
+  grapple:bool;
+  shield:bool;
+  shockwave:bool;
 }
 
 table StateSnapshot {

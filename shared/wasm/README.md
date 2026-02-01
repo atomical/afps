@@ -21,9 +21,9 @@ The generated JS module must export the following functions:
 - `_sim_create`
 - `_sim_destroy`
 - `_sim_reset`
-- `_sim_set_config` (handle, moveSpeed, sprintMultiplier, accel, friction, gravity, jumpVelocity, dashImpulse, dashCooldown, grappleMaxDistance, grapplePullStrength, grappleDamping, grappleCooldown, grappleMinAttachNormalY, grappleRopeSlack, arenaHalfSize, playerRadius, obstacleMinX, obstacleMaxX, obstacleMinY, obstacleMaxY)
+- `_sim_set_config` (handle, moveSpeed, sprintMultiplier, accel, friction, gravity, jumpVelocity, dashImpulse, dashCooldown, grappleMaxDistance, grapplePullStrength, grappleDamping, grappleCooldown, grappleMinAttachNormalY, grappleRopeSlack, shieldDuration, shieldCooldown, shieldDamageMultiplier, shockwaveRadius, shockwaveImpulse, shockwaveCooldown, shockwaveDamage, arenaHalfSize, playerRadius, playerHeight, obstacleMinX, obstacleMaxX, obstacleMinY, obstacleMaxY)
 - `_sim_set_state` (handle, x, y, z, velX, velY, velZ, dashCooldown)
-- `_sim_step` (handle, dt, moveX, moveY, sprint, jump, dash)
+- `_sim_step` (handle, dt, moveX, moveY, sprint, jump, dash, grapple, shield, shockwave, viewYaw, viewPitch)
 - `_sim_get_x`
 - `_sim_get_y`
 - `_sim_get_z`
@@ -31,5 +31,8 @@ The generated JS module must export the following functions:
 - `_sim_get_vy`
 - `_sim_get_vz`
 - `_sim_get_dash_cooldown`
+- `_sim_get_shield_cooldown`
+- `_sim_get_shield_timer`
+- `_sim_get_shockwave_cooldown`
 
 These are consumed by the client wrapper in `client/src/sim/wasm.ts`.

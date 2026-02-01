@@ -104,4 +104,4 @@ Example (keyframe interval = 5):
 
 - No server-side rewind or lag compensation yet.
 - Snapshots include `posX/posY/posZ` + `velX/velY/velZ`, but still only for the local player.
-- Advanced movement (dash/grapple) not implemented; jump/gravity are now in place.
+- Dash, grapple, shield, and shockwave are implemented in the shared sim; grapple uses anchor-based pull but has no snapshot/rope state yet, and shield damage reduction is applied server-side.

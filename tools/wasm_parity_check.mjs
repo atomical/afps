@@ -27,8 +27,22 @@ const gravity = Number(config.gravity);
 const jumpVelocity = Number(config.jumpVelocity);
 const dashImpulse = Number(config.dashImpulse);
 const dashCooldown = Number(config.dashCooldown);
+const grappleMaxDistance = Number(config.grappleMaxDistance);
+const grapplePullStrength = Number(config.grapplePullStrength);
+const grappleDamping = Number(config.grappleDamping);
+const grappleCooldown = Number(config.grappleCooldown);
+const grappleMinAttachNormalY = Number(config.grappleMinAttachNormalY);
+const grappleRopeSlack = Number(config.grappleRopeSlack);
+const shieldDuration = Number(config.shieldDuration);
+const shieldCooldown = Number(config.shieldCooldown);
+const shieldDamageMultiplier = Number(config.shieldDamageMultiplier);
+const shockwaveRadius = Number(config.shockwaveRadius);
+const shockwaveImpulse = Number(config.shockwaveImpulse);
+const shockwaveCooldown = Number(config.shockwaveCooldown);
+const shockwaveDamage = Number(config.shockwaveDamage);
 const arenaHalfSize = Number(config.arenaHalfSize);
 const playerRadius = Number(config.playerRadius);
+const playerHeight = Number(config.playerHeight);
 const obstacleMinX = Number(config.obstacleMinX);
 const obstacleMaxX = Number(config.obstacleMaxX);
 const obstacleMinY = Number(config.obstacleMinY);
@@ -42,8 +56,22 @@ if (
   !Number.isFinite(jumpVelocity) ||
   !Number.isFinite(dashImpulse) ||
   !Number.isFinite(dashCooldown) ||
+  !Number.isFinite(grappleMaxDistance) ||
+  !Number.isFinite(grapplePullStrength) ||
+  !Number.isFinite(grappleDamping) ||
+  !Number.isFinite(grappleCooldown) ||
+  !Number.isFinite(grappleMinAttachNormalY) ||
+  !Number.isFinite(grappleRopeSlack) ||
+  !Number.isFinite(shieldDuration) ||
+  !Number.isFinite(shieldCooldown) ||
+  !Number.isFinite(shieldDamageMultiplier) ||
+  !Number.isFinite(shockwaveRadius) ||
+  !Number.isFinite(shockwaveImpulse) ||
+  !Number.isFinite(shockwaveCooldown) ||
+  !Number.isFinite(shockwaveDamage) ||
   !Number.isFinite(arenaHalfSize) ||
   !Number.isFinite(playerRadius) ||
+  !Number.isFinite(playerHeight) ||
   !Number.isFinite(obstacleMinX) ||
   !Number.isFinite(obstacleMaxX) ||
   !Number.isFinite(obstacleMinY) ||
@@ -76,8 +104,22 @@ module._sim_set_config(
   jumpVelocity,
   dashImpulse,
   dashCooldown,
+  grappleMaxDistance,
+  grapplePullStrength,
+  grappleDamping,
+  grappleCooldown,
+  grappleMinAttachNormalY,
+  grappleRopeSlack,
+  shieldDuration,
+  shieldCooldown,
+  shieldDamageMultiplier,
+  shockwaveRadius,
+  shockwaveImpulse,
+  shockwaveCooldown,
+  shockwaveDamage,
   arenaHalfSize,
   playerRadius,
+  playerHeight,
   obstacleMinX,
   obstacleMaxX,
   obstacleMinY,
@@ -449,13 +491,13 @@ const simulate = () => {
 };
 
 for (let i = 0; i < 10; i += 1) {
-  module._sim_step(handle, dt, 1, 0, 0, 0, 0);
+  module._sim_step(handle, dt, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 }
 for (let i = 0; i < 5; i += 1) {
-  module._sim_step(handle, dt, 1, 0, 1, 0, 0);
+  module._sim_step(handle, dt, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0);
 }
 for (let i = 0; i < 10; i += 1) {
-  module._sim_step(handle, dt, 0, -1, 0, i === 0 ? 1 : 0, 0);
+  module._sim_step(handle, dt, 0, -1, 0, i === 0 ? 1 : 0, 0, 0, 0, 0, 0, 0);
 }
 
 const wasmX = module._sim_get_x(handle);

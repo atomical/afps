@@ -7,6 +7,7 @@ export interface SettingsOverlay {
   setVisible: (visible: boolean) => void;
   toggle: () => void;
   setSensitivity: (value: number) => void;
+  setMetricsVisible: (visible: boolean) => void;
   dispose: () => void;
 }
 
@@ -15,6 +16,8 @@ export interface SettingsOptions {
   onSensitivityChange?: (value: number) => void;
   initialBindings?: InputBindings;
   onBindingsChange?: (bindings: InputBindings) => void;
+  initialShowMetrics?: boolean;
+  onShowMetricsChange?: (visible: boolean) => void;
 }
 
 const DEFAULT_SENSITIVITY = 0.002;
@@ -29,7 +32,14 @@ const formatSensitivity = (value: number) => value.toFixed(4);
 
 export const createSettingsOverlay = (
   doc: Document,
-  { initialSensitivity, onSensitivityChange, initialBindings, onBindingsChange }: SettingsOptions = {},
+  {
+    initialSensitivity,
+    onSensitivityChange,
+    initialBindings,
+    onBindingsChange,
+    initialShowMetrics,
+    onShowMetricsChange
+  }: SettingsOptions = {},
   containerId = 'app'
 ): SettingsOverlay => {
   const host = doc.getElementById(containerId) ?? doc.body;
@@ -70,6 +80,18 @@ export const createSettingsOverlay = (
   const bindingsGroup = doc.createElement('div');
   bindingsGroup.className = 'settings-group settings-bindings';
 
+  const metricsGroup = doc.createElement('div');
+  metricsGroup.className = 'settings-group settings-toggles';
+
+  const metricsRow = doc.createElement('label');
+  metricsRow.className = 'settings-toggle';
+  const metricsToggle = doc.createElement('input');
+  metricsToggle.type = 'checkbox';
+  const metricsLabel = doc.createElement('span');
+  metricsLabel.textContent = 'Show net stats';
+  metricsRow.append(metricsToggle, metricsLabel);
+  metricsGroup.append(metricsRow);
+
   const bindingsTitle = doc.createElement('div');
   bindingsTitle.className = 'settings-subtitle';
   bindingsTitle.textContent = 'Keybinds';
@@ -79,7 +101,7 @@ export const createSettingsOverlay = (
 
   bindingsGroup.append(bindingsTitle, bindingsList);
 
-  panel.append(title, hint, group, bindingsGroup);
+  panel.append(title, hint, group, metricsGroup, bindingsGroup);
   overlay.append(panel);
   host.appendChild(overlay);
 
@@ -94,6 +116,9 @@ export const createSettingsOverlay = (
     ['jump', 'Jump'],
     ['sprint', 'Sprint'],
     ['dash', 'Dash'],
+    ['grapple', 'Grapple'],
+    ['shield', 'Shield'],
+    ['shockwave', 'Shockwave'],
     ['weaponSlot1', 'Weapon 1'],
     ['weaponSlot2', 'Weapon 2']
   ];
@@ -167,6 +192,14 @@ export const createSettingsOverlay = (
     onSensitivityChange?.(next);
   });
 
+  const setMetricsVisible = (visible: boolean) => {
+    metricsToggle.checked = visible;
+  };
+
+  metricsToggle.addEventListener('change', () => {
+    onShowMetricsChange?.(metricsToggle.checked);
+  });
+
   const isVisible = () => overlay.dataset.visible === 'true';
 
   const setVisible = (visible: boolean) => {
@@ -182,11 +215,12 @@ export const createSettingsOverlay = (
       ? initialSensitivity
       : DEFAULT_SENSITIVITY
   );
+  setMetricsVisible(initialShowMetrics ?? true);
 
   const dispose = () => {
     doc.removeEventListener('keydown', handleKeydown);
     overlay.remove();
   };
 
-  return { element: overlay, isVisible, setVisible, toggle, setSensitivity, dispose };
+  return { element: overlay, isVisible, setVisible, toggle, setSensitivity, setMetricsVisible, dispose };
 };

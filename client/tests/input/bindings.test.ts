@@ -24,6 +24,9 @@ describe('input bindings', () => {
     expect(normalizeBindings({ forward: [] }).forward).toEqual(DEFAULT_BINDINGS.forward);
     expect(normalizeBindings({ forward: ['KeyQ', 'KeyQ'] }).forward).toEqual(['KeyQ']);
     expect(normalizeBindings({ dash: [] }).dash).toEqual(DEFAULT_BINDINGS.dash);
+    expect(normalizeBindings({ grapple: [] }).grapple).toEqual(DEFAULT_BINDINGS.grapple);
+    expect(normalizeBindings({ shield: [] }).shield).toEqual(DEFAULT_BINDINGS.shield);
+    expect(normalizeBindings({ shockwave: [] }).shockwave).toEqual(DEFAULT_BINDINGS.shockwave);
     expect(normalizeBindings({ weaponSlot1: [] }).weaponSlot1).toEqual(DEFAULT_BINDINGS.weaponSlot1);
   });
 

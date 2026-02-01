@@ -7,6 +7,9 @@ export interface InputSample {
   fire: boolean;
   sprint: boolean;
   dash: boolean;
+  grapple: boolean;
+  shield: boolean;
+  shockwave: boolean;
   weaponSlot: number;
 }
 
@@ -24,6 +27,9 @@ export interface InputBindings {
   jump: string[];
   sprint: string[];
   dash: string[];
+  grapple: string[];
+  shield: string[];
+  shockwave: string[];
   weaponSlot1: string[];
   weaponSlot2: string[];
 }
@@ -36,6 +42,9 @@ export const DEFAULT_BINDINGS: InputBindings = {
   jump: ['Space'],
   sprint: ['ShiftLeft', 'ShiftRight'],
   dash: ['KeyE'],
+  grapple: ['KeyQ'],
+  shield: ['KeyF'],
+  shockwave: ['KeyR'],
   weaponSlot1: ['Digit1'],
   weaponSlot2: ['Digit2']
 };
@@ -110,6 +119,9 @@ export const createInputSampler = ({ target, bindings = DEFAULT_BINDINGS }: Inpu
     const jump = isAnyPressed(pressed, currentBindings.jump);
     const sprint = isAnyPressed(pressed, currentBindings.sprint);
     const dash = isAnyPressed(pressed, currentBindings.dash);
+    const grapple = isAnyPressed(pressed, currentBindings.grapple);
+    const shield = isAnyPressed(pressed, currentBindings.shield);
+    const shockwave = isAnyPressed(pressed, currentBindings.shockwave);
 
     const moveX = Number(right) - Number(left);
     const moveY = Number(forward) - Number(backward);
@@ -123,6 +135,9 @@ export const createInputSampler = ({ target, bindings = DEFAULT_BINDINGS }: Inpu
       fire,
       sprint,
       dash,
+      grapple,
+      shield,
+      shockwave,
       weaponSlot
     };
 

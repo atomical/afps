@@ -185,7 +185,10 @@ On invalid handshake, the server may send:
   "jump": false,
   "fire": false,
   "sprint": false,
-  "dash": false
+  "dash": false,
+  "grapple": false,
+  "shield": false,
+  "shockwave": false
 }
 ```
 
@@ -195,7 +198,7 @@ Validation rules:
 - `lookDeltaX`, `lookDeltaY` must be finite numbers.
 - `viewYaw`, `viewPitch` must be finite numbers when present.
 - `weaponSlot` must be an integer >= 0 when present.
-- `jump`, `fire`, `sprint`, `dash` must be booleans.
+- `jump`, `fire`, `sprint`, `dash`, `grapple`, `shield`, `shockwave` must be booleans.
 
 ### Ping (client -> server)
 

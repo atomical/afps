@@ -2,11 +2,27 @@ import type { InputCmd } from './input_cmd';
 import type { StateSnapshot } from './protocol';
 import { SIM_CONFIG, type SimConfig } from '../sim/config';
 
-export type PredictionInput = Pick<InputCmd, 'moveX' | 'moveY' | 'sprint' | 'jump' | 'dash'>;
+export type PredictionInput = Pick<
+  InputCmd,
+  'moveX' | 'moveY' | 'sprint' | 'jump' | 'dash' | 'grapple' | 'shield' | 'shockwave'
+> &
+  Partial<Pick<InputCmd, 'viewYaw' | 'viewPitch'>>;
 
 export interface PredictionSim {
   step: (input: PredictionInput, dt: number) => void;
-  getState: () => { x: number; y: number; z: number; velX: number; velY: number; velZ: number; dashCooldown: number };
+  getState: () => {
+    x: number;
+    y: number;
+    z: number;
+    velX: number;
+    velY: number;
+    velZ: number;
+    dashCooldown: number;
+    shieldTimer: number;
+    shieldCooldown: number;
+    shieldActive: boolean;
+    shockwaveCooldown: number;
+  };
   setState: (x: number, y: number, z: number, velX: number, velY: number, velZ: number, dashCooldown: number) => void;
   reset: () => void;
   setConfig: (config: SimConfig) => void;
@@ -35,9 +51,191 @@ const clampAxis = (value: number) => {
 
 const toNumber = (value: number) => (Number.isFinite(value) ? value : 0);
 
+const WRAP_PI = Math.PI;
+const MAX_PITCH = Math.PI / 2 - 0.01;
+const RAY_EPSILON = 1e-8;
+
+const wrapAngle = (angle: number) => {
+  const safeAngle = Number.isFinite(angle) ? angle : 0;
+  let wrapped = ((safeAngle + WRAP_PI) % (2 * WRAP_PI));
+  if (wrapped < 0) {
+    wrapped += 2 * WRAP_PI;
+  }
+  return wrapped - WRAP_PI;
+};
+
+const sanitizeViewAngles = (yaw: number, pitch: number) => {
+  const safeYaw = wrapAngle(yaw);
+  const safePitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, Number.isFinite(pitch) ? pitch : 0));
+  return { yaw: safeYaw, pitch: safePitch };
+};
+
+const viewDirection = (yaw: number, pitch: number) => {
+  const angles = sanitizeViewAngles(yaw, pitch);
+  const cosPitch = Math.cos(angles.pitch);
+  let x = Math.sin(angles.yaw) * cosPitch;
+  let y = -Math.cos(angles.yaw) * cosPitch;
+  let z = Math.sin(angles.pitch);
+  const len = Math.hypot(x, y, z) || 1;
+  x /= len;
+  y /= len;
+  z /= len;
+  return { x, y, z };
+};
+
+const resolveEyeHeight = (config: SimConfig) => {
+  const fallback = 1.6;
+  if (!Number.isFinite(config.playerHeight) || config.playerHeight <= 0) {
+    return fallback;
+  }
+  return Math.min(config.playerHeight, fallback);
+};
+
+const raycastAabb2D = (
+  originX: number,
+  originY: number,
+  dirX: number,
+  dirY: number,
+  minX: number,
+  maxX: number,
+  minY: number,
+  maxY: number,
+  best: { hit: boolean; t: number; nx: number; ny: number; nz: number }
+) => {
+  if (!Number.isFinite(dirX) || !Number.isFinite(dirY)) {
+    return;
+  }
+
+  const testPlaneX = (planeX: number, normalX: number) => {
+    if (Math.abs(dirX) < RAY_EPSILON) {
+      return;
+    }
+    const t = (planeX - originX) / dirX;
+    if (!Number.isFinite(t) || t < 0 || t >= best.t) {
+      return;
+    }
+    const hitY = originY + dirY * t;
+    if (hitY < minY || hitY > maxY) {
+      return;
+    }
+    best.hit = true;
+    best.t = t;
+    best.nx = normalX;
+    best.ny = 0;
+    best.nz = 0;
+  };
+
+  const testPlaneY = (planeY: number, normalY: number) => {
+    if (Math.abs(dirY) < RAY_EPSILON) {
+      return;
+    }
+    const t = (planeY - originY) / dirY;
+    if (!Number.isFinite(t) || t < 0 || t >= best.t) {
+      return;
+    }
+    const hitX = originX + dirX * t;
+    if (hitX < minX || hitX > maxX) {
+      return;
+    }
+    best.hit = true;
+    best.t = t;
+    best.nx = 0;
+    best.ny = normalY;
+    best.nz = 0;
+  };
+
+  testPlaneX(minX, -1);
+  testPlaneX(maxX, 1);
+  testPlaneY(minY, -1);
+  testPlaneY(maxY, 1);
+};
+
+const raycastWorld = (origin: { x: number; y: number; z: number }, dir: { x: number; y: number; z: number }, config: SimConfig) => {
+  const best = { hit: false, t: Number.POSITIVE_INFINITY, nx: 0, ny: 0, nz: 0 };
+  if (Math.abs(dir.x) < RAY_EPSILON && Math.abs(dir.y) < RAY_EPSILON && Math.abs(dir.z) < RAY_EPSILON) {
+    return best;
+  }
+  if (Number.isFinite(config.arenaHalfSize) && config.arenaHalfSize > 0) {
+    const half = Math.max(0, config.arenaHalfSize);
+    raycastAabb2D(origin.x, origin.y, dir.x, dir.y, -half, half, -half, half, best);
+
+    const testPlaneZ = (planeZ: number, normalZ: number) => {
+      if (Math.abs(dir.z) < RAY_EPSILON) {
+        return;
+      }
+      const t = (planeZ - origin.z) / dir.z;
+      if (!Number.isFinite(t) || t < 0 || t >= best.t) {
+        return;
+      }
+      const hitX = origin.x + dir.x * t;
+      const hitY = origin.y + dir.y * t;
+      if (hitX < -half || hitX > half || hitY < -half || hitY > half) {
+        return;
+      }
+      best.hit = true;
+      best.t = t;
+      best.nx = 0;
+      best.ny = 0;
+      best.nz = normalZ;
+    };
+
+    const playerHeight = Number.isFinite(config.playerHeight) && config.playerHeight >= 0 ? config.playerHeight : 0;
+    const ceilingZ = Math.max(0, half - playerHeight);
+    testPlaneZ(0, 1);
+    testPlaneZ(ceilingZ, -1);
+  }
+  if (
+    Number.isFinite(config.obstacleMinX) &&
+    Number.isFinite(config.obstacleMaxX) &&
+    Number.isFinite(config.obstacleMinY) &&
+    Number.isFinite(config.obstacleMaxY) &&
+    config.obstacleMinX < config.obstacleMaxX &&
+    config.obstacleMinY < config.obstacleMaxY
+  ) {
+    raycastAabb2D(
+      origin.x,
+      origin.y,
+      dir.x,
+      dir.y,
+      config.obstacleMinX,
+      config.obstacleMaxX,
+      config.obstacleMinY,
+      config.obstacleMaxY,
+      best
+    );
+  }
+  return best;
+};
+
 export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): PredictionSim => {
-  let state = { x: 0, y: 0, z: 0, velX: 0, velY: 0, velZ: 0, grounded: true, dashCooldown: 0 };
+  let state = {
+    x: 0,
+    y: 0,
+    z: 0,
+    velX: 0,
+    velY: 0,
+    velZ: 0,
+    grounded: true,
+    dashCooldown: 0,
+    grappleCooldown: 0,
+    grappleActive: false,
+    grappleInput: false,
+    grappleAnchorX: 0,
+    grappleAnchorY: 0,
+    grappleAnchorZ: 0,
+    grappleAnchorNX: 0,
+    grappleAnchorNY: 0,
+    grappleAnchorNZ: 0,
+    grappleLength: 0,
+    shieldTimer: 0,
+    shieldCooldown: 0,
+    shieldActive: false,
+    shieldInput: false,
+    shockwaveCooldown: 0,
+    shockwaveInput: false
+  };
   const currentConfig = { ...SIM_CONFIG };
+  const WALKABLE_NORMAL_Z = 0.7;
 
   const setConfig = (next: SimConfig) => {
     if (Number.isFinite(next.moveSpeed) && next.moveSpeed > 0) {
@@ -64,11 +262,53 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
     if (Number.isFinite(next.dashCooldown) && next.dashCooldown >= 0) {
       currentConfig.dashCooldown = next.dashCooldown;
     }
+    if (Number.isFinite(next.grappleMaxDistance) && next.grappleMaxDistance >= 0) {
+      currentConfig.grappleMaxDistance = next.grappleMaxDistance;
+    }
+    if (Number.isFinite(next.grapplePullStrength) && next.grapplePullStrength >= 0) {
+      currentConfig.grapplePullStrength = next.grapplePullStrength;
+    }
+    if (Number.isFinite(next.grappleDamping) && next.grappleDamping >= 0) {
+      currentConfig.grappleDamping = next.grappleDamping;
+    }
+    if (Number.isFinite(next.grappleCooldown) && next.grappleCooldown >= 0) {
+      currentConfig.grappleCooldown = next.grappleCooldown;
+    }
+    if (Number.isFinite(next.grappleMinAttachNormalY)) {
+      currentConfig.grappleMinAttachNormalY = next.grappleMinAttachNormalY;
+    }
+    if (Number.isFinite(next.grappleRopeSlack) && next.grappleRopeSlack >= 0) {
+      currentConfig.grappleRopeSlack = next.grappleRopeSlack;
+    }
+    if (Number.isFinite(next.shieldDuration) && next.shieldDuration >= 0) {
+      currentConfig.shieldDuration = next.shieldDuration;
+    }
+    if (Number.isFinite(next.shieldCooldown) && next.shieldCooldown >= 0) {
+      currentConfig.shieldCooldown = next.shieldCooldown;
+    }
+    if (Number.isFinite(next.shieldDamageMultiplier)) {
+      currentConfig.shieldDamageMultiplier = next.shieldDamageMultiplier;
+    }
+    if (Number.isFinite(next.shockwaveRadius) && next.shockwaveRadius >= 0) {
+      currentConfig.shockwaveRadius = next.shockwaveRadius;
+    }
+    if (Number.isFinite(next.shockwaveImpulse) && next.shockwaveImpulse >= 0) {
+      currentConfig.shockwaveImpulse = next.shockwaveImpulse;
+    }
+    if (Number.isFinite(next.shockwaveCooldown) && next.shockwaveCooldown >= 0) {
+      currentConfig.shockwaveCooldown = next.shockwaveCooldown;
+    }
+    if (Number.isFinite(next.shockwaveDamage) && next.shockwaveDamage >= 0) {
+      currentConfig.shockwaveDamage = next.shockwaveDamage;
+    }
     if (Number.isFinite(next.arenaHalfSize) && next.arenaHalfSize >= 0) {
       currentConfig.arenaHalfSize = next.arenaHalfSize;
     }
     if (Number.isFinite(next.playerRadius) && next.playerRadius >= 0) {
       currentConfig.playerRadius = next.playerRadius;
+    }
+    if (Number.isFinite(next.playerHeight) && next.playerHeight >= 0) {
+      currentConfig.playerHeight = next.playerHeight;
     }
     currentConfig.obstacleMinX = next.obstacleMinX;
     currentConfig.obstacleMaxX = next.obstacleMaxX;
@@ -468,6 +708,165 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
       }
     }
 
+    const grappleCooldown = Math.max(0, currentConfig.grappleCooldown);
+    const safeGrappleCooldown = Number.isFinite(state.grappleCooldown) ? state.grappleCooldown : 0;
+    state.grappleCooldown = Math.max(0, safeGrappleCooldown);
+    if (state.grappleCooldown > 0) {
+      state.grappleCooldown = Math.max(0, state.grappleCooldown - dt);
+    }
+
+    const grapplePressed = Boolean(input.grapple) && !state.grappleInput;
+    const grappleReleased = !input.grapple && state.grappleInput;
+    state.grappleInput = Boolean(input.grapple);
+
+    const releaseGrapple = (applyCooldown: boolean) => {
+      state.grappleActive = false;
+      state.grappleLength = 0;
+      state.grappleAnchorX = 0;
+      state.grappleAnchorY = 0;
+      state.grappleAnchorZ = 0;
+      state.grappleAnchorNX = 0;
+      state.grappleAnchorNY = 0;
+      state.grappleAnchorNZ = 0;
+      if (applyCooldown) {
+        state.grappleCooldown = grappleCooldown;
+      }
+    };
+
+    if (grapplePressed && state.grappleCooldown <= 0) {
+      const maxDistance = Math.max(0, currentConfig.grappleMaxDistance);
+      if (maxDistance > 0) {
+        const dir = viewDirection(toNumber(input.viewYaw ?? 0), toNumber(input.viewPitch ?? 0));
+        const eyeHeight = resolveEyeHeight(currentConfig);
+        const origin = { x: state.x, y: state.y, z: state.z + eyeHeight };
+        const hit = raycastWorld(origin, dir, currentConfig);
+        if (hit.hit && hit.t >= 0 && hit.t <= maxDistance) {
+          let anchorX = origin.x + dir.x * hit.t;
+          let anchorY = origin.y + dir.y * hit.t;
+          let anchorZ = origin.z + dir.z * hit.t;
+          let ceilingZ = Number.POSITIVE_INFINITY;
+          if (Number.isFinite(currentConfig.arenaHalfSize) && currentConfig.arenaHalfSize > 0) {
+            const halfSize = Math.max(0, currentConfig.arenaHalfSize);
+            const playerHeight = Number.isFinite(currentConfig.playerHeight) && currentConfig.playerHeight >= 0
+              ? currentConfig.playerHeight
+              : 0;
+            ceilingZ = Math.max(0, halfSize - playerHeight);
+          }
+          anchorZ = Number.isFinite(anchorZ) ? anchorZ : origin.z;
+          anchorZ = Math.max(0, Math.min(anchorZ, ceilingZ));
+          const dx = anchorX - origin.x;
+          const dy = anchorY - origin.y;
+          const dz = anchorZ - origin.z;
+          const anchorDist = Math.hypot(dx, dy, dz);
+          const minAttachNormal = Math.max(0, currentConfig.grappleMinAttachNormalY);
+          const allowAttach = Math.abs(hit.nz) < 1e-6 || minAttachNormal <= 0 || Math.abs(hit.nz) >= minAttachNormal;
+          if (allowAttach && Number.isFinite(anchorDist)) {
+            state.grappleActive = true;
+            state.grappleAnchorX = anchorX;
+            state.grappleAnchorY = anchorY;
+            state.grappleAnchorZ = anchorZ;
+            state.grappleAnchorNX = hit.nx;
+            state.grappleAnchorNY = hit.ny;
+            state.grappleAnchorNZ = hit.nz;
+            state.grappleLength = Math.max(0, anchorDist);
+          }
+        }
+      }
+    }
+
+    const shieldCooldown = Math.max(0, currentConfig.shieldCooldown);
+    const safeShieldCooldown = Number.isFinite(state.shieldCooldown) ? state.shieldCooldown : 0;
+    state.shieldCooldown = Math.max(0, safeShieldCooldown);
+    if (state.shieldCooldown > 0) {
+      state.shieldCooldown = Math.max(0, state.shieldCooldown - dt);
+    }
+
+    const shieldDuration = Math.max(0, currentConfig.shieldDuration);
+    if (!Number.isFinite(state.shieldTimer) || state.shieldTimer < 0) {
+      state.shieldTimer = 0;
+    }
+    const shieldPressed = Boolean(input.shield) && !state.shieldInput;
+    const shieldReleased = !input.shield && state.shieldInput;
+    state.shieldInput = Boolean(input.shield);
+
+    const releaseShield = () => {
+      state.shieldActive = false;
+      state.shieldTimer = 0;
+      state.shieldCooldown = shieldCooldown;
+    };
+
+    if (shieldPressed && state.shieldCooldown <= 0 && shieldDuration > 0) {
+      state.shieldActive = true;
+      state.shieldTimer = shieldDuration;
+    }
+
+    if (state.shieldActive) {
+      if (shieldReleased) {
+        releaseShield();
+      } else {
+        state.shieldTimer = Math.max(0, state.shieldTimer - dt);
+        if (state.shieldTimer <= 0) {
+          releaseShield();
+        }
+      }
+    }
+
+    const shockwaveCooldown = Math.max(0, currentConfig.shockwaveCooldown);
+    const rawShockwaveCooldown = Number.isFinite(state.shockwaveCooldown) ? state.shockwaveCooldown : 0;
+    if (rawShockwaveCooldown <= 0) {
+      state.shockwaveCooldown = 0;
+    } else {
+      state.shockwaveCooldown = Math.max(0, rawShockwaveCooldown - dt);
+    }
+    const shockwavePressed = Boolean(input.shockwave) && !state.shockwaveInput;
+    state.shockwaveInput = Boolean(input.shockwave);
+    const shockwaveRadius = Math.max(0, currentConfig.shockwaveRadius);
+    const shockwaveImpulse = Math.max(0, currentConfig.shockwaveImpulse);
+    const shockwaveDamage = Math.max(0, currentConfig.shockwaveDamage);
+    const shockwaveReady = shockwaveRadius > 0 && (shockwaveImpulse > 0 || shockwaveDamage > 0);
+    if (shockwavePressed && state.shockwaveCooldown <= 0 && shockwaveReady) {
+      state.shockwaveCooldown = shockwaveCooldown;
+    }
+
+    if (state.grappleActive) {
+      if (grappleReleased) {
+        releaseGrapple(true);
+      } else {
+        const eyeHeight = resolveEyeHeight(currentConfig);
+        const origin = { x: state.x, y: state.y, z: state.z + eyeHeight };
+        const dx = state.grappleAnchorX - origin.x;
+        const dy = state.grappleAnchorY - origin.y;
+        const dz = state.grappleAnchorZ - origin.z;
+        const dist = Math.hypot(dx, dy, dz);
+        if (!Number.isFinite(dist) || dist <= 0) {
+          releaseGrapple(true);
+        } else {
+          const maxDistance = Math.max(0, currentConfig.grappleMaxDistance);
+          const ropeSlack = Math.max(0, currentConfig.grappleRopeSlack);
+          if (maxDistance > 0 && dist > maxDistance + ropeSlack) {
+            releaseGrapple(true);
+          } else {
+            const dir = { x: dx / dist, y: dy / dist, z: dz / dist };
+            const losHit = raycastWorld(origin, dir, currentConfig);
+            if (!losHit.hit || losHit.t + 1e-4 < dist) {
+              releaseGrapple(true);
+            } else if (dist > state.grappleLength + ropeSlack) {
+              const stretch = dist - state.grappleLength - ropeSlack;
+              const pullStrength = Math.max(0, currentConfig.grapplePullStrength);
+              const damping = Math.max(0, currentConfig.grappleDamping);
+              const velAlong = state.velX * dir.x + state.velY * dir.y + state.velZ * dir.z;
+              const accel = pullStrength * stretch - damping * velAlong;
+              if (Number.isFinite(accel) && accel > 0) {
+                state.velX += dir.x * accel * dt;
+                state.velY += dir.y * accel * dt;
+                state.velZ += dir.z * accel * dt;
+              }
+            }
+          }
+        }
+      }
+    }
+
     const jumpVelocity = Math.max(0, currentConfig.jumpVelocity);
     if (state.grounded) {
       if (input.jump && jumpVelocity > 0) {
@@ -485,17 +884,31 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
 
     advanceWithCollisions(dt);
 
+    const playerHeight = Number.isFinite(currentConfig.playerHeight) && currentConfig.playerHeight >= 0
+      ? currentConfig.playerHeight
+      : 0;
+    let ceilingZ = Number.POSITIVE_INFINITY;
+    if (Number.isFinite(currentConfig.arenaHalfSize) && currentConfig.arenaHalfSize > 0) {
+      const halfSize = Math.max(0, currentConfig.arenaHalfSize);
+      ceilingZ = Math.max(0, halfSize - playerHeight);
+    }
+
     state.z += state.velZ * dt;
     if (!Number.isFinite(state.z)) {
       state.z = 0;
       state.velZ = 0;
       state.grounded = true;
+    } else if (state.z > ceilingZ) {
+      state.z = ceilingZ;
+      if (state.velZ > 0) {
+        state.velZ = 0;
+      }
     } else if (state.z <= 0) {
       state.z = 0;
       if (state.velZ < 0) {
         state.velZ = 0;
       }
-      state.grounded = true;
+      state.grounded = 1 >= WALKABLE_NORMAL_Z;
     } else {
       state.grounded = false;
     }
@@ -505,12 +918,27 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
     state.x = toNumber(x);
     state.y = toNumber(y);
     const safeZ = toNumber(z);
-    state.z = safeZ > 0 ? safeZ : 0;
+    const playerHeight = Number.isFinite(currentConfig.playerHeight) && currentConfig.playerHeight >= 0
+      ? currentConfig.playerHeight
+      : 0;
+    let ceilingZ = Number.POSITIVE_INFINITY;
+    if (Number.isFinite(currentConfig.arenaHalfSize) && currentConfig.arenaHalfSize > 0) {
+      const halfSize = Math.max(0, currentConfig.arenaHalfSize);
+      ceilingZ = Math.max(0, halfSize - playerHeight);
+    }
+    const clampedZ = Math.min(safeZ > 0 ? safeZ : 0, ceilingZ);
+    state.z = clampedZ;
     state.velX = toNumber(velX);
     state.velY = toNumber(velY);
     state.velZ = toNumber(velZ);
     state.grounded = state.z <= 0;
     state.dashCooldown = Number.isFinite(dashCooldown) && dashCooldown > 0 ? dashCooldown : 0;
+    state.shieldTimer = 0;
+    state.shieldCooldown = 0;
+    state.shieldActive = false;
+    state.shieldInput = false;
+    state.shockwaveCooldown = 0;
+    state.shockwaveInput = false;
   };
 
   const getState = () => ({
@@ -520,11 +948,40 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
     velX: state.velX,
     velY: state.velY,
     velZ: state.velZ,
-    dashCooldown: state.dashCooldown
+    dashCooldown: state.dashCooldown,
+    shieldTimer: state.shieldTimer,
+    shieldCooldown: state.shieldCooldown,
+    shieldActive: state.shieldActive,
+    shockwaveCooldown: state.shockwaveCooldown
   });
 
   const reset = () => {
-    state = { x: 0, y: 0, z: 0, velX: 0, velY: 0, velZ: 0, grounded: true, dashCooldown: 0 };
+    state = {
+      x: 0,
+      y: 0,
+      z: 0,
+      velX: 0,
+      velY: 0,
+      velZ: 0,
+      grounded: true,
+      dashCooldown: 0,
+      grappleCooldown: 0,
+      grappleActive: false,
+      grappleInput: false,
+      grappleAnchorX: 0,
+      grappleAnchorY: 0,
+      grappleAnchorZ: 0,
+      grappleAnchorNX: 0,
+      grappleAnchorNY: 0,
+      grappleAnchorNZ: 0,
+      grappleLength: 0,
+      shieldTimer: 0,
+      shieldCooldown: 0,
+      shieldActive: false,
+      shieldInput: false,
+      shockwaveCooldown: 0,
+      shockwaveInput: false
+    };
   };
 
   setConfig(config);
@@ -569,6 +1026,17 @@ export class ClientPrediction {
 
   getState(): PredictedState {
     return { ...this.state };
+  }
+
+  getAbilityCooldowns() {
+    const next = this.sim.getState();
+    return {
+      dash: next.dashCooldown,
+      shockwave: next.shockwaveCooldown,
+      shieldCooldown: next.shieldCooldown,
+      shieldTimer: next.shieldTimer,
+      shieldActive: next.shieldActive
+    };
   }
 
   setSim(sim: PredictionSim) {

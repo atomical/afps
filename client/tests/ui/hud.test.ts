@@ -12,14 +12,31 @@ describe('hud overlay', () => {
 
     const lock = hud.element.querySelector('.hud-lock');
     const sensitivity = hud.element.querySelector('.hud-sensitivity');
+    const health = hud.element.querySelector('.hud-health');
+    const ammo = hud.element.querySelector('.hud-ammo');
+    const score = hud.element.querySelector('.hud-score');
     const weapon = hud.element.querySelector('.hud-weapon');
     const cooldown = hud.element.querySelector('.hud-weapon-cooldown');
+    const abilities = hud.element.querySelector('.hud-abilities');
+    const dashCooldown = hud.element.querySelector('.hud-ability-dash');
+    const shieldCooldown = hud.element.querySelector('.hud-ability-shield');
+    const shockwaveCooldown = hud.element.querySelector('.hud-ability-shockwave');
     const hitmarker = hud.element.querySelector('.hud-hitmarker');
 
     expect(lock?.textContent).toContain('Click to lock');
     expect(sensitivity?.textContent).toContain('--');
+    expect(health?.textContent).toContain('--');
+    expect(ammo?.textContent).toContain('--');
+    expect(score?.textContent).toContain('--');
     expect(weapon?.textContent).toContain('Weapon 1');
     expect(cooldown?.textContent).toContain('--');
+    expect(abilities).not.toBeNull();
+    expect(dashCooldown?.textContent).toContain('Dash');
+    expect(dashCooldown?.textContent).toContain('--');
+    expect(shieldCooldown?.textContent).toContain('Shield');
+    expect(shieldCooldown?.textContent).toContain('--');
+    expect(shockwaveCooldown?.textContent).toContain('Shockwave');
+    expect(shockwaveCooldown?.textContent).toContain('--');
     expect(hitmarker?.classList.contains('is-active')).toBe(false);
 
     hud.setLockState('locked');
@@ -33,6 +50,14 @@ describe('hud overlay', () => {
     hud.setSensitivity(0.004);
     expect(sensitivity?.textContent).toContain('0.004');
 
+    hud.setVitals({ health: 88, ammo: Infinity });
+    expect(health?.textContent).toContain('88');
+    expect(ammo?.textContent).toContain('INF');
+
+    hud.setScore({ kills: 2, deaths: 1 });
+    expect(score?.textContent).toContain('2');
+    expect(score?.textContent).toContain('1');
+
     hud.setWeapon(1, 'Launcher');
     expect(weapon?.textContent).toContain('Weapon 2');
     expect(weapon?.textContent).toContain('Launcher');
@@ -42,6 +67,14 @@ describe('hud overlay', () => {
 
     hud.setWeaponCooldown(0);
     expect(cooldown?.textContent).toContain('Ready');
+
+    hud.setAbilityCooldowns({ dash: 1.25, shockwave: 0, shieldCooldown: 0.5 });
+    expect(dashCooldown?.textContent).toContain('1.25');
+    expect(shieldCooldown?.textContent).toContain('0.50');
+    expect(shockwaveCooldown?.textContent).toContain('Ready');
+
+    hud.setAbilityCooldowns({ shieldActive: true, shieldTimer: 0.2 });
+    expect(shieldCooldown?.textContent).toContain('Active');
 
     hud.triggerHitmarker(true);
     expect(hitmarker?.classList.contains('is-active')).toBe(true);

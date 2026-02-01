@@ -83,6 +83,13 @@ struct ExplosionHit {
   double distance = 0.0;
 };
 
+struct ShockwaveHit {
+  std::string target_id;
+  Vec3 impulse{};
+  double damage = 0.0;
+  double distance = 0.0;
+};
+
 constexpr double kMaxHealth = 100.0;
 constexpr double kRespawnDelaySeconds = 3.0;
 constexpr double kPlayerHeight = 1.7;
@@ -90,6 +97,12 @@ constexpr double kPlayerEyeHeight = 1.6;
 
 CombatState CreateCombatState();
 bool ApplyDamage(CombatState &target, CombatState *attacker, double damage);
+double ApplyShieldMultiplier(double damage, bool shield_active, double shield_multiplier);
+bool ApplyDamageWithShield(CombatState &target,
+                           CombatState *attacker,
+                           double damage,
+                           bool shield_active,
+                           double shield_multiplier);
 bool UpdateRespawn(CombatState &state, double dt);
 
 ViewAngles SanitizeViewAngles(double yaw, double pitch);
@@ -111,6 +124,14 @@ ProjectileImpact ResolveProjectileImpact(const ProjectileState &projectile,
 std::vector<ExplosionHit> ComputeExplosionDamage(
     const Vec3 &center,
     double radius,
+    double max_damage,
+    const std::unordered_map<std::string, afps::sim::PlayerState> &players,
+    const std::string &ignore_id);
+
+std::vector<ShockwaveHit> ComputeShockwaveHits(
+    const Vec3 &center,
+    double radius,
+    double max_impulse,
     double max_damage,
     const std::unordered_map<std::string, afps::sim::PlayerState> &players,
     const std::string &ignore_id);

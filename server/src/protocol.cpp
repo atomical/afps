@@ -201,6 +201,27 @@ bool ParseInputCmd(const std::string &message, InputCmd &out, std::string &error
   } else {
     out.dash = false;
   }
+  if (payload.contains("grapple")) {
+    if (!ReadBool(payload, "grapple", out.grapple, error)) {
+      return false;
+    }
+  } else {
+    out.grapple = false;
+  }
+  if (payload.contains("shield")) {
+    if (!ReadBool(payload, "shield", out.shield, error)) {
+      return false;
+    }
+  } else {
+    out.shield = false;
+  }
+  if (payload.contains("shockwave")) {
+    if (!ReadBool(payload, "shockwave", out.shockwave, error)) {
+      return false;
+    }
+  } else {
+    out.shockwave = false;
+  }
 
   return true;
 }

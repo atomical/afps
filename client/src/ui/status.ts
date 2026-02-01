@@ -5,6 +5,7 @@ export interface StatusOverlay {
   setState: (state: ConnectionState, detail?: string) => void;
   setDetail: (detail?: string) => void;
   setMetrics: (metrics?: string) => void;
+  setMetricsVisible: (visible: boolean) => void;
   dispose: () => void;
 }
 
@@ -55,11 +56,16 @@ export const createStatusOverlay = (doc: Document, containerId = 'app'): StatusO
     metrics.textContent = text ?? '';
   };
 
+  const setMetricsVisible = (visible: boolean) => {
+    overlay.dataset.metrics = visible ? 'visible' : 'hidden';
+  };
+
   const dispose = () => {
     overlay.remove();
   };
 
   setState('idle');
+  setMetricsVisible(true);
 
-  return { element: overlay, setState, setDetail, setMetrics, dispose };
+  return { element: overlay, setState, setDetail, setMetrics, setMetricsVisible, dispose };
 };

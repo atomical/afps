@@ -35,6 +35,7 @@ const DEFAULTS = {
   tracerLength: 24,
   ambientIntensity: 0.4,
   keyLightIntensity: 0.9,
+  toonBands: 4,
   snapshotRate: 20,
   tickRate: 60
 };
@@ -71,9 +72,27 @@ export const createApp = ({
   const renderer = new three.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(devicePixelRatio);
   renderer.setSize(width, height);
+  renderer.outputColorSpace = three.SRGBColorSpace;
+  renderer.toneMapping = three.NoToneMapping;
+
+  const rampBands = Math.max(2, Math.round(DEFAULTS.toonBands));
+  const rampData = new Uint8Array(rampBands * 4);
+  for (let i = 0; i < rampBands; i += 1) {
+    const shade = Math.round((i / (rampBands - 1)) * 255);
+    const offset = i * 4;
+    rampData[offset] = shade;
+    rampData[offset + 1] = shade;
+    rampData[offset + 2] = shade;
+    rampData[offset + 3] = 255;
+  }
+  const toonRamp = new three.DataTexture(rampData, rampBands, 1);
+  toonRamp.minFilter = three.NearestFilter;
+  toonRamp.magFilter = three.NearestFilter;
+  toonRamp.generateMipmaps = false;
+  toonRamp.needsUpdate = true;
 
   const geometry = new three.BoxGeometry(DEFAULTS.cubeSize, DEFAULTS.cubeSize, DEFAULTS.cubeSize);
-  const material = new three.MeshStandardMaterial({ color: DEFAULTS.cubeColor });
+  const material = new three.MeshToonMaterial({ color: DEFAULTS.cubeColor, gradientMap: toonRamp });
   const cube = new three.Mesh(geometry, material);
   cube.position.set(0, 0.5, 0);
   scene.add(cube);
@@ -90,8 +109,11 @@ export const createApp = ({
     DEFAULTS.projectileSize,
     DEFAULTS.projectileSize
   );
-  const projectileMaterial = new three.MeshStandardMaterial({ color: DEFAULTS.projectileColor });
-  const tracerMaterial = new three.MeshStandardMaterial({ color: DEFAULTS.tracerColor });
+  const projectileMaterial = new three.MeshToonMaterial({
+    color: DEFAULTS.projectileColor,
+    gradientMap: toonRamp
+  });
+  const tracerMaterial = new three.MeshToonMaterial({ color: DEFAULTS.tracerColor, gradientMap: toonRamp });
   const projectiles: ProjectileVfx[] = [];
   const projectileIndex = new Map<number, ProjectileVfx>();
   const tracers: TracerVfx[] = [];
@@ -269,6 +291,7 @@ export const createApp = ({
   };
 
   const getWeaponCooldown = (slot: number) => fireCooldowns.get(clampWeaponSlot(slot)) ?? 0;
+  const getAbilityCooldowns = () => prediction.getAbilityCooldowns();
 
   const spawnProjectileVfx = (payload: {
     origin: { x: number; y: number; z: number };
@@ -413,6 +436,7 @@ export const createApp = ({
     spawnProjectileVfx,
     removeProjectileVfx,
     getWeaponCooldown,
+    getAbilityCooldowns,
     setTickRate,
     setPredictionSim,
     applyLookDelta,

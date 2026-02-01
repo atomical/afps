@@ -6,10 +6,13 @@ describe('settings overlay', () => {
     document.body.innerHTML = '<div id="app"></div>';
     const onChange = vi.fn();
     const onBindingsChange = vi.fn();
+    const onShowMetricsChange = vi.fn();
     const settings = createSettingsOverlay(document, {
       initialSensitivity: 0.003,
       onSensitivityChange: onChange,
-      onBindingsChange
+      onBindingsChange,
+      initialShowMetrics: false,
+      onShowMetricsChange
     });
 
     expect(settings.isVisible()).toBe(false);
@@ -29,6 +32,13 @@ describe('settings overlay', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyI' }));
     expect(button.textContent).toContain('I');
     expect(onBindingsChange).toHaveBeenCalled();
+
+    const metricsToggle = settings.element.querySelector('.settings-toggle input') as HTMLInputElement;
+    expect(metricsToggle.checked).toBe(false);
+    metricsToggle.click();
+    expect(onShowMetricsChange).toHaveBeenCalledWith(true);
+    settings.setMetricsVisible(false);
+    expect(metricsToggle.checked).toBe(false);
 
     document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyZ' }));
 

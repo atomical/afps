@@ -39,6 +39,8 @@ export interface RendererLike {
   setPixelRatio: (ratio: number) => void;
   render: (scene: SceneLike, camera: CameraLike) => void;
   dispose?: () => void;
+  outputColorSpace?: unknown;
+  toneMapping?: unknown;
 }
 
 export interface GeometryLike {
@@ -47,6 +49,13 @@ export interface GeometryLike {
 
 export interface MaterialLike {
   readonly type?: string;
+}
+
+export interface DataTextureLike {
+  minFilter?: unknown;
+  magFilter?: unknown;
+  generateMipmaps?: boolean;
+  needsUpdate?: boolean;
 }
 
 export interface MeshLike extends Object3DLike {
@@ -64,10 +73,15 @@ export interface ThreeLike {
   WebGLRenderer: new (options: { canvas: HTMLCanvasElement; antialias: boolean }) => RendererLike;
   BoxGeometry: new (width: number, height: number, depth: number) => GeometryLike;
   MeshStandardMaterial: new (params: { color: number }) => MaterialLike;
+  MeshToonMaterial: new (params: { color: number; gradientMap?: DataTextureLike }) => MaterialLike;
   Mesh: new (geometry: GeometryLike, material: MaterialLike) => MeshLike;
   Color: new (hex: number) => ColorLike;
   DirectionalLight: new (color: number, intensity: number) => LightLike;
   AmbientLight: new (color: number, intensity: number) => LightLike;
+  DataTexture: new (data: Uint8Array, width: number, height: number) => DataTextureLike;
+  NearestFilter: unknown;
+  SRGBColorSpace: unknown;
+  NoToneMapping: unknown;
 }
 
 export interface AppDimensions {
@@ -103,6 +117,14 @@ export interface NetworkSnapshot {
   clientId?: string;
 }
 
+export interface AbilityCooldowns {
+  dash: number;
+  shockwave: number;
+  shieldCooldown: number;
+  shieldTimer: number;
+  shieldActive: boolean;
+}
+
 export interface App {
   state: AppState;
   renderFrame: (deltaSeconds: number, nowMs?: number) => void;
@@ -122,6 +144,9 @@ export interface App {
     fire: boolean;
     sprint: boolean;
     dash: boolean;
+    grapple: boolean;
+    shield: boolean;
+    shockwave: boolean;
   }) => void;
   spawnProjectileVfx: (payload: {
     origin: { x: number; y: number; z: number };
@@ -131,6 +156,7 @@ export interface App {
   }) => void;
   removeProjectileVfx: (projectileId: number) => void;
   getWeaponCooldown: (slot: number) => number;
+  getAbilityCooldowns: () => AbilityCooldowns;
   setTickRate: (tickRate: number) => void;
   setPredictionSim: (sim: PredictionSim) => void;
   applyLookDelta: (deltaX: number, deltaY: number) => void;

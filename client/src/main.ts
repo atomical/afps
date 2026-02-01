@@ -19,6 +19,7 @@ import { createInputSender } from './net/input_sender';
 import { createPointerLockController } from './input/pointer_lock';
 import { createHudOverlay } from './ui/hud';
 import { createSettingsOverlay } from './ui/settings';
+import { loadMetricsVisibility, saveMetricsVisibility } from './ui/metrics_settings';
 import { loadWasmSimFromUrl } from './sim/wasm';
 import { createWasmPredictionSim } from './sim/wasm_adapter';
 import { runWasmParityCheck } from './sim/parity';
@@ -26,9 +27,12 @@ import { WEAPON_DEFS } from './weapons/config';
 
 const savedSensitivity = loadSensitivity(window.localStorage);
 const lookSensitivity = savedSensitivity ?? getLookSensitivity();
+const savedMetricsVisible = loadMetricsVisibility(window.localStorage);
+let metricsVisible = savedMetricsVisible;
 let currentBindings = loadBindings(window.localStorage);
 const { app, canvas } = startApp({ three: THREE, document, window, lookSensitivity, loadEnvironment: true });
 const status = createStatusOverlay(document);
+status.setMetricsVisible(metricsVisible);
 const hud = createHudOverlay(document);
 const resolveWeaponSlot = (slot: number) => {
   const maxSlot = Math.max(0, WEAPON_DEFS.length - 1);
@@ -43,6 +47,7 @@ let sampler: ReturnType<typeof createInputSampler> | null = null;
 const settings = createSettingsOverlay(document, {
   initialSensitivity: lookSensitivity,
   initialBindings: currentBindings,
+  initialShowMetrics: metricsVisible,
   onSensitivityChange: (value) => {
     app.setLookSensitivity(value);
     hud.setSensitivity(value);
@@ -52,6 +57,11 @@ const settings = createSettingsOverlay(document, {
     currentBindings = bindings;
     saveBindings(bindings, window.localStorage);
     sampler?.setBindings(bindings);
+  },
+  onShowMetricsChange: (visible) => {
+    metricsVisible = visible;
+    status.setMetricsVisible(visible);
+    saveMetricsVisibility(visible, window.localStorage);
   }
 });
 const pointerLock = createPointerLockController({
@@ -105,8 +115,10 @@ if (wasmSimUrl) {
 }
 
 hud.setSensitivity(lookSensitivity);
+hud.setVitals({ ammo: Infinity });
 hud.setWeapon(currentWeaponSlot, resolveWeaponLabel(currentWeaponSlot));
 hud.setWeaponCooldown(app.getWeaponCooldown(currentWeaponSlot));
+hud.setAbilityCooldowns(app.getAbilityCooldowns());
 if (pointerLock.supported) {
   hud.setLockState(pointerLock.isLocked() ? 'locked' : 'unlocked');
 } else {
@@ -145,6 +157,8 @@ if (!signalingUrl) {
     lastSnapshotAt = now;
     lastPredictionError = app.ingestSnapshot(snapshot, now);
     updateMetrics();
+    hud.setVitals({ health: snapshot.health, ammo: Infinity });
+    hud.setScore({ kills: snapshot.kills, deaths: snapshot.deaths });
   };
 
   const onGameEvent = (event: GameEvent) => {
@@ -200,6 +214,7 @@ if (!signalingUrl) {
       snapshotKeyframeInterval = session.serverHello.snapshotKeyframeInterval ?? null;
       updateMetrics();
       hud.setWeaponCooldown(app.getWeaponCooldown(currentWeaponSlot));
+      hud.setAbilityCooldowns(app.getAbilityCooldowns());
 
         sampler = createInputSampler({ target: window, bindings: currentBindings });
         const sender = createInputSender({
@@ -222,6 +237,7 @@ if (!signalingUrl) {
             }
             hud.setWeaponCooldown(app.getWeaponCooldown(currentWeaponSlot));
             app.recordInput(cmd);
+            hud.setAbilityCooldowns(app.getAbilityCooldowns());
           }
         });
       sender.start();

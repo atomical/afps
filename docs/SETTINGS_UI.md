@@ -10,6 +10,7 @@ The settings overlay provides:
 
 - A slider to change look sensitivity at runtime.
 - A simple keybind editor (single binding per action).
+- A toggle for the net stats overlay.
 - Persistent storage using `localStorage`.
 - Live updates to the input sampler and HUD.
 
@@ -36,12 +37,19 @@ The overlay is toggled with **`O`**. It sits above the canvas and does not block
 
 ### Keybinds
 
-- **Actions:** `forward`, `backward`, `left`, `right`, `jump`, `sprint`, `dash`, `weaponSlot1`, `weaponSlot2`
+- **Actions:** `forward`, `backward`, `left`, `right`, `jump`, `sprint`, `dash`, `grapple`, `shield`, `shockwave`, `weaponSlot1`, `weaponSlot2`
 - **Behavior:**
   - Click a button to start capture.
   - Press a key to assign the binding.
   - `Escape` cancels capture without changes.
 - **Persistence:** stored in `localStorage` under `afps.input.bindings` as JSON.
+
+### Net Stats Toggle
+
+- **Control:** checkbox
+- **Label:** `Show net stats`
+- **Persistence:** saved in `localStorage` under `afps.ui.showMetrics`
+- **Behavior:** hides/shows the connection metrics line in the status overlay.
 
 ---
 
@@ -58,6 +66,9 @@ The overlay is toggled with **`O`**. It sits above the canvas and does not block
   "jump": ["Space"],
   "sprint": ["ShiftLeft", "ShiftRight"],
   "dash": ["KeyE"],
+  "grapple": ["KeyQ"],
+  "shield": ["KeyF"],
+  "shockwave": ["KeyR"],
   "weaponSlot1": ["Digit1"],
   "weaponSlot2": ["Digit2"]
 }
@@ -71,6 +82,12 @@ The overlay is toggled with **`O`**. It sits above the canvas and does not block
 - Storage key: `afps.look.sensitivity`
 - Stored as a string, e.g. `"0.004"`
 - Invalid or missing values fall back to defaults.
+
+### Net Stats Storage
+
+- Storage key: `afps.ui.showMetrics`
+- Stored as `"true"` / `"false"`
+- Missing values default to `true`.
 
 ---
 
@@ -87,6 +104,11 @@ The overlay is toggled with **`O`**. It sits above the canvas and does not block
 - Load on startup using `loadSensitivity()`.
 - Saved whenever the slider changes.
 - `localStorage` value takes priority over `VITE_LOOK_SENSITIVITY`.
+
+### Net Stats Toggle
+
+- Load on startup using `loadMetricsVisibility()`.
+- Save on checkbox change via `saveMetricsVisibility()`.
 
 ---
 
@@ -129,6 +151,8 @@ The overlay is toggled with **`O`**. It sits above the canvas and does not block
 
 - `client/src/input/sensitivity.ts`
   - `loadSensitivity()`, `saveSensitivity()`
+- `client/src/ui/metrics_settings.ts`
+  - `loadMetricsVisibility()`, `saveMetricsVisibility()`
 
 ### Wiring
 
@@ -155,6 +179,8 @@ The overlay is toggled with **`O`**. It sits above the canvas and does not block
 - `client/tests/main.test.ts`
   - Settings callbacks wiring
   - Storage load/save integration
+- `client/tests/ui/metrics_settings.test.ts`
+  - Save/load behavior
 
 ---
 
@@ -172,5 +198,5 @@ The overlay is toggled with **`O`**. It sits above the canvas and does not block
 - Secondary keybind slots per action.
 - Conflict detection + warning UI.
 - Mouse button rebinding (e.g., fire/alt fire).
-- Persist HUD toggle state.
+- Expose keybind for toggling net stats without opening settings.
 - Expose per-axis sensitivity or acceleration.

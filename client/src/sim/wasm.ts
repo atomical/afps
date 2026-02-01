@@ -6,6 +6,11 @@ export interface WasmInput {
   sprint: boolean;
   jump: boolean;
   dash: boolean;
+  grapple: boolean;
+  shield: boolean;
+  shockwave: boolean;
+  viewYaw?: number;
+  viewPitch?: number;
 }
 
 export interface WasmSimState {
@@ -16,6 +21,9 @@ export interface WasmSimState {
   velY: number;
   velZ: number;
   dashCooldown: number;
+  shieldCooldown: number;
+  shieldTimer: number;
+  shockwaveCooldown: number;
 }
 
 export interface WasmSimModule {
@@ -38,8 +46,16 @@ export interface WasmSimModule {
     grappleCooldown: number,
     grappleMinAttachNormalY: number,
     grappleRopeSlack: number,
+    shieldDuration: number,
+    shieldCooldown: number,
+    shieldDamageMultiplier: number,
+    shockwaveRadius: number,
+    shockwaveImpulse: number,
+    shockwaveCooldown: number,
+    shockwaveDamage: number,
     arenaHalfSize: number,
     playerRadius: number,
+    playerHeight: number,
     obstacleMinX: number,
     obstacleMaxX: number,
     obstacleMinY: number,
@@ -55,7 +71,20 @@ export interface WasmSimModule {
     velZ: number,
     dashCooldown: number
   ) => void;
-  _sim_step: (handle: number, dt: number, moveX: number, moveY: number, sprint: number, jump: number, dash: number) => void;
+  _sim_step: (
+    handle: number,
+    dt: number,
+    moveX: number,
+    moveY: number,
+    sprint: number,
+    jump: number,
+    dash: number,
+    grapple: number,
+    shield: number,
+    shockwave: number,
+    viewYaw: number,
+    viewPitch: number
+  ) => void;
   _sim_get_x: (handle: number) => number;
   _sim_get_y: (handle: number) => number;
   _sim_get_z: (handle: number) => number;
@@ -63,6 +92,9 @@ export interface WasmSimModule {
   _sim_get_vy: (handle: number) => number;
   _sim_get_vz: (handle: number) => number;
   _sim_get_dash_cooldown: (handle: number) => number;
+  _sim_get_shield_cooldown: (handle: number) => number;
+  _sim_get_shield_timer: (handle: number) => number;
+  _sim_get_shockwave_cooldown: (handle: number) => number;
 }
 
 export interface WasmSimInstance {
@@ -96,8 +128,16 @@ export const createWasmSim = (module: WasmSimModule, config: SimConfig = SIM_CON
       toNumber(next.grappleCooldown),
       toNumber(next.grappleMinAttachNormalY),
       toNumber(next.grappleRopeSlack),
+      toNumber(next.shieldDuration),
+      toNumber(next.shieldCooldown),
+      toNumber(next.shieldDamageMultiplier),
+      toNumber(next.shockwaveRadius),
+      toNumber(next.shockwaveImpulse),
+      toNumber(next.shockwaveCooldown),
+      toNumber(next.shockwaveDamage),
       toNumber(next.arenaHalfSize),
       toNumber(next.playerRadius),
+      toNumber(next.playerHeight),
       toNumber(next.obstacleMinX),
       toNumber(next.obstacleMaxX),
       toNumber(next.obstacleMinY),
@@ -115,7 +155,12 @@ export const createWasmSim = (module: WasmSimModule, config: SimConfig = SIM_CON
       toNumber(input.moveY),
       input.sprint ? 1 : 0,
       input.jump ? 1 : 0,
-      input.dash ? 1 : 0
+      input.dash ? 1 : 0,
+      input.grapple ? 1 : 0,
+      input.shield ? 1 : 0,
+      input.shockwave ? 1 : 0,
+      toNumber(input.viewYaw ?? 0),
+      toNumber(input.viewPitch ?? 0)
     );
   };
 
@@ -126,7 +171,10 @@ export const createWasmSim = (module: WasmSimModule, config: SimConfig = SIM_CON
     velX: module._sim_get_vx(handle),
     velY: module._sim_get_vy(handle),
     velZ: module._sim_get_vz(handle),
-    dashCooldown: module._sim_get_dash_cooldown(handle)
+    dashCooldown: module._sim_get_dash_cooldown(handle),
+    shieldCooldown: module._sim_get_shield_cooldown(handle),
+    shieldTimer: module._sim_get_shield_timer(handle),
+    shockwaveCooldown: module._sim_get_shockwave_cooldown(handle)
   });
 
   const reset = () => {

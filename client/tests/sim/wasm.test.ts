@@ -18,7 +18,10 @@ describe('wasm sim wrapper', () => {
     _sim_get_vx: vi.fn(() => 0.25),
     _sim_get_vy: vi.fn(() => -0.75),
     _sim_get_vz: vi.fn(() => 1.25),
-    _sim_get_dash_cooldown: vi.fn(() => 0.25)
+    _sim_get_dash_cooldown: vi.fn(() => 0.25),
+    _sim_get_shield_cooldown: vi.fn(() => 0.5),
+    _sim_get_shield_timer: vi.fn(() => 1.5),
+    _sim_get_shockwave_cooldown: vi.fn(() => 0.1)
   });
 
   it('creates sim and forwards steps', () => {
@@ -38,8 +41,16 @@ describe('wasm sim wrapper', () => {
       grappleCooldown: 1.25,
       grappleMinAttachNormalY: 0.35,
       grappleRopeSlack: 0.75,
+      shieldDuration: 2,
+      shieldCooldown: 5,
+      shieldDamageMultiplier: 0.4,
+      shockwaveRadius: 6,
+      shockwaveImpulse: 10,
+      shockwaveCooldown: 6,
+      shockwaveDamage: 10,
       arenaHalfSize: 30,
       playerRadius: 0.4,
+      playerHeight: 1.9,
       obstacleMinX: -1,
       obstacleMaxX: 1,
       obstacleMinY: -0.5,
@@ -63,19 +74,42 @@ describe('wasm sim wrapper', () => {
       1.25,
       0.35,
       0.75,
+      2,
+      5,
+      0.4,
+      6,
+      10,
+      6,
+      10,
       30,
       0.4,
+      1.9,
       -1,
       1,
       -0.5,
       0.5
     );
 
-    sim.step({ moveX: 1, moveY: -1, sprint: true, jump: true, dash: true }, 0.016);
-    expect(module._sim_step).toHaveBeenCalledWith(42, 0.016, 1, -1, 1, 1, 1);
+    sim.step(
+      { moveX: 1, moveY: -1, sprint: true, jump: true, dash: true, grapple: true, shield: false, shockwave: false },
+      0.016
+    );
+    expect(module._sim_step).toHaveBeenCalledWith(42, 0.016, 1, -1, 1, 1, 1, 1, 0, 0, 0, 0);
 
-    sim.step({ moveX: Number.NaN, moveY: Number.POSITIVE_INFINITY, sprint: false, jump: false, dash: false }, Number.NaN);
-    expect(module._sim_step).toHaveBeenCalledWith(42, 0, 0, 0, 0, 0, 0);
+    sim.step(
+      {
+        moveX: Number.NaN,
+        moveY: Number.POSITIVE_INFINITY,
+        sprint: false,
+        jump: false,
+        dash: false,
+        grapple: false,
+        shield: false,
+        shockwave: false
+      },
+      Number.NaN
+    );
+    expect(module._sim_step).toHaveBeenCalledWith(42, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
     sim.setState(2, -3, 1, 0.5, -1, 2, 0.2);
     expect(module._sim_set_state).toHaveBeenCalledWith(42, 2, -3, 1, 0.5, -1, 2, 0.2);
@@ -98,7 +132,10 @@ describe('wasm sim wrapper', () => {
       velX: 0.25,
       velY: -0.75,
       velZ: 1.25,
-      dashCooldown: 0.25
+      dashCooldown: 0.25,
+      shieldCooldown: 0.5,
+      shieldTimer: 1.5,
+      shockwaveCooldown: 0.1
     });
 
     sim.reset();
@@ -119,8 +156,16 @@ describe('wasm sim wrapper', () => {
       grappleCooldown: SIM_CONFIG.grappleCooldown,
       grappleMinAttachNormalY: SIM_CONFIG.grappleMinAttachNormalY,
       grappleRopeSlack: SIM_CONFIG.grappleRopeSlack,
+      shieldDuration: SIM_CONFIG.shieldDuration,
+      shieldCooldown: SIM_CONFIG.shieldCooldown,
+      shieldDamageMultiplier: SIM_CONFIG.shieldDamageMultiplier,
+      shockwaveRadius: SIM_CONFIG.shockwaveRadius,
+      shockwaveImpulse: SIM_CONFIG.shockwaveImpulse,
+      shockwaveCooldown: SIM_CONFIG.shockwaveCooldown,
+      shockwaveDamage: SIM_CONFIG.shockwaveDamage,
       arenaHalfSize: SIM_CONFIG.arenaHalfSize,
       playerRadius: SIM_CONFIG.playerRadius,
+      playerHeight: SIM_CONFIG.playerHeight,
       obstacleMinX: SIM_CONFIG.obstacleMinX,
       obstacleMaxX: SIM_CONFIG.obstacleMaxX,
       obstacleMinY: SIM_CONFIG.obstacleMinY,
@@ -142,8 +187,16 @@ describe('wasm sim wrapper', () => {
       SIM_CONFIG.grappleCooldown,
       SIM_CONFIG.grappleMinAttachNormalY,
       SIM_CONFIG.grappleRopeSlack,
+      SIM_CONFIG.shieldDuration,
+      SIM_CONFIG.shieldCooldown,
+      SIM_CONFIG.shieldDamageMultiplier,
+      SIM_CONFIG.shockwaveRadius,
+      SIM_CONFIG.shockwaveImpulse,
+      SIM_CONFIG.shockwaveCooldown,
+      SIM_CONFIG.shockwaveDamage,
       SIM_CONFIG.arenaHalfSize,
       SIM_CONFIG.playerRadius,
+      SIM_CONFIG.playerHeight,
       SIM_CONFIG.obstacleMinX,
       SIM_CONFIG.obstacleMaxX,
       SIM_CONFIG.obstacleMinY,
@@ -177,8 +230,16 @@ describe('wasm sim wrapper', () => {
       SIM_CONFIG.grappleCooldown,
       SIM_CONFIG.grappleMinAttachNormalY,
       SIM_CONFIG.grappleRopeSlack,
+      SIM_CONFIG.shieldDuration,
+      SIM_CONFIG.shieldCooldown,
+      SIM_CONFIG.shieldDamageMultiplier,
+      SIM_CONFIG.shockwaveRadius,
+      SIM_CONFIG.shockwaveImpulse,
+      SIM_CONFIG.shockwaveCooldown,
+      SIM_CONFIG.shockwaveDamage,
       SIM_CONFIG.arenaHalfSize,
       SIM_CONFIG.playerRadius,
+      SIM_CONFIG.playerHeight,
       SIM_CONFIG.obstacleMinX,
       SIM_CONFIG.obstacleMaxX,
       SIM_CONFIG.obstacleMinY,
@@ -205,7 +266,18 @@ describe('wasm sim wrapper', () => {
 
     const sim = await loadWasmSimFromUrl(moduleUrl);
 
-    expect(sim.getState()).toEqual({ x: 0, y: 0, z: 0, velX: 0, velY: 0, velZ: 0, dashCooldown: 0 });
+    expect(sim.getState()).toEqual({
+      x: 0,
+      y: 0,
+      z: 0,
+      velX: 0,
+      velY: 0,
+      velZ: 0,
+      dashCooldown: 0,
+      shieldCooldown: 0,
+      shieldTimer: 0,
+      shockwaveCooldown: 0
+    });
     sim.dispose();
   });
 

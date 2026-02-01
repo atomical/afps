@@ -69,6 +69,8 @@ export class FakeRenderer {
   disposeCalls = 0;
   canvas?: HTMLCanvasElement;
   antialias = false;
+  outputColorSpace?: unknown;
+  toneMapping?: unknown;
 
   constructor(options: { canvas: HTMLCanvasElement; antialias: boolean }) {
     this.canvas = options.canvas;
@@ -106,9 +108,11 @@ export class FakeGeometry {
 
 export class FakeMaterial {
   color: number;
+  gradientMap?: FakeDataTexture;
 
-  constructor(params: { color: number }) {
+  constructor(params: { color: number; gradientMap?: FakeDataTexture }) {
     this.color = params.color;
+    this.gradientMap = params.gradientMap;
   }
 }
 
@@ -134,14 +138,35 @@ export class FakeLight extends FakeObject3D {
   }
 }
 
+export class FakeDataTexture {
+  data: Uint8Array;
+  width: number;
+  height: number;
+  minFilter?: unknown;
+  magFilter?: unknown;
+  generateMipmaps?: boolean;
+  needsUpdate?: boolean;
+
+  constructor(data: Uint8Array, width: number, height: number) {
+    this.data = data;
+    this.width = width;
+    this.height = height;
+  }
+}
+
 export const createFakeThree = () => ({
   Scene: FakeScene,
   PerspectiveCamera: FakeCamera,
   WebGLRenderer: FakeRenderer,
   BoxGeometry: FakeGeometry,
   MeshStandardMaterial: FakeMaterial,
+  MeshToonMaterial: FakeMaterial,
   Mesh: FakeMesh,
   Color: FakeColor,
   DirectionalLight: FakeLight,
-  AmbientLight: FakeLight
+  AmbientLight: FakeLight,
+  DataTexture: FakeDataTexture,
+  NearestFilter: 'NearestFilter',
+  SRGBColorSpace: 'SRGBColorSpace',
+  NoToneMapping: 'NoToneMapping'
 });

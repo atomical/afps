@@ -11,6 +11,13 @@ const appInstance = {
   spawnProjectileVfx: vi.fn(),
   removeProjectileVfx: vi.fn(),
   getWeaponCooldown: vi.fn().mockReturnValue(0),
+  getAbilityCooldowns: vi.fn().mockReturnValue({
+    dash: 0,
+    shockwave: 0,
+    shieldCooldown: 0,
+    shieldTimer: 0,
+    shieldActive: false
+  }),
   setTickRate: vi.fn(),
   setPredictionSim: vi.fn(),
   applyLookDelta: vi.fn(),
@@ -33,14 +40,18 @@ const statusMock = {
   setState: vi.fn(),
   setDetail: vi.fn(),
   setMetrics: vi.fn(),
+  setMetricsVisible: vi.fn(),
   dispose: vi.fn()
 };
 const hudMock = {
   element: document.createElement('div'),
   setLockState: vi.fn(),
   setSensitivity: vi.fn(),
+  setVitals: vi.fn(),
+  setScore: vi.fn(),
   setWeapon: vi.fn(),
   setWeaponCooldown: vi.fn(),
+  setAbilityCooldowns: vi.fn(),
   triggerHitmarker: vi.fn(),
   dispose: vi.fn()
 };
@@ -50,6 +61,7 @@ const settingsMock = {
   setVisible: vi.fn(),
   toggle: vi.fn(),
   setSensitivity: vi.fn(),
+  setMetricsVisible: vi.fn(),
   dispose: vi.fn()
 };
 const defaultBindings = {
@@ -60,6 +72,9 @@ const defaultBindings = {
   jump: ['Space'],
   sprint: ['ShiftLeft'],
   dash: ['KeyE'],
+  grapple: ['KeyQ'],
+  shield: ['KeyF'],
+  shockwave: ['KeyR'],
   weaponSlot1: ['Digit1'],
   weaponSlot2: ['Digit2']
 };
@@ -117,10 +132,12 @@ let settingsOptions:
       onSensitivityChange?: (value: number) => void;
       onBindingsChange?: (bindings: Record<string, string[]>) => void;
       initialBindings?: Record<string, string[]>;
+      onShowMetricsChange?: (visible: boolean) => void;
+      initialShowMetrics?: boolean;
     }
   | undefined;
 vi.mock('../src/ui/settings', () => ({
-  createSettingsOverlay: (_doc: Document, options?: { onSensitivityChange?: (value: number) => void }) => {
+  createSettingsOverlay: (_doc: Document, options?: typeof settingsOptions) => {
     settingsOptions = options;
     return settingsMock;
   }
@@ -148,6 +165,13 @@ const sensitivityMock = {
 
 vi.mock('../src/input/sensitivity', () => sensitivityMock);
 
+const metricsSettingsMock = {
+  loadMetricsVisibility: vi.fn(),
+  saveMetricsVisibility: vi.fn()
+};
+
+vi.mock('../src/ui/metrics_settings', () => metricsSettingsMock);
+
 vi.mock('../src/input/pointer_lock', () => ({
   createPointerLockController: (options: { onChange?: (locked: boolean) => void }) => {
     options?.onChange?.(false);
@@ -171,11 +195,15 @@ describe('main entry', () => {
     statusMock.setState.mockReset();
     statusMock.setDetail.mockReset();
     statusMock.setMetrics.mockReset();
+    statusMock.setMetricsVisible.mockReset();
     statusMock.dispose.mockReset();
     hudMock.setLockState.mockReset();
     hudMock.setSensitivity.mockReset();
+    hudMock.setVitals.mockReset();
+    hudMock.setScore.mockReset();
     hudMock.setWeapon.mockReset();
     hudMock.setWeaponCooldown.mockReset();
+    hudMock.setAbilityCooldowns.mockReset();
     hudMock.triggerHitmarker.mockReset();
     hudMock.dispose.mockReset();
     appInstance.spawnProjectileVfx.mockReset();
@@ -184,6 +212,7 @@ describe('main entry', () => {
     settingsMock.setVisible.mockReset();
     settingsMock.toggle.mockReset();
     settingsMock.setSensitivity.mockReset();
+    settingsMock.setMetricsVisible.mockReset();
     settingsMock.dispose.mockReset();
     settingsOptions = undefined;
     envMock.getLookSensitivity.mockReset();
@@ -218,6 +247,9 @@ describe('main entry', () => {
     sensitivityMock.loadSensitivity.mockReset();
     sensitivityMock.saveSensitivity.mockReset();
     sensitivityMock.loadSensitivity.mockReturnValue(undefined);
+    metricsSettingsMock.loadMetricsVisibility.mockReset();
+    metricsSettingsMock.saveMetricsVisibility.mockReset();
+    metricsSettingsMock.loadMetricsVisibility.mockReturnValue(true);
     wasmLoaderMock.mockReset();
     wasmAdapterMock.mockReset();
     wasmParityMock.mockReset();
@@ -236,12 +268,23 @@ describe('main entry', () => {
     expect(args.window).toBe(window);
     expect(bindingsMock.loadBindings).toHaveBeenCalledWith(window.localStorage);
     expect(sensitivityMock.loadSensitivity).toHaveBeenCalledWith(window.localStorage);
+    expect(metricsSettingsMock.loadMetricsVisibility).toHaveBeenCalledWith(window.localStorage);
     expect(settingsOptions?.initialBindings).toEqual(defaultBindings);
+    expect(settingsOptions?.initialShowMetrics).toBe(true);
     expect(connectMock).not.toHaveBeenCalled();
     expect(statusMock.setState).toHaveBeenCalledWith('disabled', 'Set VITE_SIGNALING_URL');
+    expect(statusMock.setMetricsVisible).toHaveBeenCalledWith(true);
     expect(hudMock.setSensitivity).toHaveBeenCalledWith(undefined);
+    expect(hudMock.setVitals).toHaveBeenCalledWith({ ammo: Infinity });
     expect(hudMock.setWeapon).toHaveBeenCalledWith(0, expect.any(String));
     expect(hudMock.setWeaponCooldown).toHaveBeenCalledWith(0);
+    expect(hudMock.setAbilityCooldowns).toHaveBeenCalledWith({
+      dash: 0,
+      shockwave: 0,
+      shieldCooldown: 0,
+      shieldTimer: 0,
+      shieldActive: false
+    });
     expect(hudMock.setLockState).toHaveBeenCalled();
     expect(createInputSamplerMock).not.toHaveBeenCalled();
   });
@@ -434,6 +477,8 @@ describe('main entry', () => {
     expect(appInstance.setSnapshotRate).toHaveBeenCalledWith(20);
     expect(appInstance.setTickRate).toHaveBeenCalledWith(60);
     expect(appInstance.ingestSnapshot).toHaveBeenCalledWith(snapshot, expect.any(Number));
+    expect(hudMock.setVitals).toHaveBeenCalledWith({ health: 100, ammo: Infinity });
+    expect(hudMock.setScore).toHaveBeenCalledWith({ kills: 0, deaths: 0 });
     expect(hudMock.triggerHitmarker).toHaveBeenCalledWith(true);
     expect(appInstance.spawnProjectileVfx).toHaveBeenCalledWith({
       origin: { x: 1, y: 2, z: 3 },
@@ -481,7 +526,10 @@ describe('main entry', () => {
       jump: false,
       fire: false,
       sprint: false,
-      dash: false
+      dash: false,
+      grapple: false,
+      shield: false,
+      shockwave: false
     };
     senderArgs.onSend?.(cmd);
     expect(appInstance.recordInput).toHaveBeenCalledWith(cmd);
@@ -524,6 +572,18 @@ describe('main entry', () => {
     expect(sensitivityMock.saveSensitivity).toHaveBeenCalledWith(0.005, window.localStorage);
   });
 
+  it('updates metrics visibility from settings overlay', async () => {
+    envMock.getSignalingUrl.mockReturnValue(undefined);
+    envMock.getSignalingAuthToken.mockReturnValue(undefined);
+
+    await import('../src/main');
+
+    expect(settingsOptions?.onShowMetricsChange).toBeTypeOf('function');
+    settingsOptions?.onShowMetricsChange?.(false);
+    expect(statusMock.setMetricsVisible).toHaveBeenCalledWith(false);
+    expect(metricsSettingsMock.saveMetricsVisibility).toHaveBeenCalledWith(false, window.localStorage);
+  });
+
   it('persists bindings updates and refreshes sampler', async () => {
     connectMock.mockResolvedValue({
       connectionId: 'conn',
@@ -542,7 +602,10 @@ describe('main entry', () => {
       right: ['KeyL'],
       jump: ['KeyU'],
       sprint: ['KeyO'],
-      dash: ['KeyP']
+      dash: ['KeyP'],
+      grapple: ['KeyG'],
+      shield: ['KeyH'],
+      shockwave: ['KeyR']
     };
     settingsOptions?.onBindingsChange?.(updated);
 
@@ -568,7 +631,19 @@ describe('main entry', () => {
     const sim = { dispose: vi.fn() };
     const predictionSim = {
       step: vi.fn(),
-      getState: vi.fn(() => ({ x: 0, y: 0, z: 0, velX: 0, velY: 0, velZ: 0, dashCooldown: 0 })),
+      getState: vi.fn(() => ({
+        x: 0,
+        y: 0,
+        z: 0,
+        velX: 0,
+        velY: 0,
+        velZ: 0,
+        dashCooldown: 0,
+        shieldTimer: 0,
+        shieldCooldown: 0,
+        shieldActive: false,
+        shockwaveCooldown: 0
+      })),
       setState: vi.fn(),
       reset: vi.fn(),
       setConfig: vi.fn()
@@ -625,7 +700,19 @@ describe('main entry', () => {
     const sim = { dispose: vi.fn() };
     const predictionSim = {
       step: vi.fn(),
-      getState: vi.fn(() => ({ x: 0, y: 0, z: 0, velX: 0, velY: 0, velZ: 0, dashCooldown: 0 })),
+      getState: vi.fn(() => ({
+        x: 0,
+        y: 0,
+        z: 0,
+        velX: 0,
+        velY: 0,
+        velZ: 0,
+        dashCooldown: 0,
+        shieldTimer: 0,
+        shieldCooldown: 0,
+        shieldActive: false,
+        shockwaveCooldown: 0
+      })),
       setState: vi.fn(),
       reset: vi.fn(),
       setConfig: vi.fn()
@@ -660,7 +747,19 @@ describe('main entry', () => {
     const sim = { dispose: vi.fn() };
     const predictionSim = {
       step: vi.fn(),
-      getState: vi.fn(() => ({ x: 0, y: 0, z: 0, velX: 0, velY: 0, velZ: 0, dashCooldown: 0 })),
+      getState: vi.fn(() => ({
+        x: 0,
+        y: 0,
+        z: 0,
+        velX: 0,
+        velY: 0,
+        velZ: 0,
+        dashCooldown: 0,
+        shieldTimer: 0,
+        shieldCooldown: 0,
+        shieldActive: false,
+        shockwaveCooldown: 0
+      })),
       setState: vi.fn(),
       reset: vi.fn(),
       setConfig: vi.fn()

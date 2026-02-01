@@ -162,6 +162,11 @@ void TickLoop::Step() {
     int weapon_slot = 0;
   };
   std::vector<FireEvent> fire_events;
+  struct ShockwaveEvent {
+    std::string connection_id;
+    afps::combat::Vec3 origin{};
+  };
+  std::vector<ShockwaveEvent> shockwave_events;
 
   for (const auto &connection_id : active_ids) {
     if (combat_states_.find(connection_id) == combat_states_.end()) {
@@ -206,13 +211,36 @@ void TickLoop::Step() {
     auto &state = players_[connection_id];
     auto &combat_state = combat_states_[connection_id];
     if (combat_state.alive) {
-      const auto sim_input = afps::sim::MakeInput(input.move_x, input.move_y, input.sprint, input.jump, input.dash);
+      const auto sim_input = afps::sim::MakeInput(input.move_x, input.move_y, input.sprint, input.jump, input.dash,
+                                                  input.grapple, input.shield, input.shockwave, input.view_yaw,
+                                                  input.view_pitch);
       afps::sim::StepPlayer(state, sim_input, sim_config_, dt);
+      if (state.shockwave_triggered) {
+        shockwave_events.push_back({connection_id,
+                                    {state.x, state.y, state.z + (afps::combat::kPlayerHeight * 0.5)}});
+      }
     } else {
       state.vel_x = 0.0;
       state.vel_y = 0.0;
       state.vel_z = 0.0;
       state.dash_cooldown = 0.0;
+      state.grapple_cooldown = 0.0;
+      state.grapple_active = false;
+      state.grapple_input = false;
+      state.grapple_length = 0.0;
+      state.grapple_anchor_x = 0.0;
+      state.grapple_anchor_y = 0.0;
+      state.grapple_anchor_z = 0.0;
+      state.grapple_anchor_nx = 0.0;
+      state.grapple_anchor_ny = 0.0;
+      state.grapple_anchor_nz = 0.0;
+      state.shield_timer = 0.0;
+      state.shield_cooldown = 0.0;
+      state.shield_active = false;
+      state.shield_input = false;
+      state.shockwave_cooldown = 0.0;
+      state.shockwave_input = false;
+      state.shockwave_triggered = false;
     }
     if (afps::combat::UpdateRespawn(combat_state, dt)) {
       state = MakeSpawnState(connection_id, sim_config_);
@@ -231,6 +259,63 @@ void TickLoop::Step() {
       history.SetMaxSamples(static_cast<size_t>(pose_history_limit_));
     }
     history.Push(server_tick_, players_[connection_id]);
+  }
+
+  if (!shockwave_events.empty()) {
+    std::unordered_map<std::string, afps::sim::PlayerState> alive_players;
+    alive_players.reserve(players_.size());
+    for (const auto &entry : players_) {
+      auto combat_iter = combat_states_.find(entry.first);
+      if (combat_iter != combat_states_.end() && combat_iter->second.alive) {
+        alive_players.emplace(entry.first, entry.second);
+      }
+    }
+    for (const auto &event : shockwave_events) {
+      const auto hits = afps::combat::ComputeShockwaveHits(
+          event.origin, sim_config_.shockwave_radius, sim_config_.shockwave_impulse,
+          sim_config_.shockwave_damage, alive_players, event.connection_id);
+      auto attacker_iter = combat_states_.find(event.connection_id);
+      afps::combat::CombatState *attacker =
+          attacker_iter == combat_states_.end() ? nullptr : &attacker_iter->second;
+      for (const auto &hit : hits) {
+        auto target_state_iter = players_.find(hit.target_id);
+        auto target_combat_iter = combat_states_.find(hit.target_id);
+        if (target_state_iter == players_.end() || target_combat_iter == combat_states_.end()) {
+          continue;
+        }
+        if (!target_combat_iter->second.alive) {
+          continue;
+        }
+        if (std::isfinite(hit.impulse.x)) {
+          target_state_iter->second.vel_x += hit.impulse.x;
+        }
+        if (std::isfinite(hit.impulse.y)) {
+          target_state_iter->second.vel_y += hit.impulse.y;
+        }
+        if (std::isfinite(hit.impulse.z)) {
+          target_state_iter->second.vel_z += hit.impulse.z;
+        }
+        bool killed = false;
+        if (hit.damage > 0.0) {
+          const bool shield_active = target_state_iter->second.shield_active;
+          killed = afps::combat::ApplyDamageWithShield(target_combat_iter->second, attacker, hit.damage,
+                                                       shield_active, sim_config_.shield_damage_multiplier);
+          GameEvent hit_event;
+          hit_event.event = "HitConfirmed";
+          hit_event.target_id = hit.target_id;
+          hit_event.damage = hit.damage;
+          hit_event.killed = killed;
+          store_.SendUnreliable(event.connection_id, BuildGameEvent(hit_event));
+        }
+        if (killed) {
+          target_state_iter->second.vel_x = 0.0;
+          target_state_iter->second.vel_y = 0.0;
+          target_state_iter->second.vel_z = 0.0;
+          target_state_iter->second.dash_cooldown = 0.0;
+          alive_players.erase(hit.target_id);
+        }
+      }
+    }
   }
 
   auto resolve_weapon_slot = [](int slot) -> size_t {
@@ -282,7 +367,13 @@ void TickLoop::Step() {
         auto target_iter = combat_states_.find(result.target_id);
         bool killed = false;
         if (target_iter != combat_states_.end()) {
-          killed = afps::combat::ApplyDamage(target_iter->second, &shooter_iter->second, weapon.damage);
+          bool shield_active = false;
+          auto state_iter = players_.find(result.target_id);
+          if (state_iter != players_.end()) {
+            shield_active = state_iter->second.shield_active;
+          }
+          killed = afps::combat::ApplyDamageWithShield(target_iter->second, &shooter_iter->second, weapon.damage,
+                                                       shield_active, sim_config_.shield_damage_multiplier);
           if (killed) {
             auto &target_state = players_[result.target_id];
             target_state.vel_x = 0.0;
@@ -367,7 +458,7 @@ void TickLoop::Step() {
       const auto impact = afps::combat::ResolveProjectileImpact(
           projectile, delta, sim_config_, alive_players, projectile.owner_id);
       if (impact.hit) {
-        const auto hits = afps::combat::ComputeExplosionDamage(
+      const auto hits = afps::combat::ComputeExplosionDamage(
             impact.position, projectile.explosion_radius, projectile.damage, alive_players, "");
         for (const auto &hit : hits) {
           auto target_iter = combat_states_.find(hit.target_id);
@@ -377,7 +468,13 @@ void TickLoop::Step() {
           auto attacker_iter = combat_states_.find(projectile.owner_id);
           afps::combat::CombatState *attacker =
               attacker_iter == combat_states_.end() ? nullptr : &attacker_iter->second;
-          const bool killed = afps::combat::ApplyDamage(target_iter->second, attacker, hit.damage);
+          bool shield_active = false;
+          auto state_iter = players_.find(hit.target_id);
+          if (state_iter != players_.end()) {
+            shield_active = state_iter->second.shield_active;
+          }
+          const bool killed = afps::combat::ApplyDamageWithShield(target_iter->second, attacker, hit.damage,
+                                                                  shield_active, sim_config_.shield_damage_multiplier);
           GameEvent hit_event;
           hit_event.event = "HitConfirmed";
           hit_event.target_id = hit.target_id;

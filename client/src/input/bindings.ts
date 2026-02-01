@@ -26,6 +26,9 @@ export const normalizeBindings = (value: unknown): InputBindings => {
     jump: sanitizeList(record.jump, DEFAULT_BINDINGS.jump),
     sprint: sanitizeList(record.sprint, DEFAULT_BINDINGS.sprint),
     dash: sanitizeList(record.dash, DEFAULT_BINDINGS.dash),
+    grapple: sanitizeList(record.grapple, DEFAULT_BINDINGS.grapple),
+    shield: sanitizeList(record.shield, DEFAULT_BINDINGS.shield),
+    shockwave: sanitizeList(record.shockwave, DEFAULT_BINDINGS.shockwave),
     weaponSlot1: sanitizeList(record.weaponSlot1, DEFAULT_BINDINGS.weaponSlot1),
     weaponSlot2: sanitizeList(record.weaponSlot2, DEFAULT_BINDINGS.weaponSlot2)
   };

@@ -28,9 +28,11 @@ void sim_set_config(WasmSimState *state, double move_speed, double sprint_multip
                     double friction, double gravity, double jump_velocity, double dash_impulse,
                     double dash_cooldown, double grapple_max_distance, double grapple_pull_strength,
                     double grapple_damping, double grapple_cooldown, double grapple_min_attach_normal_y,
-                    double grapple_rope_slack, double arena_half_size, double player_radius,
-                    double obstacle_min_x, double obstacle_max_x, double obstacle_min_y,
-                    double obstacle_max_y) {
+                    double grapple_rope_slack, double shield_duration, double shield_cooldown,
+                    double shield_damage_multiplier, double shockwave_radius, double shockwave_impulse,
+                    double shockwave_cooldown, double shockwave_damage, double arena_half_size,
+                    double player_radius, double player_height, double obstacle_min_x,
+                    double obstacle_max_x, double obstacle_min_y, double obstacle_max_y) {
   if (!state) {
     return;
   }
@@ -76,11 +78,35 @@ void sim_set_config(WasmSimState *state, double move_speed, double sprint_multip
   if (std::isfinite(grapple_rope_slack) && grapple_rope_slack >= 0.0) {
     state->config.grapple_rope_slack = grapple_rope_slack;
   }
+  if (std::isfinite(shield_duration) && shield_duration >= 0.0) {
+    state->config.shield_duration = shield_duration;
+  }
+  if (std::isfinite(shield_cooldown) && shield_cooldown >= 0.0) {
+    state->config.shield_cooldown = shield_cooldown;
+  }
+  if (std::isfinite(shield_damage_multiplier)) {
+    state->config.shield_damage_multiplier = shield_damage_multiplier;
+  }
+  if (std::isfinite(shockwave_radius) && shockwave_radius >= 0.0) {
+    state->config.shockwave_radius = shockwave_radius;
+  }
+  if (std::isfinite(shockwave_impulse) && shockwave_impulse >= 0.0) {
+    state->config.shockwave_impulse = shockwave_impulse;
+  }
+  if (std::isfinite(shockwave_cooldown) && shockwave_cooldown >= 0.0) {
+    state->config.shockwave_cooldown = shockwave_cooldown;
+  }
+  if (std::isfinite(shockwave_damage) && shockwave_damage >= 0.0) {
+    state->config.shockwave_damage = shockwave_damage;
+  }
   if (std::isfinite(arena_half_size) && arena_half_size >= 0.0) {
     state->config.arena_half_size = arena_half_size;
   }
   if (std::isfinite(player_radius) && player_radius >= 0.0) {
     state->config.player_radius = player_radius;
+  }
+  if (std::isfinite(player_height) && player_height >= 0.0) {
+    state->config.player_height = player_height;
   }
   if (std::isfinite(obstacle_min_x)) {
     state->config.obstacle_min_x = obstacle_min_x;
@@ -110,13 +136,33 @@ void sim_set_state(WasmSimState *state, double x, double y, double z, double vel
   state->player.grounded = state->player.z <= 0.0;
   state->player.dash_cooldown =
       (std::isfinite(dash_cooldown) && dash_cooldown > 0.0) ? dash_cooldown : 0.0;
+  state->player.shield_timer = 0.0;
+  state->player.shield_cooldown = 0.0;
+  state->player.shield_active = false;
+  state->player.shield_input = false;
+  state->player.shockwave_cooldown = 0.0;
+  state->player.shockwave_input = false;
+  state->player.shockwave_triggered = false;
 }
 
-void sim_step(WasmSimState *state, double dt, double move_x, double move_y, int sprint, int jump, int dash) {
+void sim_step(WasmSimState *state,
+              double dt,
+              double move_x,
+              double move_y,
+              int sprint,
+              int jump,
+              int dash,
+              int grapple,
+              int shield,
+              int shockwave,
+              double view_yaw,
+              double view_pitch) {
   if (!state) {
     return;
   }
-  const auto input = afps::sim::MakeInput(move_x, move_y, sprint != 0, jump != 0, dash != 0);
+  const auto input =
+      afps::sim::MakeInput(move_x, move_y, sprint != 0, jump != 0, dash != 0, grapple != 0, shield != 0,
+                           shockwave != 0, view_yaw, view_pitch);
   afps::sim::StepPlayer(state->player, input, state->config, dt);
 }
 
@@ -167,6 +213,27 @@ double sim_get_dash_cooldown(WasmSimState *state) {
     return 0.0;
   }
   return state->player.dash_cooldown;
+}
+
+double sim_get_shield_cooldown(WasmSimState *state) {
+  if (!state) {
+    return 0.0;
+  }
+  return state->player.shield_cooldown;
+}
+
+double sim_get_shield_timer(WasmSimState *state) {
+  if (!state) {
+    return 0.0;
+  }
+  return state->player.shield_timer;
+}
+
+double sim_get_shockwave_cooldown(WasmSimState *state) {
+  if (!state) {
+    return 0.0;
+  }
+  return state->player.shockwave_cooldown;
 }
 
 }  // extern "C"

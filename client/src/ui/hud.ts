@@ -4,8 +4,17 @@ export interface HudOverlay {
   element: HTMLDivElement;
   setLockState: (state: HudLockState) => void;
   setSensitivity: (value?: number) => void;
+  setVitals: (vitals?: { health?: number; ammo?: number }) => void;
+  setScore: (score?: { kills?: number; deaths?: number }) => void;
   setWeapon: (slot?: number, name?: string) => void;
   setWeaponCooldown: (value?: number) => void;
+  setAbilityCooldowns: (cooldowns?: {
+    dash?: number;
+    shockwave?: number;
+    shieldCooldown?: number;
+    shieldTimer?: number;
+    shieldActive?: boolean;
+  }) => void;
   triggerHitmarker: (killed?: boolean) => void;
   dispose: () => void;
 }
@@ -27,6 +36,20 @@ const formatSensitivity = (value?: number) => {
     return '--';
   }
   return value.toFixed(3);
+};
+
+const formatStat = (value?: number, fallback = '--') => {
+  if (!Number.isFinite(value) || value === undefined) {
+    return fallback;
+  }
+  return `${Math.max(0, value)}`;
+};
+
+const formatAmmo = (value?: number) => {
+  if (value === Infinity) {
+    return 'INF';
+  }
+  return formatStat(value);
 };
 
 export const createHudOverlay = (doc: Document, containerId = 'app'): HudOverlay => {
@@ -55,12 +78,32 @@ export const createHudOverlay = (doc: Document, containerId = 'app'): HudOverlay
   const sensitivity = doc.createElement('div');
   sensitivity.className = 'hud-sensitivity';
 
+  const vitals = doc.createElement('div');
+  vitals.className = 'hud-vitals';
+  const health = doc.createElement('div');
+  health.className = 'hud-health';
+  const ammo = doc.createElement('div');
+  ammo.className = 'hud-ammo';
+  vitals.append(health, ammo);
+
+  const score = doc.createElement('div');
+  score.className = 'hud-score';
+
   const weapon = doc.createElement('div');
   weapon.className = 'hud-weapon';
   const weaponCooldown = doc.createElement('div');
   weaponCooldown.className = 'hud-weapon-cooldown';
+  const abilities = doc.createElement('div');
+  abilities.className = 'hud-abilities';
+  const dashCooldown = doc.createElement('div');
+  dashCooldown.className = 'hud-ability hud-ability-dash';
+  const shieldCooldown = doc.createElement('div');
+  shieldCooldown.className = 'hud-ability hud-ability-shield';
+  const shockwaveCooldown = doc.createElement('div');
+  shockwaveCooldown.className = 'hud-ability hud-ability-shockwave';
+  abilities.append(dashCooldown, shieldCooldown, shockwaveCooldown);
 
-  info.append(lock, sensitivity, weapon, weaponCooldown);
+  info.append(lock, sensitivity, vitals, score, weapon, weaponCooldown, abilities);
   overlay.append(crosshair, hitmarker, info);
   host.appendChild(overlay);
 
@@ -71,6 +114,17 @@ export const createHudOverlay = (doc: Document, containerId = 'app'): HudOverlay
 
   const setSensitivity = (value?: number) => {
     sensitivity.textContent = `Sens ${formatSensitivity(value)}`;
+  };
+
+  const setVitals = (vitalsValue?: { health?: number; ammo?: number }) => {
+    health.textContent = `Health: ${formatStat(vitalsValue?.health)}`;
+    ammo.textContent = `Ammo: ${formatAmmo(vitalsValue?.ammo)}`;
+  };
+
+  const setScore = (scoreValue?: { kills?: number; deaths?: number }) => {
+    const kills = formatStat(scoreValue?.kills, '--');
+    const deaths = formatStat(scoreValue?.deaths, '--');
+    score.textContent = `Score: ${kills} / ${deaths}`;
   };
 
   const setWeapon = (slot?: number, name?: string) => {
@@ -89,6 +143,42 @@ export const createHudOverlay = (doc: Document, containerId = 'app'): HudOverlay
       return;
     }
     weaponCooldown.textContent = `Cooldown: ${value.toFixed(2)}s`;
+  };
+
+  const formatCooldown = (value?: number) => {
+    if (!Number.isFinite(value) || value === undefined) {
+      return '--';
+    }
+    if (value <= 0) {
+      return 'Ready';
+    }
+    return `${value.toFixed(2)}s`;
+  };
+
+  const formatShield = (cooldowns?: {
+    shieldCooldown?: number;
+    shieldTimer?: number;
+    shieldActive?: boolean;
+  }) => {
+    if (cooldowns?.shieldActive) {
+      const timer = Number.isFinite(cooldowns.shieldTimer)
+        ? Math.max(0, cooldowns.shieldTimer ?? 0).toFixed(2)
+        : '--';
+      return `Active ${timer}s`;
+    }
+    return formatCooldown(cooldowns?.shieldCooldown);
+  };
+
+  const setAbilityCooldowns = (cooldowns?: {
+    dash?: number;
+    shockwave?: number;
+    shieldCooldown?: number;
+    shieldTimer?: number;
+    shieldActive?: boolean;
+  }) => {
+    dashCooldown.textContent = `Dash: ${formatCooldown(cooldowns?.dash)}`;
+    shieldCooldown.textContent = `Shield: ${formatShield(cooldowns)}`;
+    shockwaveCooldown.textContent = `Shockwave: ${formatCooldown(cooldowns?.shockwave)}`;
   };
 
   let hitmarkerTimeout = 0;
@@ -113,8 +203,22 @@ export const createHudOverlay = (doc: Document, containerId = 'app'): HudOverlay
 
   setLockState('unlocked');
   setSensitivity();
+  setVitals();
+  setScore();
   setWeapon();
   setWeaponCooldown();
+  setAbilityCooldowns();
 
-  return { element: overlay, setLockState, setSensitivity, setWeapon, setWeaponCooldown, triggerHitmarker, dispose };
+  return {
+    element: overlay,
+    setLockState,
+    setSensitivity,
+    setVitals,
+    setScore,
+    setWeapon,
+    setWeaponCooldown,
+    setAbilityCooldowns,
+    triggerHitmarker,
+    dispose
+  };
 };

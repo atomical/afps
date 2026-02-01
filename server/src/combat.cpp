@@ -186,6 +186,13 @@ double ResolveRadius(const afps::sim::SimConfig &config) {
   }
   return 0.5;
 }
+
+double ResolveHeight(const afps::sim::SimConfig &config) {
+  if (std::isfinite(config.player_height) && config.player_height > 0.0) {
+    return config.player_height;
+  }
+  return kPlayerHeight;
+}
 }  // namespace
 
 PoseHistory::PoseHistory(size_t max_samples) : max_samples_(max_samples) {}
@@ -263,6 +270,26 @@ bool ApplyDamage(CombatState &target, CombatState *attacker, double damage) {
   return true;
 }
 
+double ApplyShieldMultiplier(double damage, bool shield_active, double shield_multiplier) {
+  if (!std::isfinite(damage) || damage <= 0.0) {
+    return damage;
+  }
+  if (!shield_active) {
+    return damage;
+  }
+  const double multiplier = std::isfinite(shield_multiplier) ? std::max(0.0, std::min(1.0, shield_multiplier)) : 1.0;
+  return damage * multiplier;
+}
+
+bool ApplyDamageWithShield(CombatState &target,
+                           CombatState *attacker,
+                           double damage,
+                           bool shield_active,
+                           double shield_multiplier) {
+  const double adjusted = ApplyShieldMultiplier(damage, shield_active, shield_multiplier);
+  return ApplyDamage(target, attacker, adjusted);
+}
+
 bool UpdateRespawn(CombatState &state, double dt) {
   if (state.alive) {
     return false;
@@ -329,6 +356,7 @@ HitResult ResolveHitscan(const std::string &shooter_id,
   double world_distance = std::min(RaycastArena(origin, dir, config), RaycastObstacle(origin, dir, config));
 
   const double radius = ResolveRadius(config);
+  const double height = ResolveHeight(config);
   double best_t = std::numeric_limits<double>::infinity();
   std::string best_target;
   for (const auto &entry : histories) {
@@ -341,7 +369,7 @@ HitResult ResolveHitscan(const std::string &shooter_id,
     }
     const Vec3 base{target_state.x, target_state.y, target_state.z};
     double t = 0.0;
-    if (!RaycastCylinder(origin, dir, base, kPlayerHeight, radius, t)) {
+    if (!RaycastCylinder(origin, dir, base, height, radius, t)) {
       continue;
     }
     if (t < 0.0 || t > max_range) {
@@ -384,6 +412,7 @@ ProjectileImpact ResolveProjectileImpact(
 
   const double radius = std::max(0.0, projectile.radius);
   const double player_radius = ResolveRadius(config) + radius;
+  const double height = ResolveHeight(config);
 
   for (const auto &entry : players) {
     if (entry.first == ignore_id) {
@@ -392,7 +421,7 @@ ProjectileImpact ResolveProjectileImpact(
     const auto &state = entry.second;
     const Vec3 base{state.x, state.y, state.z};
     double t = 0.0;
-    if (!SegmentCylinder(origin, delta, base, kPlayerHeight, player_radius, t)) {
+    if (!SegmentCylinder(origin, delta, base, height, player_radius, t)) {
       continue;
     }
     if (t < 0.0 || t > 1.0) {
@@ -482,6 +511,65 @@ std::vector<ExplosionHit> ComputeExplosionDamage(
       continue;
     }
     hits.push_back({entry.first, damage, dist});
+  }
+  return hits;
+}
+
+std::vector<ShockwaveHit> ComputeShockwaveHits(
+    const Vec3 &center,
+    double radius,
+    double max_impulse,
+    double max_damage,
+    const std::unordered_map<std::string, afps::sim::PlayerState> &players,
+    const std::string &ignore_id) {
+  std::vector<ShockwaveHit> hits;
+  if (!std::isfinite(radius) || radius <= 0.0) {
+    return hits;
+  }
+  const double safe_impulse = std::isfinite(max_impulse) ? std::max(0.0, max_impulse) : 0.0;
+  const double safe_damage = std::isfinite(max_damage) ? std::max(0.0, max_damage) : 0.0;
+  if (safe_impulse <= 0.0 && safe_damage <= 0.0) {
+    return hits;
+  }
+  const double radius_sq = radius * radius;
+  for (const auto &entry : players) {
+    if (!ignore_id.empty() && entry.first == ignore_id) {
+      continue;
+    }
+    const auto &state = entry.second;
+    const Vec3 target{state.x, state.y, state.z + (kPlayerHeight * 0.5)};
+    const double dx = target.x - center.x;
+    const double dy = target.y - center.y;
+    const double dz = target.z - center.z;
+    const double dist_sq = dx * dx + dy * dy + dz * dz;
+    if (!std::isfinite(dist_sq) || dist_sq > radius_sq) {
+      continue;
+    }
+    const double dist = std::sqrt(dist_sq);
+    const double falloff = std::max(0.0, 1.0 - (dist / radius));
+    if (falloff <= 0.0) {
+      continue;
+    }
+    const double impulse_mag = safe_impulse * falloff;
+    const double damage = safe_damage * falloff;
+    if (!std::isfinite(impulse_mag) && !std::isfinite(damage)) {
+      continue;
+    }
+    Vec3 dir{0.0, 0.0, 1.0};
+    if (dist > 1e-6 && std::isfinite(dist)) {
+      dir = {dx / dist, dy / dist, dz / dist};
+    }
+    Vec3 impulse{dir.x * impulse_mag, dir.y * impulse_mag, dir.z * impulse_mag};
+    if (!std::isfinite(impulse.x)) {
+      impulse.x = 0.0;
+    }
+    if (!std::isfinite(impulse.y)) {
+      impulse.y = 0.0;
+    }
+    if (!std::isfinite(impulse.z)) {
+      impulse.z = 0.0;
+    }
+    hits.push_back({entry.first, impulse, std::max(0.0, damage), dist});
   }
   return hits;
 }

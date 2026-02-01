@@ -229,7 +229,7 @@ TEST_CASE("ParseInputCmd reads input fields") {
   InputCmd cmd;
   std::string error;
   const std::string payload =
-      R"({"type":"InputCmd","inputSeq":3,"moveX":1,"moveY":-1,"lookDeltaX":2.5,"lookDeltaY":-1.25,"viewYaw":0.75,"viewPitch":-0.5,"weaponSlot":1,"jump":true,"fire":false,"sprint":true,"dash":true})";
+      R"({"type":"InputCmd","inputSeq":3,"moveX":1,"moveY":-1,"lookDeltaX":2.5,"lookDeltaY":-1.25,"viewYaw":0.75,"viewPitch":-0.5,"weaponSlot":1,"jump":true,"fire":false,"sprint":true,"dash":true,"grapple":true,"shield":true,"shockwave":true})";
 
   const bool ok = ParseInputCmd(payload, cmd, error);
 
@@ -247,6 +247,9 @@ TEST_CASE("ParseInputCmd reads input fields") {
   CHECK_FALSE(cmd.fire);
   CHECK(cmd.sprint);
   CHECK(cmd.dash);
+  CHECK(cmd.grapple);
+  CHECK(cmd.shield);
+  CHECK(cmd.shockwave);
 }
 
 TEST_CASE("ParseInputCmd rejects invalid payloads") {

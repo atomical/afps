@@ -30,6 +30,9 @@ describe('input sampler', () => {
     dispatchKey('keydown', 'KeyD');
     dispatchKey('keydown', 'ShiftLeft');
     dispatchKey('keydown', 'KeyE');
+    dispatchKey('keydown', 'KeyQ');
+    dispatchKey('keydown', 'KeyF');
+    dispatchKey('keydown', 'KeyR');
     dispatchKey('keydown', 'Digit2');
 
     let sample = sampler.sample();
@@ -37,12 +40,18 @@ describe('input sampler', () => {
     expect(sample.moveX).toBe(1);
     expect(sample.sprint).toBe(true);
     expect(sample.dash).toBe(true);
+    expect(sample.grapple).toBe(true);
+    expect(sample.shield).toBe(true);
+    expect(sample.shockwave).toBe(true);
     expect(sample.weaponSlot).toBe(1);
 
     dispatchKey('keyup', 'KeyW');
     dispatchKey('keyup', 'KeyD');
     dispatchKey('keyup', 'ShiftLeft');
     dispatchKey('keyup', 'KeyE');
+    dispatchKey('keyup', 'KeyQ');
+    dispatchKey('keyup', 'KeyF');
+    dispatchKey('keyup', 'KeyR');
     dispatchKey('keyup', 'Digit2');
 
     sample = sampler.sample();
@@ -50,6 +59,9 @@ describe('input sampler', () => {
     expect(sample.moveX).toBe(0);
     expect(sample.sprint).toBe(false);
     expect(sample.dash).toBe(false);
+    expect(sample.grapple).toBe(false);
+    expect(sample.shield).toBe(false);
+    expect(sample.shockwave).toBe(false);
     expect(sample.weaponSlot).toBe(1);
 
     sampler.dispose();
@@ -117,6 +129,9 @@ describe('input sampler', () => {
       jump: ['KeyU'],
       sprint: ['KeyO'],
       dash: ['KeyP'],
+      grapple: ['KeyG'],
+      shield: ['KeyH'],
+      shockwave: ['KeyR'],
       weaponSlot1: ['KeyZ'],
       weaponSlot2: ['KeyX']
     };
@@ -126,6 +141,9 @@ describe('input sampler', () => {
     dispatchKey('keydown', 'KeyL');
     dispatchKey('keydown', 'KeyO');
     dispatchKey('keydown', 'KeyP');
+    dispatchKey('keydown', 'KeyG');
+    dispatchKey('keydown', 'KeyH');
+    dispatchKey('keydown', 'KeyR');
     dispatchKey('keydown', 'KeyX');
 
     const sample = sampler.sample();
@@ -133,6 +151,9 @@ describe('input sampler', () => {
     expect(sample.moveX).toBe(1);
     expect(sample.sprint).toBe(true);
     expect(sample.dash).toBe(true);
+    expect(sample.grapple).toBe(true);
+    expect(sample.shield).toBe(true);
+    expect(sample.shockwave).toBe(true);
     expect(sample.weaponSlot).toBe(1);
 
     sampler.dispose();
@@ -155,6 +176,9 @@ describe('input sampler', () => {
       'Space',
       'KeyZ',
       'KeyE',
+      'KeyQ',
+      'KeyF',
+      'KeyR',
       'Digit1',
       'Digit2'
     ];
@@ -188,6 +212,8 @@ describe('input sampler', () => {
       expect(typeof sample.fire).toBe('boolean');
       expect(typeof sample.sprint).toBe('boolean');
       expect(typeof sample.dash).toBe('boolean');
+      expect(typeof sample.grapple).toBe('boolean');
+      expect(typeof sample.shield).toBe('boolean');
       expect(Number.isInteger(sample.weaponSlot)).toBe(true);
       expect(sample.weaponSlot).toBeGreaterThanOrEqual(0);
     }

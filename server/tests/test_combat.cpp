@@ -13,10 +13,14 @@ using afps::combat::ResolveHitscan;
 using afps::combat::ResolveProjectileImpact;
 using afps::combat::SanitizeViewAngles;
 using afps::combat::ApplyDamage;
+using afps::combat::ApplyDamageWithShield;
+using afps::combat::ApplyShieldMultiplier;
 using afps::combat::CreateCombatState;
 using afps::combat::UpdateRespawn;
 using afps::combat::ViewDirection;
+using afps::combat::ViewAngles;
 using afps::combat::ComputeExplosionDamage;
+using afps::combat::ComputeShockwaveHits;
 using afps::combat::ProjectileState;
 
 TEST_CASE("PoseHistory returns latest sample at or before tick") {
@@ -97,6 +101,56 @@ TEST_CASE("ApplyDamage keeps health within bounds under random damage") {
       CHECK_FALSE(target.alive);
     }
   }
+}
+
+TEST_CASE("ApplyDamageWithShield reduces incoming damage") {
+  auto attacker = CreateCombatState();
+  auto target = CreateCombatState();
+
+  CHECK_FALSE(ApplyDamageWithShield(target, &attacker, 50.0, true, 0.4));
+  CHECK(target.health == doctest::Approx(80.0));
+  CHECK(target.alive);
+  CHECK(attacker.kills == 0);
+
+  CHECK(ApplyDamageWithShield(target, &attacker, 80.0, false, 0.4));
+  CHECK_FALSE(target.alive);
+  CHECK(target.health == doctest::Approx(0.0));
+  CHECK(attacker.kills == 1);
+}
+
+TEST_CASE("ApplyShieldMultiplier clamps to valid range") {
+  CHECK(ApplyShieldMultiplier(10.0, true, 2.0) == doctest::Approx(10.0));
+  CHECK(ApplyShieldMultiplier(10.0, true, -1.0) == doctest::Approx(0.0));
+  CHECK(ApplyShieldMultiplier(10.0, false, 0.2) == doctest::Approx(10.0));
+}
+
+TEST_CASE("ComputeShockwaveHits applies falloff impulse inside radius") {
+  std::unordered_map<std::string, afps::sim::PlayerState> players;
+  afps::sim::PlayerState self{};
+  self.x = 0.0;
+  self.y = 0.0;
+  self.z = 0.0;
+  afps::sim::PlayerState near{};
+  near.x = 3.0;
+  near.y = 0.0;
+  near.z = 0.0;
+  afps::sim::PlayerState far{};
+  far.x = 6.0;
+  far.y = 0.0;
+  far.z = 0.0;
+  players.emplace("self", self);
+  players.emplace("near", near);
+  players.emplace("far", far);
+
+  const afps::combat::Vec3 center{0.0, 0.0, afps::combat::kPlayerHeight * 0.5};
+  const auto hits = ComputeShockwaveHits(center, 5.0, 10.0, 5.0, players, "self");
+  REQUIRE(hits.size() == 1);
+  CHECK(hits[0].target_id == "near");
+  CHECK(hits[0].distance == doctest::Approx(3.0));
+  CHECK(hits[0].impulse.x == doctest::Approx(4.0));
+  CHECK(hits[0].impulse.y == doctest::Approx(0.0));
+  CHECK(hits[0].impulse.z == doctest::Approx(0.0));
+  CHECK(hits[0].damage == doctest::Approx(2.0));
 }
 
 TEST_CASE("UpdateRespawn restores health after timer") {
@@ -204,7 +258,7 @@ TEST_CASE("ResolveHitscan ignores obstacles behind the target") {
   CHECK(hit.target_id == "target");
 }
 
-TEST_CASE("ResolveHitscan misses when target history is too old") {
+TEST_CASE("ResolveHitscan misses when target history does not reach rewind tick") {
   afps::sim::SimConfig config = afps::sim::kDefaultSimConfig;
   config.arena_half_size = 100.0;
 
@@ -218,7 +272,7 @@ TEST_CASE("ResolveHitscan misses when target history is too old") {
   afps::sim::PlayerState target_state;
   target_state.x = 0.0;
   target_state.y = -5.0;
-  target.Push(5, target_state);
+  target.Push(20, target_state);
 
   std::unordered_map<std::string, PoseHistory> histories;
   histories.emplace("shooter", shooter);
