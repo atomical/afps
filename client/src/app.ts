@@ -2,6 +2,7 @@ import type { App, AppDimensions, AppState, NetworkSnapshot, ThreeLike } from '.
 import type { InputCmd } from './net/input_cmd';
 import { ClientPrediction, type PredictionSim } from './net/prediction';
 import { SnapshotBuffer } from './net/snapshot_buffer';
+import { loadRetroUrbanMap } from './environment/retro_urban_map';
 
 export interface CreateAppOptions {
   three: ThreeLike;
@@ -10,6 +11,7 @@ export interface CreateAppOptions {
   height: number;
   devicePixelRatio: number;
   lookSensitivity?: number;
+  loadEnvironment?: boolean;
 }
 
 const DEFAULTS = {
@@ -35,7 +37,8 @@ export const createApp = ({
   width,
   height,
   devicePixelRatio,
-  lookSensitivity: initialLookSensitivity
+  lookSensitivity: initialLookSensitivity,
+  loadEnvironment = false
 }: CreateAppOptions): App => {
   const dimensions: AppDimensions = { width, height, dpr: devicePixelRatio };
 
@@ -61,6 +64,10 @@ export const createApp = ({
   const keyLight = new three.DirectionalLight(0xffffff, DEFAULTS.keyLightIntensity);
   keyLight.position.set(2, 4, 3);
   scene.add(keyLight);
+
+  if (loadEnvironment) {
+    void loadRetroUrbanMap(scene);
+  }
 
   const state: AppState = {
     dimensions,
@@ -126,20 +133,24 @@ export const createApp = ({
     cube.rotation.y = state.cubeRotation * 0.8;
     let targetX: number | null = null;
     let targetY: number | null = null;
+    let targetZ: number | null = null;
     if (prediction.isActive()) {
       const predicted = prediction.getState();
       targetX = predicted.x;
       targetY = predicted.y;
+      targetZ = predicted.z;
     } else {
       const snapshot = snapshotBuffer.sample(nowMs ?? performance.now());
       if (snapshot) {
         targetX = snapshot.posX;
         targetY = snapshot.posY;
+        targetZ = snapshot.posZ;
       }
     }
     if (targetX !== null && targetY !== null) {
-      cube.position.set(targetX, 0.5, targetY);
-      camera.position.set(targetX, DEFAULTS.cameraHeight, targetY);
+      const height = targetZ ?? 0;
+      cube.position.set(targetX, 0.5 + height, targetY);
+      camera.position.set(targetX, DEFAULTS.cameraHeight + height, targetY);
     }
     renderer.render(scene, camera);
   };

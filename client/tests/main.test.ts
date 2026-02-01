@@ -51,7 +51,8 @@ const defaultBindings = {
   left: ['KeyA'],
   right: ['KeyD'],
   jump: ['Space'],
-  sprint: ['ShiftLeft']
+  sprint: ['ShiftLeft'],
+  dash: ['KeyE']
 };
 const pointerLockMock = {
   supported: false,
@@ -271,6 +272,23 @@ describe('main entry', () => {
     expect(connectMock).not.toHaveBeenCalled();
   });
 
+  it('routes logger messages to status detail', async () => {
+    envMock.getSignalingUrl.mockReturnValue('https://example.test');
+    envMock.getSignalingAuthToken.mockReturnValue('token');
+    connectMock.mockImplementation(async (config: { logger?: { info: (message: string) => void; warn: (message: string) => void; error: (message: string) => void } }) => {
+      config.logger?.info('hello');
+      config.logger?.warn('caution');
+      config.logger?.error('boom');
+      return null;
+    });
+
+    await import('../src/main');
+
+    expect(statusMock.setDetail).toHaveBeenCalledWith('hello');
+    expect(statusMock.setDetail).toHaveBeenCalledWith('warn: caution');
+    expect(statusMock.setDetail).toHaveBeenCalledWith('error: boom');
+  });
+
   it('logs errors when network bootstrap fails', async () => {
     envMock.getSignalingUrl.mockReturnValue('https://example.test');
     envMock.getSignalingAuthToken.mockReturnValue('token');
@@ -323,14 +341,25 @@ describe('main entry', () => {
   });
 
   it('sets connecting and connected states when signaling url present', async () => {
-    const snapshot = { type: 'StateSnapshot', serverTick: 1, lastProcessedInputSeq: 1, posX: 1, posY: 2 };
+    const snapshot = {
+      type: 'StateSnapshot',
+      serverTick: 1,
+      lastProcessedInputSeq: 1,
+      posX: 1,
+      posY: 2,
+      posZ: 0,
+      velX: 0,
+      velY: 0,
+      velZ: 0,
+      dashCooldown: 0
+    };
     const sendPing = vi.fn();
     connectMock.mockImplementation(async (config: { onSnapshot?: (snapshot: typeof snapshot) => void; onPong?: (pong: { clientTimeMs: number }) => void }) => {
       config.onSnapshot?.(snapshot);
       config.onPong?.({ clientTimeMs: 5 });
       return {
         connectionId: 'conn',
-        serverHello: { serverTickRate: 60, snapshotRate: 20 },
+        serverHello: { serverTickRate: 60, snapshotRate: 20, snapshotKeyframeInterval: 5 },
         unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: sendPing }
       };
     });
@@ -347,7 +376,7 @@ describe('main entry', () => {
         onSnapshot: expect.any(Function)
       })
     );
-    expect(statusMock.setState).toHaveBeenCalledWith('connected', 'conn conn');
+    expect(statusMock.setState).toHaveBeenCalledWith('connected', 'conn conn (kf 5)');
     expect(appInstance.setSnapshotRate).toHaveBeenCalledWith(20);
     expect(appInstance.setTickRate).toHaveBeenCalledWith(60);
     expect(appInstance.ingestSnapshot).toHaveBeenCalledWith(snapshot, expect.any(Number));
@@ -360,15 +389,41 @@ describe('main entry', () => {
     );
     const senderArgs = createInputSenderMock.mock.calls[0]?.[0] as { onSend?: (cmd: unknown) => void };
     expect(senderArgs?.onSend).toEqual(expect.any(Function));
-    const cmd = { type: 'InputCmd', inputSeq: 1, moveX: 0, moveY: 0, lookDeltaX: 0, lookDeltaY: 0, jump: false, fire: false, sprint: false };
+    const cmd = {
+      type: 'InputCmd',
+      inputSeq: 1,
+      moveX: 0,
+      moveY: 0,
+      lookDeltaX: 0,
+      lookDeltaY: 0,
+      jump: false,
+      fire: false,
+      sprint: false,
+      dash: false
+    };
     senderArgs.onSend?.(cmd);
     expect(appInstance.recordInput).toHaveBeenCalledWith(cmd);
     expect(appInstance.applyLookDelta).toHaveBeenCalledWith(0, 0);
     expect(inputSenderInstance.start).toHaveBeenCalled();
+    expect(statusMock.setMetrics).toHaveBeenCalledWith(expect.stringContaining('kf 5'));
 
     window.dispatchEvent(new Event('beforeunload'));
     expect(inputSenderInstance.stop).toHaveBeenCalled();
     expect(samplerInstance.dispose).toHaveBeenCalled();
+  });
+
+  it('shows keyframe interval in metrics before snapshots arrive', async () => {
+    connectMock.mockResolvedValue({
+      connectionId: 'conn',
+      serverHello: { serverTickRate: 60, snapshotRate: 20, snapshotKeyframeInterval: 7 },
+      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: vi.fn() }
+    });
+    envMock.getSignalingUrl.mockReturnValue('https://example.test');
+    envMock.getSignalingAuthToken.mockReturnValue('token');
+
+    await import('../src/main');
+
+    expect(statusMock.setMetrics).toHaveBeenCalledWith(expect.stringContaining('kf 7'));
   });
 
   it('updates sensitivity from settings overlay', async () => {
@@ -401,7 +456,8 @@ describe('main entry', () => {
       left: ['KeyJ'],
       right: ['KeyL'],
       jump: ['KeyU'],
-      sprint: ['KeyO']
+      sprint: ['KeyO'],
+      dash: ['KeyP']
     };
     settingsOptions?.onBindingsChange?.(updated);
 
@@ -425,10 +481,27 @@ describe('main entry', () => {
     envMock.getWasmSimUrl.mockReturnValue('/wasm/afps_sim.js');
 
     const sim = { dispose: vi.fn() };
-    const predictionSim = { step: vi.fn(), getState: vi.fn(), setState: vi.fn(), reset: vi.fn(), setConfig: vi.fn() };
+    const predictionSim = {
+      step: vi.fn(),
+      getState: vi.fn(() => ({ x: 0, y: 0, z: 0, velX: 0, velY: 0, velZ: 0, dashCooldown: 0 })),
+      setState: vi.fn(),
+      reset: vi.fn(),
+      setConfig: vi.fn()
+    };
     wasmLoaderMock.mockResolvedValue(sim);
     wasmAdapterMock.mockReturnValue(predictionSim);
-    wasmParityMock.mockReturnValue({ ok: true, deltaX: 0, deltaY: 0, js: { x: 0, y: 0 }, wasm: { x: 0, y: 0 } });
+    wasmParityMock.mockReturnValue({
+      ok: true,
+      deltaX: 0,
+      deltaY: 0,
+      deltaZ: 0,
+      deltaVx: 0,
+      deltaVy: 0,
+      deltaVz: 0,
+      deltaDashCooldown: 0,
+      js: { x: 0, y: 0, z: 0, velX: 0, velY: 0, velZ: 0, dashCooldown: 0 },
+      wasm: { x: 0, y: 0, z: 0, velX: 0, velY: 0, velZ: 0, dashCooldown: 0 }
+    });
 
     await import('../src/main');
     await Promise.resolve();
@@ -465,10 +538,27 @@ describe('main entry', () => {
     envMock.getWasmSimParity.mockReturnValue(true);
 
     const sim = { dispose: vi.fn() };
-    const predictionSim = { step: vi.fn(), getState: vi.fn(), setState: vi.fn(), reset: vi.fn(), setConfig: vi.fn() };
+    const predictionSim = {
+      step: vi.fn(),
+      getState: vi.fn(() => ({ x: 0, y: 0, z: 0, velX: 0, velY: 0, velZ: 0, dashCooldown: 0 })),
+      setState: vi.fn(),
+      reset: vi.fn(),
+      setConfig: vi.fn()
+    };
     wasmLoaderMock.mockResolvedValue(sim);
     wasmAdapterMock.mockReturnValue(predictionSim);
-    wasmParityMock.mockReturnValue({ ok: true, deltaX: 0, deltaY: 0, js: { x: 0, y: 0 }, wasm: { x: 0, y: 0 } });
+    wasmParityMock.mockReturnValue({
+      ok: true,
+      deltaX: 0,
+      deltaY: 0,
+      deltaZ: 0,
+      deltaVx: 0,
+      deltaVy: 0,
+      deltaVz: 0,
+      deltaDashCooldown: 0,
+      js: { x: 0, y: 0, z: 0, velX: 0, velY: 0, velZ: 0, dashCooldown: 0 },
+      wasm: { x: 0, y: 0, z: 0, velX: 0, velY: 0, velZ: 0, dashCooldown: 0 }
+    });
 
     await import('../src/main');
     await Promise.resolve();
@@ -483,10 +573,27 @@ describe('main entry', () => {
     envMock.getWasmSimParity.mockReturnValue(true);
 
     const sim = { dispose: vi.fn() };
-    const predictionSim = { step: vi.fn(), getState: vi.fn(), setState: vi.fn(), reset: vi.fn(), setConfig: vi.fn() };
+    const predictionSim = {
+      step: vi.fn(),
+      getState: vi.fn(() => ({ x: 0, y: 0, z: 0, velX: 0, velY: 0, velZ: 0, dashCooldown: 0 })),
+      setState: vi.fn(),
+      reset: vi.fn(),
+      setConfig: vi.fn()
+    };
     wasmLoaderMock.mockResolvedValue(sim);
     wasmAdapterMock.mockReturnValue(predictionSim);
-    wasmParityMock.mockReturnValue({ ok: false, deltaX: 0.1, deltaY: 0.2, js: { x: 0, y: 0 }, wasm: { x: 1, y: 1 } });
+    wasmParityMock.mockReturnValue({
+      ok: false,
+      deltaX: 0.1,
+      deltaY: 0.2,
+      deltaZ: 0.3,
+      deltaVx: 0.05,
+      deltaVy: 0.15,
+      deltaVz: 0.25,
+      deltaDashCooldown: 0.05,
+      js: { x: 0, y: 0, z: 0, velX: 0, velY: 0, velZ: 0, dashCooldown: 0 },
+      wasm: { x: 1, y: 1, z: 1, velX: 0.1, velY: 0.2, velZ: 0.3, dashCooldown: 0.1 }
+    });
 
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     await import('../src/main');

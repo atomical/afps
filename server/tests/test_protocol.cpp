@@ -8,13 +8,13 @@ TEST_CASE("ParseClientHello reads required fields") {
   ClientHello hello;
   std::string error;
   const std::string payload =
-      R"({"type":"ClientHello","protocolVersion":1,"sessionToken":"sess","connectionId":"conn","build":"dev"})";
+      R"({"type":"ClientHello","protocolVersion":2,"sessionToken":"sess","connectionId":"conn","build":"dev"})";
 
   const bool ok = ParseClientHello(payload, hello, error);
 
   CHECK(ok);
   CHECK(error.empty());
-  CHECK(hello.protocol_version == 1);
+  CHECK(hello.protocol_version == 2);
   CHECK(hello.session_token == "sess");
   CHECK(hello.connection_id == "conn");
   CHECK(hello.build == "dev");
@@ -38,11 +38,12 @@ TEST_CASE("ParseClientHello rejects invalid payloads") {
 
 TEST_CASE("BuildServerHello emits expected fields") {
   ServerHello hello;
-  hello.protocol_version = 1;
+  hello.protocol_version = 2;
   hello.connection_id = "conn";
   hello.client_id = "client";
   hello.server_tick_rate = 60;
   hello.snapshot_rate = 20;
+  hello.snapshot_keyframe_interval = 5;
   hello.motd = "hi";
   hello.connection_nonce = "nonce";
 
@@ -50,11 +51,12 @@ TEST_CASE("BuildServerHello emits expected fields") {
   const auto json = nlohmann::json::parse(payload);
 
   CHECK(json.at("type") == "ServerHello");
-  CHECK(json.at("protocolVersion") == 1);
+  CHECK(json.at("protocolVersion") == 2);
   CHECK(json.at("connectionId") == "conn");
   CHECK(json.at("clientId") == "client");
   CHECK(json.at("serverTickRate") == 60);
   CHECK(json.at("snapshotRate") == 20);
+  CHECK(json.at("snapshotKeyframeInterval") == 5);
   CHECK(json.at("motd") == "hi");
   CHECK(json.at("connectionNonce") == "nonce");
 }
@@ -98,6 +100,11 @@ TEST_CASE("BuildStateSnapshot emits expected fields") {
   snapshot.client_id = "client-1";
   snapshot.pos_x = 1.5;
   snapshot.pos_y = -2.0;
+  snapshot.pos_z = 3.25;
+  snapshot.vel_x = 0.75;
+  snapshot.vel_y = -1.25;
+  snapshot.vel_z = 0.5;
+  snapshot.dash_cooldown = 0.4;
 
   const auto payload = BuildStateSnapshot(snapshot);
   const auto json = nlohmann::json::parse(payload);
@@ -108,13 +115,47 @@ TEST_CASE("BuildStateSnapshot emits expected fields") {
   CHECK(json.at("clientId") == "client-1");
   CHECK(json.at("posX") == doctest::Approx(1.5));
   CHECK(json.at("posY") == doctest::Approx(-2.0));
+  CHECK(json.at("posZ") == doctest::Approx(3.25));
+  CHECK(json.at("velX") == doctest::Approx(0.75));
+  CHECK(json.at("velY") == doctest::Approx(-1.25));
+  CHECK(json.at("velZ") == doctest::Approx(0.5));
+  CHECK(json.at("dashCooldown") == doctest::Approx(0.4));
+}
+
+TEST_CASE("BuildStateSnapshotDelta emits expected fields") {
+  StateSnapshotDelta delta;
+  delta.server_tick = 45;
+  delta.base_tick = 40;
+  delta.last_processed_input_seq = 9;
+  delta.client_id = "client-1";
+  delta.mask = kSnapshotMaskPosX | kSnapshotMaskVelY | kSnapshotMaskDashCooldown;
+  delta.pos_x = 1.75;
+  delta.vel_y = -0.5;
+  delta.dash_cooldown = 0.25;
+
+  const auto payload = BuildStateSnapshotDelta(delta);
+  const auto json = nlohmann::json::parse(payload);
+
+  CHECK(json.at("type") == "StateSnapshotDelta");
+  CHECK(json.at("serverTick") == 45);
+  CHECK(json.at("baseTick") == 40);
+  CHECK(json.at("lastProcessedInputSeq") == 9);
+  CHECK(json.at("mask") == delta.mask);
+  CHECK(json.at("clientId") == "client-1");
+  CHECK(json.at("posX") == doctest::Approx(1.75));
+  CHECK(json.at("velY") == doctest::Approx(-0.5));
+  CHECK(json.at("dashCooldown") == doctest::Approx(0.25));
+  CHECK_FALSE(json.contains("posY"));
+  CHECK_FALSE(json.contains("posZ"));
+  CHECK_FALSE(json.contains("velX"));
+  CHECK_FALSE(json.contains("velZ"));
 }
 
 TEST_CASE("ParseInputCmd reads input fields") {
   InputCmd cmd;
   std::string error;
   const std::string payload =
-      R"({"type":"InputCmd","inputSeq":3,"moveX":1,"moveY":-1,"lookDeltaX":2.5,"lookDeltaY":-1.25,"jump":true,"fire":false,"sprint":true})";
+      R"({"type":"InputCmd","inputSeq":3,"moveX":1,"moveY":-1,"lookDeltaX":2.5,"lookDeltaY":-1.25,"jump":true,"fire":false,"sprint":true,"dash":true})";
 
   const bool ok = ParseInputCmd(payload, cmd, error);
 
@@ -128,6 +169,7 @@ TEST_CASE("ParseInputCmd reads input fields") {
   CHECK(cmd.jump);
   CHECK_FALSE(cmd.fire);
   CHECK(cmd.sprint);
+  CHECK(cmd.dash);
 }
 
 TEST_CASE("ParseInputCmd rejects invalid payloads") {

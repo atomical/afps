@@ -27,6 +27,7 @@ set(AFPS_SERVER_SOURCES
   src/config.cpp
   src/health.cpp
   src/rate_limiter.cpp
+  src/security_headers.cpp
   src/tick.cpp
   src/usage.cpp
 )
@@ -67,6 +68,7 @@ set(AFPS_SERVER_TEST_SOURCES
   tests/test_config.cpp
   tests/test_health.cpp
   tests/test_rate_limiter.cpp
+  tests/test_security_headers.cpp
   tests/test_shared_sim.cpp
   tests/test_tick.cpp
   tests/test_usage.cpp

@@ -16,7 +16,9 @@ TEST_CASE("ParseArgs parses required flags") {
       "--auth-token",
       "secret",
       "--ice",
-      "stun:stun.example.com:3478"};
+      "stun:stun.example.com:3478",
+      "--snapshot-keyframe-interval",
+      "3"};
   const int argc = static_cast<int>(sizeof(argv) / sizeof(argv[0]));
 
   const auto result = ParseArgs(argc, argv);
@@ -29,6 +31,7 @@ TEST_CASE("ParseArgs parses required flags") {
   CHECK(result.config.auth_token == "secret");
   CHECK(result.config.ice_servers.size() == 1);
   CHECK(result.config.ice_servers[0] == "stun:stun.example.com:3478");
+  CHECK(result.config.snapshot_keyframe_interval == 3);
 }
 
 TEST_CASE("ParseArgs reports missing values") {

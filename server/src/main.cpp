@@ -2,6 +2,7 @@
 #include "config.h"
 #include "health.h"
 #include "rate_limiter.h"
+#include "security_headers.h"
 #include "tick.h"
 #include "usage.h"
 
@@ -75,12 +76,15 @@ int main(int argc, char **argv) {
 
   SignalingConfig signaling_config;
   signaling_config.ice_servers = parse.config.ice_servers;
+  signaling_config.snapshot_keyframe_interval = parse.config.snapshot_keyframe_interval;
   SignalingStore signaling_store(signaling_config);
-  TickLoop tick_loop(signaling_store, kServerTickRate);
+  TickLoop tick_loop(signaling_store, kServerTickRate,
+                     parse.config.snapshot_keyframe_interval);
   tick_loop.Start();
 #endif
 
   httplib::SSLServer server(parse.config.cert_path.c_str(), parse.config.key_path.c_str());
+  server.set_default_headers(BuildSecurityHeaders());
 
   server.set_pre_routing_handler([&](const httplib::Request &req, httplib::Response &res) {
     const std::string key = req.remote_addr.empty() ? "unknown" : req.remote_addr;

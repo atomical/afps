@@ -1,4 +1,16 @@
 {
   "moveSpeed": 5.0,
-  "sprintMultiplier": 1.5
+  "sprintMultiplier": 1.5,
+  "accel": 50.0,
+  "friction": 8.0,
+  "gravity": 30.0,
+  "jumpVelocity": 7.5,
+  "dashImpulse": 12.0,
+  "dashCooldown": 0.5,
+  "arenaHalfSize": 50.0,
+  "playerRadius": 0.5,
+  "obstacleMinX": 0.0,
+  "obstacleMaxX": 0.0,
+  "obstacleMinY": 0.0,
+  "obstacleMaxY": 0.0
 }

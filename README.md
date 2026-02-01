@@ -46,5 +46,7 @@ cmake --build build
 cd certs
 openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=localhost"
 cd ..
-./build/afps_server --cert certs/cert.pem --key certs/key.pem --auth-token devtoken --host 0.0.0.0 --port 8443
+./build/afps_server --cert certs/cert.pem --key certs/key.pem --auth-token devtoken --host 0.0.0.0 --port 8443 --snapshot-keyframe-interval 5
 ```
+
+`--snapshot-keyframe-interval` controls how often full `StateSnapshot` keyframes are sent (0 = always full).

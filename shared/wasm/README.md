@@ -21,10 +21,15 @@ The generated JS module must export the following functions:
 - `_sim_create`
 - `_sim_destroy`
 - `_sim_reset`
-- `_sim_set_config`
-- `_sim_set_state`
-- `_sim_step`
+- `_sim_set_config` (handle, moveSpeed, sprintMultiplier, accel, friction, gravity, jumpVelocity, dashImpulse, dashCooldown, arenaHalfSize, playerRadius, obstacleMinX, obstacleMaxX, obstacleMinY, obstacleMaxY)
+- `_sim_set_state` (handle, x, y, z, velX, velY, velZ, dashCooldown)
+- `_sim_step` (handle, dt, moveX, moveY, sprint, jump, dash)
 - `_sim_get_x`
 - `_sim_get_y`
+- `_sim_get_z`
+- `_sim_get_vx`
+- `_sim_get_vy`
+- `_sim_get_vz`
+- `_sim_get_dash_cooldown`
 
 These are consumed by the client wrapper in `client/src/sim/wasm.ts`.

@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include "protocol.h"
+
 struct ServerConfig {
   std::string host = "0.0.0.0";
   int port = 8443;
@@ -10,6 +12,7 @@ struct ServerConfig {
   std::string key_path;
   std::string auth_token;
   std::vector<std::string> ice_servers;
+  int snapshot_keyframe_interval = kSnapshotKeyframeInterval;
   bool show_help = false;
 };
 

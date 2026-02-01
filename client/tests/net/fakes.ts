@@ -101,7 +101,7 @@ export class FakeSignalingClient implements SignalingClient {
     return { sessionToken: this.sessionToken, expiresAt: 'later' };
   }
 
-  async createConnection(sessionToken: string) {
+  async createConnection(_sessionToken: string) {
     this.createConnectionCalls += 1;
     return {
       connectionId: this.connectionId,

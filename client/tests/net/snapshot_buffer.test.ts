@@ -2,12 +2,26 @@ import { describe, expect, it } from 'vitest';
 import { SnapshotBuffer } from '../../src/net/snapshot_buffer';
 import type { StateSnapshot } from '../../src/net/protocol';
 
-const makeSnapshot = (serverTick: number, posX: number, posY: number): StateSnapshot => ({
+const makeSnapshot = (
+  serverTick: number,
+  posX: number,
+  posY: number,
+  posZ = 0,
+  velX = 0,
+  velY = 0,
+  velZ = 0,
+  dashCooldown = 0
+): StateSnapshot => ({
   type: 'StateSnapshot',
   serverTick,
   lastProcessedInputSeq: serverTick,
   posX,
-  posY
+  posY,
+  posZ,
+  velX,
+  velY,
+  velZ,
+  dashCooldown
 });
 
 describe('SnapshotBuffer', () => {
@@ -26,12 +40,17 @@ describe('SnapshotBuffer', () => {
 
   it('interpolates between snapshots', () => {
     const buffer = new SnapshotBuffer(10);
-    buffer.push(makeSnapshot(1, 0, 0), 0);
-    buffer.push(makeSnapshot(2, 10, 0), 100);
+    buffer.push(makeSnapshot(1, 0, 0, 0, 0, 2, 1, 0.4), 0);
+    buffer.push(makeSnapshot(2, 10, 0, 1, 10, 0, 3, 0.2), 100);
 
     const sample = buffer.sample(250);
     expect(sample).not.toBeNull();
     expect(sample?.posX).toBeCloseTo(5);
+    expect(sample?.velX).toBeCloseTo(5);
+    expect(sample?.velY).toBeCloseTo(1);
+    expect(sample?.posZ).toBeCloseTo(0.5);
+    expect(sample?.velZ).toBeCloseTo(2);
+    expect(sample?.dashCooldown).toBeCloseTo(0.3);
     expect(sample?.serverTick).toBe(2);
   });
 

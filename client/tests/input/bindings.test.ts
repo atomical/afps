@@ -23,6 +23,7 @@ describe('input bindings', () => {
     expect(normalizeBindings(null)).toEqual(DEFAULT_BINDINGS);
     expect(normalizeBindings({ forward: [] }).forward).toEqual(DEFAULT_BINDINGS.forward);
     expect(normalizeBindings({ forward: ['KeyQ', 'KeyQ'] }).forward).toEqual(['KeyQ']);
+    expect(normalizeBindings({ dash: [] }).dash).toEqual(DEFAULT_BINDINGS.dash);
   });
 
   it('loads defaults when storage empty or invalid', () => {

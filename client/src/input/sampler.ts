@@ -6,6 +6,7 @@ export interface InputSample {
   jump: boolean;
   fire: boolean;
   sprint: boolean;
+  dash: boolean;
 }
 
 export interface InputSampler {
@@ -21,6 +22,7 @@ export interface InputBindings {
   right: string[];
   jump: string[];
   sprint: string[];
+  dash: string[];
 }
 
 export const DEFAULT_BINDINGS: InputBindings = {
@@ -29,7 +31,8 @@ export const DEFAULT_BINDINGS: InputBindings = {
   left: ['KeyA', 'ArrowLeft'],
   right: ['KeyD', 'ArrowRight'],
   jump: ['Space'],
-  sprint: ['ShiftLeft', 'ShiftRight']
+  sprint: ['ShiftLeft', 'ShiftRight'],
+  dash: ['KeyE']
 };
 
 const safeNumber = (value: number) => (Number.isFinite(value) ? value : 0);
@@ -95,6 +98,7 @@ export const createInputSampler = ({ target, bindings = DEFAULT_BINDINGS }: Inpu
     const right = isAnyPressed(pressed, currentBindings.right);
     const jump = isAnyPressed(pressed, currentBindings.jump);
     const sprint = isAnyPressed(pressed, currentBindings.sprint);
+    const dash = isAnyPressed(pressed, currentBindings.dash);
 
     const moveX = Number(right) - Number(left);
     const moveY = Number(forward) - Number(backward);
@@ -106,7 +110,8 @@ export const createInputSampler = ({ target, bindings = DEFAULT_BINDINGS }: Inpu
       lookDeltaY: safeNumber(lookDeltaY),
       jump,
       fire,
-      sprint
+      sprint,
+      dash
     };
 
     lookDeltaX = 0;

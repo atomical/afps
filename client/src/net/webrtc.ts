@@ -2,18 +2,18 @@ import {
   buildClientHello as buildClientHelloMessage,
   parsePong,
   parseServerHello,
-  parseStateSnapshot,
+  parseSnapshotMessage,
   PROTOCOL_VERSION,
   type Pong,
   type StateSnapshot
 } from './protocol';
+import { SnapshotDecoder } from './snapshot_decoder';
 import type { ServerHello } from './protocol';
 import type {
   CandidateResponse,
   DataChannelLike,
   Logger,
   PeerConnectionFactory,
-  RtcPeerConnectionLike,
   SignalingClient,
   TimerLike,
   WebRtcSession
@@ -158,6 +158,7 @@ export const createWebRtcConnector = ({
     const serverHelloPromise = new Promise<ServerHello>((resolve) => {
       resolveServerHello = resolve;
     });
+    const snapshotDecoder = new SnapshotDecoder();
 
     const handleMessage = (message: { data: string | ArrayBuffer }) => {
       if (typeof message.data !== 'string') {
@@ -176,9 +177,12 @@ export const createWebRtcConnector = ({
       if (typeof message.data !== 'string') {
         return;
       }
-      const snapshot = parseStateSnapshot(message.data);
-      if (snapshot) {
-        onSnapshot?.(snapshot);
+      const snapshotMessage = parseSnapshotMessage(message.data);
+      if (snapshotMessage) {
+        const snapshot = snapshotDecoder.apply(snapshotMessage);
+        if (snapshot) {
+          onSnapshot?.(snapshot);
+        }
         return;
       }
       const pong = parsePong(message.data);

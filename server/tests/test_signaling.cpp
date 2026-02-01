@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <thread>
+#include <nlohmann/json.hpp>
 
 TEST_CASE("SignalingStore creates sessions and connections") {
   SignalingConfig config;
@@ -102,6 +103,7 @@ TEST_CASE("SignalingStore queues input commands after handshake") {
   rtc::InitLogger(rtc::LogLevel::None);
 
   SignalingConfig config;
+  config.snapshot_keyframe_interval = 7;
   SignalingStore store(config);
 
   const auto session = store.CreateSession();
@@ -117,6 +119,7 @@ TEST_CASE("SignalingStore queues input commands after handshake") {
   std::condition_variable cv;
   std::optional<rtc::Description> answer;
   bool server_hello = false;
+  std::string server_hello_payload;
   bool input_sent = false;
   bool hello_sent = false;
 
@@ -136,6 +139,7 @@ TEST_CASE("SignalingStore queues input commands after handshake") {
             message.find("ServerHello") != std::string::npos) {
           std::scoped_lock lock(mutex);
           server_hello = true;
+          server_hello_payload = message;
           cv.notify_all();
         }
       }});
@@ -155,7 +159,7 @@ TEST_CASE("SignalingStore queues input commands after handshake") {
   CHECK(answer_error == SignalingError::None);
 
   const std::string hello =
-      std::string("{\"type\":\"ClientHello\",\"protocolVersion\":1,\"sessionToken\":\"") +
+      std::string("{\"type\":\"ClientHello\",\"protocolVersion\":2,\"sessionToken\":\"") +
       session.token + "\",\"connectionId\":\"" + connect.value->connection_id + "\",\"build\":\"test\"}";
   const std::string input =
       R"({"type":"InputCmd","inputSeq":1,"moveX":1,"moveY":0,"lookDeltaX":0,"lookDeltaY":0,"jump":false,"fire":true,"sprint":false})";
@@ -185,6 +189,10 @@ TEST_CASE("SignalingStore queues input commands after handshake") {
   }
 
   CHECK(input_sent);
+  REQUIRE(!server_hello_payload.empty());
+  const auto server_json = nlohmann::json::parse(server_hello_payload);
+  CHECK(server_json.contains("snapshotKeyframeInterval"));
+  CHECK(server_json.at("snapshotKeyframeInterval") == config.snapshot_keyframe_interval);
 
   auto batches = store.DrainAllInputs();
   REQUIRE(batches.size() == 1);
@@ -264,7 +272,7 @@ TEST_CASE("SignalingStore exposes ready connections and sends unreliable message
   CHECK(answer_error == SignalingError::None);
 
   const std::string hello =
-      std::string("{\"type\":\"ClientHello\",\"protocolVersion\":1,\"sessionToken\":\"") +
+      std::string("{\"type\":\"ClientHello\",\"protocolVersion\":2,\"sessionToken\":\"") +
       session.token + "\",\"connectionId\":\"" + connect.value->connection_id + "\",\"build\":\"test\"}";
 
   bool hello_sent = false;
@@ -367,7 +375,7 @@ TEST_CASE("SignalingStore rate limits input commands") {
   CHECK(answer_error == SignalingError::None);
 
   const std::string hello =
-      std::string("{\"type\":\"ClientHello\",\"protocolVersion\":1,\"sessionToken\":\"") +
+      std::string("{\"type\":\"ClientHello\",\"protocolVersion\":2,\"sessionToken\":\"") +
       session.token + "\",\"connectionId\":\"" + connect.value->connection_id + "\",\"build\":\"test\"}";
   const std::string input_one =
       R"({"type":"InputCmd","inputSeq":1,"moveX":0,"moveY":0,"lookDeltaX":0,"lookDeltaY":0,"jump":false,"fire":false,"sprint":false})";
@@ -576,7 +584,7 @@ TEST_CASE("SignalingStore responds to ping with pong") {
   CHECK(answer_error == SignalingError::None);
 
   const std::string hello =
-      std::string("{\"type\":\"ClientHello\",\"protocolVersion\":1,\"sessionToken\":\"") +
+      std::string("{\"type\":\"ClientHello\",\"protocolVersion\":2,\"sessionToken\":\"") +
       session.token + "\",\"connectionId\":\"" + connect.value->connection_id + "\",\"build\":\"test\"}";
   const std::string ping = R"({"type":"Ping","clientTimeMs":5})";
 

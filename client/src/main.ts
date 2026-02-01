@@ -26,7 +26,7 @@ import { runWasmParityCheck } from './sim/parity';
 const savedSensitivity = loadSensitivity(window.localStorage);
 const lookSensitivity = savedSensitivity ?? getLookSensitivity();
 let currentBindings = loadBindings(window.localStorage);
-const { app, canvas } = startApp({ three: THREE, document, window, lookSensitivity });
+const { app, canvas } = startApp({ three: THREE, document, window, lookSensitivity, loadEnvironment: true });
 const status = createStatusOverlay(document);
 const hud = createHudOverlay(document);
 let sampler: ReturnType<typeof createInputSampler> | null = null;
@@ -69,7 +69,11 @@ if (wasmSimUrl) {
       if (wasmParityEnabled) {
         const result = runWasmParityCheck(sim);
         if (!result.ok) {
-          detail = `warn: wasm parity mismatch (dx=${result.deltaX.toFixed(6)}, dy=${result.deltaY.toFixed(6)})`;
+          detail = `warn: wasm parity mismatch (dx=${result.deltaX.toFixed(6)}, dy=${result.deltaY.toFixed(
+            6
+          )}, dz=${result.deltaZ.toFixed(6)}, dvx=${result.deltaVx.toFixed(6)}, dvy=${result.deltaVy.toFixed(
+            6
+          )}, dvz=${result.deltaVz.toFixed(6)})`;
           console.warn('wasm parity mismatch', result);
         }
       }
@@ -112,13 +116,15 @@ if (!signalingUrl) {
   let lastSnapshotAt = 0;
   let lastRttMs = 0;
   let lastPredictionError = 0;
+  let snapshotKeyframeInterval: number | null = null;
   const updateMetrics = () => {
     const now = window.performance.now();
     const snapshotAge = lastSnapshotAt > 0 ? Math.max(0, now - lastSnapshotAt) : null;
     const rttText = lastRttMs > 0 ? `${Math.round(lastRttMs)}ms` : '--';
     const snapshotText = snapshotAge !== null ? `${Math.round(snapshotAge)}ms` : '--';
     const driftText = lastPredictionError > 0 ? lastPredictionError.toFixed(2) : '0.00';
-    status.setMetrics?.(`rtt ${rttText} · snap ${snapshotText} · drift ${driftText}`);
+    const keyframeText = snapshotKeyframeInterval !== null ? `${snapshotKeyframeInterval}` : '--';
+    status.setMetrics?.(`rtt ${rttText} · snap ${snapshotText} · drift ${driftText} · kf ${keyframeText}`);
   };
 
   const onSnapshot = (snapshot: StateSnapshot) => {
@@ -147,9 +153,15 @@ if (!signalingUrl) {
       if (!session) {
         return;
       }
-      status.setState('connected', `conn ${session.connectionId}`);
+      const keyframeDetail =
+        session.serverHello.snapshotKeyframeInterval !== undefined
+          ? ` (kf ${session.serverHello.snapshotKeyframeInterval})`
+          : '';
+      status.setState('connected', `conn ${session.connectionId}${keyframeDetail}`);
       app.setSnapshotRate(session.serverHello.snapshotRate);
       app.setTickRate(session.serverHello.serverTickRate);
+      snapshotKeyframeInterval = session.serverHello.snapshotKeyframeInterval ?? null;
+      updateMetrics();
 
       sampler = createInputSampler({ target: window, bindings: currentBindings });
       const sender = createInputSender({

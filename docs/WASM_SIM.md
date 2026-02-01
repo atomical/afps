@@ -41,11 +41,15 @@ The WASM module exports the following C functions:
 - `sim_create() -> handle`
 - `sim_destroy(handle)`
 - `sim_reset(handle)`
-- `sim_set_config(handle, moveSpeed, sprintMultiplier)`
-- `sim_set_state(handle, x, y)`
-- `sim_step(handle, dt, moveX, moveY, sprint)`
+- `sim_set_config(handle, moveSpeed, sprintMultiplier, accel, friction, gravity, jumpVelocity, dashImpulse, dashCooldown, arenaHalfSize, playerRadius, obstacleMinX, obstacleMaxX, obstacleMinY, obstacleMaxY)`
+- `sim_set_state(handle, x, y, z, velX, velY, velZ, dashCooldown)`
+- `sim_step(handle, dt, moveX, moveY, sprint, jump, dash)`
 - `sim_get_x(handle)`
 - `sim_get_y(handle)`
+- `sim_get_z(handle)`
+- `sim_get_vx(handle)`
+- `sim_get_vy(handle)`
+- `sim_get_vz(handle)`
 
 The TS wrapper assumes these exact symbols and signatures.
 
@@ -98,6 +102,8 @@ cd client
 npm run wasm:check
 ```
 
+This compares the WASM output against the JS prediction sim and the C++ golden values from the shared sim tests.
+
 ---
 
 ## TS Wrapper
@@ -128,9 +134,14 @@ It converts JS inputs to numeric types, manages the native handle, and exposes:
 
 ### Next steps
 
-1. **Add parity tests**: native C++ vs. WASM per tick.
-2. **Add golden scripts**: deterministic input → output hash.
-3. **Expand ABI** as movement features grow (jump, dash, collision).
+1. **Expand ABI** as movement features grow (dash, grapple, combat).
+2. **Add multi-entity support** once server snapshots move beyond single-player state.
+3. **Add perf budgets** for WASM step time and memory.
+
+### Done
+
+- **Parity tests**: native C++ vs. WASM per tick (CLI + optional startup check).
+- **Golden scripts**: deterministic input → output hash.
 
 ### Client toggle
 
@@ -150,8 +161,8 @@ Optional: set `VITE_WASM_SIM_PARITY=1` to run a quick JS-vs-WASM parity check on
 ## Testing Strategy
 
 - Unit tests verify the TS wrapper calls and sanitization.
-- Add a **parity test**: identical input script run in native C++ vs. WASM, with outputs compared per tick.
-- Add a **golden test**: known input script → output hash.
+- **Parity test**: identical input script run in native C++ vs. WASM, with outputs compared per tick.
+- **Golden test**: known input script → output hash.
 
 ---
 

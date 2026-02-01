@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createWebRtcConnector } from '../../src/net/webrtc';
+import { SNAPSHOT_MASK_POS_X, SNAPSHOT_MASK_VEL_Y } from '../../src/net/protocol';
 import { FakeDataChannel, FakePeerConnection, FakePeerConnectionFactory, FakeSignalingClient } from './fakes';
 
 const createTimers = () => ({
@@ -53,7 +54,7 @@ describe('webrtc connector', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 1,
+        protocolVersion: 2,
         connectionId: signaling.connectionId,
         serverTickRate: 60,
         snapshotRate: 20
@@ -107,7 +108,7 @@ describe('webrtc connector', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 1,
+        protocolVersion: 2,
         connectionId: signaling.connectionId,
         serverTickRate: 60,
         snapshotRate: 20
@@ -123,11 +124,109 @@ describe('webrtc connector', () => {
       serverTick: 5,
       lastProcessedInputSeq: 2,
       posX: 1.5,
-      posY: -2
+      posY: -2,
+      posZ: 0.5,
+      velX: 0,
+      velY: 0,
+      velZ: 0,
+      dashCooldown: 0
     };
     unreliable.emitMessage(JSON.stringify(snapshot));
 
+    const delta = {
+      type: 'StateSnapshotDelta',
+      serverTick: 6,
+      baseTick: 5,
+      lastProcessedInputSeq: 3,
+      mask: SNAPSHOT_MASK_POS_X | SNAPSHOT_MASK_VEL_Y,
+      posX: 2.25,
+      velY: -0.5
+    };
+    unreliable.emitMessage(JSON.stringify(delta));
+
+    expect(onSnapshot).toHaveBeenCalledTimes(2);
+    expect(onSnapshot).toHaveBeenNthCalledWith(1, snapshot);
+    expect(onSnapshot).toHaveBeenNthCalledWith(2, {
+      type: 'StateSnapshot',
+      serverTick: 6,
+      lastProcessedInputSeq: 3,
+      posX: 2.25,
+      posY: -2,
+      posZ: 0.5,
+      velX: 0,
+      velY: -0.5,
+      velZ: 0,
+      dashCooldown: 0,
+      clientId: undefined
+    });
+    session.close();
+    vi.useRealTimers();
+  });
+
+  it('ignores delta snapshots until a keyframe arrives', async () => {
+    vi.useFakeTimers();
+    const signaling = new FakeSignalingClient();
+    const rtcFactory = new FakePeerConnectionFactory();
+    const onSnapshot = vi.fn();
+    const connector = createWebRtcConnector({
+      signaling,
+      rtcFactory,
+      logger: silentLogger,
+      pollIntervalMs: 100,
+      connectTimeoutMs: 1000,
+      timers: createTimers(),
+      onSnapshot
+    });
+
+    const connectPromise = connector.connect();
+    const pc = await waitForPeer(rtcFactory);
+
+    const reliable = new FakeDataChannel('afps_reliable');
+    const unreliable = new FakeDataChannel('afps_unreliable');
+    pc.emitDataChannel(reliable);
+    pc.emitDataChannel(unreliable);
+    reliable.open();
+    unreliable.open();
+    await Promise.resolve();
+    reliable.emitMessage(
+      JSON.stringify({
+        type: 'ServerHello',
+        protocolVersion: 2,
+        connectionId: signaling.connectionId,
+        serverTickRate: 60,
+        snapshotRate: 20
+      })
+    );
+
+    const session = await connectPromise;
+
+    const delta = {
+      type: 'StateSnapshotDelta',
+      serverTick: 6,
+      baseTick: 5,
+      lastProcessedInputSeq: 3,
+      mask: SNAPSHOT_MASK_POS_X | SNAPSHOT_MASK_VEL_Y,
+      posX: 2.25,
+      velY: -0.5
+    };
+    unreliable.emitMessage(JSON.stringify(delta));
+    expect(onSnapshot).not.toHaveBeenCalled();
+
+    const snapshot = {
+      type: 'StateSnapshot',
+      serverTick: 5,
+      lastProcessedInputSeq: 2,
+      posX: 1.5,
+      posY: -2,
+      posZ: 0.5,
+      velX: 0,
+      velY: 0,
+      velZ: 0,
+      dashCooldown: 0
+    };
+    unreliable.emitMessage(JSON.stringify(snapshot));
     expect(onSnapshot).toHaveBeenCalledWith(snapshot);
+
     session.close();
     vi.useRealTimers();
   });
@@ -160,7 +259,7 @@ describe('webrtc connector', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 1,
+        protocolVersion: 2,
         connectionId: signaling.connectionId,
         serverTickRate: 60,
         snapshotRate: 20
@@ -204,7 +303,7 @@ describe('webrtc connector', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 1,
+        protocolVersion: 2,
         connectionId: signaling.connectionId,
         serverTickRate: 60,
         snapshotRate: 20
@@ -239,7 +338,7 @@ describe('webrtc connector', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 1,
+        protocolVersion: 2,
         connectionId: signaling.connectionId,
         serverTickRate: 60,
         snapshotRate: 20
@@ -285,7 +384,7 @@ describe('webrtc connector', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 1,
+        protocolVersion: 2,
         connectionId: signaling.connectionId,
         serverTickRate: 60,
         snapshotRate: 20
@@ -330,14 +429,14 @@ describe('webrtc connector', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 2,
+        protocolVersion: 1,
         connectionId: signaling.connectionId,
         serverTickRate: 60,
         snapshotRate: 20
       })
     );
 
-    await expect(connectPromise).rejects.toThrow('ServerHello protocol mismatch (2)');
+    await expect(connectPromise).rejects.toThrow('ServerHello protocol mismatch (1)');
     vi.useRealTimers();
   });
 
@@ -367,7 +466,7 @@ describe('webrtc connector', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 1,
+        protocolVersion: 2,
         connectionId: 'other',
         serverTickRate: 60,
         snapshotRate: 20
@@ -438,7 +537,7 @@ describe('webrtc connector', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 1,
+        protocolVersion: 2,
         connectionId: signaling.connectionId,
         serverTickRate: 60,
         snapshotRate: 20

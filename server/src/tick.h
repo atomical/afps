@@ -33,7 +33,7 @@ private:
 
 class TickLoop {
 public:
-  TickLoop(SignalingStore &store, int tick_rate);
+  TickLoop(SignalingStore &store, int tick_rate, int snapshot_keyframe_interval);
   ~TickLoop();
 
   void Start();
@@ -50,8 +50,11 @@ private:
   std::unordered_map<std::string, InputCmd> last_inputs_;
   std::unordered_map<std::string, afps::sim::PlayerState> players_;
   std::unordered_map<std::string, int> last_input_seq_;
+  std::unordered_map<std::string, StateSnapshot> last_full_snapshots_;
+  std::unordered_map<std::string, int> snapshot_sequence_;
   afps::sim::SimConfig sim_config_ = afps::sim::kDefaultSimConfig;
   int server_tick_ = 0;
+  int snapshot_keyframe_interval_ = kSnapshotKeyframeInterval;
   double snapshot_accumulator_ = 0.0;
   size_t batch_count_ = 0;
   size_t input_count_ = 0;

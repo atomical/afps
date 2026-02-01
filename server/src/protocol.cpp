@@ -169,6 +169,13 @@ bool ParseInputCmd(const std::string &message, InputCmd &out, std::string &error
   if (!ReadBool(payload, "sprint", out.sprint, error)) {
     return false;
   }
+  if (payload.contains("dash")) {
+    if (!ReadBool(payload, "dash", out.dash, error)) {
+      return false;
+    }
+  } else {
+    out.dash = false;
+  }
 
   return true;
 }
@@ -206,6 +213,7 @@ std::string BuildServerHello(const ServerHello &hello) {
   }
   payload["serverTickRate"] = hello.server_tick_rate;
   payload["snapshotRate"] = hello.snapshot_rate;
+  payload["snapshotKeyframeInterval"] = hello.snapshot_keyframe_interval;
   if (!hello.motd.empty()) {
     payload["motd"] = hello.motd;
   }
@@ -240,5 +248,44 @@ std::string BuildStateSnapshot(const StateSnapshot &snapshot) {
   }
   payload["posX"] = snapshot.pos_x;
   payload["posY"] = snapshot.pos_y;
+  payload["posZ"] = snapshot.pos_z;
+  payload["velX"] = snapshot.vel_x;
+  payload["velY"] = snapshot.vel_y;
+  payload["velZ"] = snapshot.vel_z;
+  payload["dashCooldown"] = snapshot.dash_cooldown;
+  return payload.dump();
+}
+
+std::string BuildStateSnapshotDelta(const StateSnapshotDelta &delta) {
+  json payload;
+  payload["type"] = "StateSnapshotDelta";
+  payload["serverTick"] = delta.server_tick;
+  payload["baseTick"] = delta.base_tick;
+  payload["lastProcessedInputSeq"] = delta.last_processed_input_seq;
+  payload["mask"] = delta.mask;
+  if (!delta.client_id.empty()) {
+    payload["clientId"] = delta.client_id;
+  }
+  if (delta.mask & kSnapshotMaskPosX) {
+    payload["posX"] = delta.pos_x;
+  }
+  if (delta.mask & kSnapshotMaskPosY) {
+    payload["posY"] = delta.pos_y;
+  }
+  if (delta.mask & kSnapshotMaskPosZ) {
+    payload["posZ"] = delta.pos_z;
+  }
+  if (delta.mask & kSnapshotMaskVelX) {
+    payload["velX"] = delta.vel_x;
+  }
+  if (delta.mask & kSnapshotMaskVelY) {
+    payload["velY"] = delta.vel_y;
+  }
+  if (delta.mask & kSnapshotMaskVelZ) {
+    payload["velZ"] = delta.vel_z;
+  }
+  if (delta.mask & kSnapshotMaskDashCooldown) {
+    payload["dashCooldown"] = delta.dash_cooldown;
+  }
   return payload.dump();
 }

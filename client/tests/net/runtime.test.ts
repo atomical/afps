@@ -30,7 +30,7 @@ const createDeps = () => {
     connectionId: 'conn',
     serverHello: {
       type: 'ServerHello',
-      protocolVersion: 1,
+      protocolVersion: 2,
       connectionId: 'conn',
       serverTickRate: 60,
       snapshotRate: 20
@@ -184,7 +184,7 @@ describe('connectIfConfigured', () => {
     const rtcFactory = new FakePeerConnectionFactory();
     const reliable = new FakeDataChannel('afps_reliable');
     const unreliable = new FakeDataChannel('afps_unreliable');
-    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = input.toString();
       if (url.endsWith('/session')) {
         return new FakeResponse(true, 200, { sessionToken: 'token', expiresAt: 'soon' });
@@ -232,7 +232,7 @@ describe('connectIfConfigured', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 1,
+        protocolVersion: 2,
         connectionId: 'conn',
         serverTickRate: 60,
         snapshotRate: 20
@@ -309,7 +309,7 @@ describe('connectIfConfigured', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 1,
+        protocolVersion: 2,
         connectionId: 'conn',
         serverTickRate: 60,
         snapshotRate: 20

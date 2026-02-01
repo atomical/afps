@@ -12,6 +12,7 @@ const createSampler = (sampleOverride?: Partial<ReturnType<InputSampler['sample'
     jump: false,
     fire: false,
     sprint: false,
+    dash: false,
     ...sampleOverride
   }),
   dispose: () => {}

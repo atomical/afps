@@ -49,8 +49,10 @@ bool TickAccumulator::initialized() const {
 #include <chrono>
 #include <iostream>
 
-TickLoop::TickLoop(SignalingStore &store, int tick_rate)
-    : store_(store), accumulator_(tick_rate) {}
+TickLoop::TickLoop(SignalingStore &store, int tick_rate, int snapshot_keyframe_interval)
+    : store_(store),
+      accumulator_(tick_rate),
+      snapshot_keyframe_interval_(snapshot_keyframe_interval) {}
 
 TickLoop::~TickLoop() {
   Stop();
@@ -117,6 +119,8 @@ void TickLoop::Step() {
   prune(last_inputs_);
   prune(players_);
   prune(last_input_seq_);
+  prune(last_full_snapshots_);
+  prune(snapshot_sequence_);
 
   auto batches = store_.DrainAllInputs();
   for (const auto &batch : batches) {
@@ -140,7 +144,7 @@ void TickLoop::Step() {
       input = input_iter->second;
     }
     auto &state = players_[connection_id];
-    const auto sim_input = afps::sim::MakeInput(input.move_x, input.move_y, input.sprint);
+    const auto sim_input = afps::sim::MakeInput(input.move_x, input.move_y, input.sprint, input.jump, input.dash);
     afps::sim::StepPlayer(state, sim_input, sim_config_, dt);
   }
 
@@ -160,9 +164,66 @@ void TickLoop::Step() {
       if (state_iter != players_.end()) {
         snapshot.pos_x = state_iter->second.x;
         snapshot.pos_y = state_iter->second.y;
+        snapshot.pos_z = state_iter->second.z;
+        snapshot.vel_x = state_iter->second.vel_x;
+        snapshot.vel_y = state_iter->second.vel_y;
+        snapshot.vel_z = state_iter->second.vel_z;
+        snapshot.dash_cooldown = state_iter->second.dash_cooldown;
       }
-      if (store_.SendUnreliable(connection_id, BuildStateSnapshot(snapshot))) {
+      auto baseline_iter = last_full_snapshots_.find(connection_id);
+      int &sequence = snapshot_sequence_[connection_id];
+      const bool needs_full = (baseline_iter == last_full_snapshots_.end()) ||
+                              (snapshot_keyframe_interval_ <= 0) ||
+                              (sequence % snapshot_keyframe_interval_ == 0);
+
+      if (needs_full) {
+        if (store_.SendUnreliable(connection_id, BuildStateSnapshot(snapshot))) {
+          snapshot_count_ += 1;
+          last_full_snapshots_[connection_id] = snapshot;
+          sequence += 1;
+        }
+        continue;
+      }
+
+      const StateSnapshot &baseline = baseline_iter->second;
+      StateSnapshotDelta delta;
+      delta.server_tick = snapshot.server_tick;
+      delta.base_tick = baseline.server_tick;
+      delta.last_processed_input_seq = snapshot.last_processed_input_seq;
+      delta.client_id = snapshot.client_id;
+      delta.mask = 0;
+      if (snapshot.pos_x != baseline.pos_x) {
+        delta.mask |= kSnapshotMaskPosX;
+        delta.pos_x = snapshot.pos_x;
+      }
+      if (snapshot.pos_y != baseline.pos_y) {
+        delta.mask |= kSnapshotMaskPosY;
+        delta.pos_y = snapshot.pos_y;
+      }
+      if (snapshot.pos_z != baseline.pos_z) {
+        delta.mask |= kSnapshotMaskPosZ;
+        delta.pos_z = snapshot.pos_z;
+      }
+      if (snapshot.vel_x != baseline.vel_x) {
+        delta.mask |= kSnapshotMaskVelX;
+        delta.vel_x = snapshot.vel_x;
+      }
+      if (snapshot.vel_y != baseline.vel_y) {
+        delta.mask |= kSnapshotMaskVelY;
+        delta.vel_y = snapshot.vel_y;
+      }
+      if (snapshot.vel_z != baseline.vel_z) {
+        delta.mask |= kSnapshotMaskVelZ;
+        delta.vel_z = snapshot.vel_z;
+      }
+      if (snapshot.dash_cooldown != baseline.dash_cooldown) {
+        delta.mask |= kSnapshotMaskDashCooldown;
+        delta.dash_cooldown = snapshot.dash_cooldown;
+      }
+
+      if (store_.SendUnreliable(connection_id, BuildStateSnapshotDelta(delta))) {
         snapshot_count_ += 1;
+        sequence += 1;
       }
     }
   }

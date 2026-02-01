@@ -53,6 +53,7 @@ struct SignalingConfig {
   double input_refill_per_second = 120.0;
   int max_invalid_inputs = 5;
   int max_rate_limit_drops = 20;
+  int snapshot_keyframe_interval = kSnapshotKeyframeInterval;
 };
 
 template <typename T>

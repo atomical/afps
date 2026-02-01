@@ -22,6 +22,26 @@ int ParsePort(const std::string &value, std::vector<std::string> &errors) {
     return -1;
   }
 }
+
+int ParseNonNegativeInt(const std::string &value, const std::string &label,
+                        std::vector<std::string> &errors) {
+  try {
+    size_t idx = 0;
+    int parsed = std::stoi(value, &idx);
+    if (idx != value.size()) {
+      errors.push_back("Invalid " + label + " value: " + value);
+      return -1;
+    }
+    if (parsed < 0) {
+      errors.push_back(label + " must be >= 0");
+      return -1;
+    }
+    return parsed;
+  } catch (const std::exception &) {
+    errors.push_back("Invalid " + label + " value: " + value);
+    return -1;
+  }
+}
 }
 
 ParseResult ParseArgs(int argc, const char *const *argv) {
@@ -75,6 +95,15 @@ ParseResult ParseArgs(int argc, const char *const *argv) {
       if (!value.empty()) {
         result.config.ice_servers.push_back(value);
       }
+    } else if (arg == "--snapshot-keyframe-interval") {
+      auto value = require_value("--snapshot-keyframe-interval");
+      if (!value.empty()) {
+        const int interval = ParseNonNegativeInt(value, "snapshot keyframe interval",
+                                                 result.errors);
+        if (interval >= 0) {
+          result.config.snapshot_keyframe_interval = interval;
+        }
+      }
     } else {
       result.errors.push_back("Unknown argument: " + arg);
     }
@@ -93,6 +122,9 @@ std::vector<std::string> ValidateConfig(const ServerConfig &config) {
   }
   if (config.auth_token.empty()) {
     errors.push_back("Missing --auth-token value");
+  }
+  if (config.snapshot_keyframe_interval < 0) {
+    errors.push_back("Snapshot keyframe interval must be >= 0");
   }
   return errors;
 }

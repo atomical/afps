@@ -129,7 +129,7 @@ const toJson = (value: unknown) => JSON.stringify(value);
 const readJson = async (response: ResponseLike) => {
   try {
     return await response.json();
-  } catch (error) {
+  } catch {
     const text = await response.text();
     throw new SignalingClientError(`Invalid JSON response: ${text}`);
   }

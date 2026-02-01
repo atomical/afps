@@ -58,6 +58,12 @@ export class SnapshotBuffer {
       lastProcessedInputSeq: newer.snapshot.lastProcessedInputSeq,
       posX: older.snapshot.posX + (newer.snapshot.posX - older.snapshot.posX) * alpha,
       posY: older.snapshot.posY + (newer.snapshot.posY - older.snapshot.posY) * alpha,
+      posZ: older.snapshot.posZ + (newer.snapshot.posZ - older.snapshot.posZ) * alpha,
+      velX: older.snapshot.velX + (newer.snapshot.velX - older.snapshot.velX) * alpha,
+      velY: older.snapshot.velY + (newer.snapshot.velY - older.snapshot.velY) * alpha,
+      velZ: older.snapshot.velZ + (newer.snapshot.velZ - older.snapshot.velZ) * alpha,
+      dashCooldown:
+        older.snapshot.dashCooldown + (newer.snapshot.dashCooldown - older.snapshot.dashCooldown) * alpha,
       clientId: newer.snapshot.clientId
     };
   }

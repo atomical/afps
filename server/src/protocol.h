@@ -3,12 +3,23 @@
 #include <cstddef>
 #include <string>
 
-constexpr int kProtocolVersion = 1;
+constexpr int kProtocolVersion = 2;
 constexpr int kServerTickRate = 60;
 constexpr int kSnapshotRate = 20;
+constexpr int kSnapshotKeyframeInterval = 5;
 constexpr size_t kMaxClientMessageBytes = 4096;
 constexpr const char *kReliableChannelLabel = "afps_reliable";
 constexpr const char *kUnreliableChannelLabel = "afps_unreliable";
+constexpr int kSnapshotMaskPosX = 1 << 0;
+constexpr int kSnapshotMaskPosY = 1 << 1;
+constexpr int kSnapshotMaskPosZ = 1 << 2;
+constexpr int kSnapshotMaskVelX = 1 << 3;
+constexpr int kSnapshotMaskVelY = 1 << 4;
+constexpr int kSnapshotMaskVelZ = 1 << 5;
+constexpr int kSnapshotMaskDashCooldown = 1 << 6;
+constexpr int kSnapshotMaskAll = kSnapshotMaskPosX | kSnapshotMaskPosY | kSnapshotMaskPosZ |
+                                 kSnapshotMaskVelX | kSnapshotMaskVelY | kSnapshotMaskVelZ |
+                                 kSnapshotMaskDashCooldown;
 
 struct ClientHello {
   int protocol_version = 0;
@@ -23,6 +34,7 @@ struct ServerHello {
   std::string client_id;
   int server_tick_rate = 0;
   int snapshot_rate = 0;
+  int snapshot_keyframe_interval = 0;
   std::string motd;
   std::string connection_nonce;
 };
@@ -36,6 +48,7 @@ struct InputCmd {
   bool jump = false;
   bool fire = false;
   bool sprint = false;
+  bool dash = false;
 };
 
 struct Ping {
@@ -52,6 +65,26 @@ struct StateSnapshot {
   std::string client_id;
   double pos_x = 0.0;
   double pos_y = 0.0;
+  double pos_z = 0.0;
+  double vel_x = 0.0;
+  double vel_y = 0.0;
+  double vel_z = 0.0;
+  double dash_cooldown = 0.0;
+};
+
+struct StateSnapshotDelta {
+  int server_tick = 0;
+  int base_tick = 0;
+  int last_processed_input_seq = -1;
+  int mask = 0;
+  std::string client_id;
+  double pos_x = 0.0;
+  double pos_y = 0.0;
+  double pos_z = 0.0;
+  double vel_x = 0.0;
+  double vel_y = 0.0;
+  double vel_z = 0.0;
+  double dash_cooldown = 0.0;
 };
 
 bool ParseClientHello(const std::string &message, ClientHello &out, std::string &error);
@@ -61,3 +94,4 @@ std::string BuildServerHello(const ServerHello &hello);
 std::string BuildProtocolError(const std::string &code, const std::string &message);
 std::string BuildPong(const Pong &pong);
 std::string BuildStateSnapshot(const StateSnapshot &snapshot);
+std::string BuildStateSnapshotDelta(const StateSnapshotDelta &delta);

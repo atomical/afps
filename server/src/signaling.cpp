@@ -504,6 +504,7 @@ void SignalingStore::HandleClientMessage(const std::shared_ptr<ConnectionState> 
     response.client_id = connection->id;
     response.server_tick_rate = kServerTickRate;
     response.snapshot_rate = kSnapshotRate;
+    response.snapshot_keyframe_interval = config_.snapshot_keyframe_interval;
     response.connection_nonce = connection->connection_nonce;
     connection->peer->Send(BuildServerHello(response));
     return;

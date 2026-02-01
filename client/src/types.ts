@@ -91,6 +91,11 @@ export interface NetworkSnapshot {
   lastProcessedInputSeq: number;
   posX: number;
   posY: number;
+  posZ: number;
+  velX: number;
+  velY: number;
+  velZ: number;
+  dashCooldown: number;
   clientId?: string;
 }
 
@@ -100,7 +105,17 @@ export interface App {
   resize: (width: number, height: number, dpr: number) => void;
   ingestSnapshot: (snapshot: NetworkSnapshot, nowMs: number) => void;
   setSnapshotRate: (snapshotRate: number) => void;
-  recordInput: (cmd: { inputSeq: number; moveX: number; moveY: number; lookDeltaX: number; lookDeltaY: number; jump: boolean; fire: boolean; sprint: boolean }) => void;
+  recordInput: (cmd: {
+    inputSeq: number;
+    moveX: number;
+    moveY: number;
+    lookDeltaX: number;
+    lookDeltaY: number;
+    jump: boolean;
+    fire: boolean;
+    sprint: boolean;
+    dash: boolean;
+  }) => void;
   setTickRate: (tickRate: number) => void;
   setPredictionSim: (sim: PredictionSim) => void;
   applyLookDelta: (deltaX: number, deltaY: number) => void;

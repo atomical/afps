@@ -10,6 +10,7 @@ export interface InputCmd {
   jump: boolean;
   fire: boolean;
   sprint: boolean;
+  dash: boolean;
 }
 
 const clampAxis = (value: number) => {
@@ -30,7 +31,8 @@ export const buildInputCmd = (inputSeq: number, sample: InputSample): InputCmd =
   lookDeltaY: safeNumber(sample.lookDeltaY),
   jump: Boolean(sample.jump),
   fire: Boolean(sample.fire),
-  sprint: Boolean(sample.sprint)
+  sprint: Boolean(sample.sprint),
+  dash: Boolean(sample.dash)
 });
 
 export const serializeInputCmd = (cmd: InputCmd) => JSON.stringify(cmd);

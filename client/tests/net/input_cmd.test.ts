@@ -11,7 +11,8 @@ describe('input cmd', () => {
       lookDeltaY: Number.POSITIVE_INFINITY,
       jump: true,
       fire: false,
-      sprint: true
+      sprint: true,
+      dash: true
     };
 
     const cmd = buildInputCmd(-5, sample);
@@ -25,7 +26,8 @@ describe('input cmd', () => {
       lookDeltaY: 0,
       jump: true,
       fire: false,
-      sprint: true
+      sprint: true,
+      dash: true
     });
   });
 
@@ -37,7 +39,8 @@ describe('input cmd', () => {
       lookDeltaY: -2,
       jump: false,
       fire: true,
-      sprint: false
+      sprint: false,
+      dash: false
     });
 
     const json = serializeInputCmd(cmd);
@@ -52,7 +55,8 @@ describe('input cmd', () => {
       lookDeltaY: 0,
       jump: false,
       fire: false,
-      sprint: false
+      sprint: false,
+      dash: false
     });
 
     expect(cmd.moveX).toBe(0);

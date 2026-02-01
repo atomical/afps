@@ -7,6 +7,7 @@ export interface BootstrapOptions {
   window: Window;
   containerId?: string;
   lookSensitivity?: number;
+  loadEnvironment?: boolean;
 }
 
 export interface BootResult {
@@ -39,7 +40,8 @@ export const startApp = ({
   document,
   window,
   containerId = 'app',
-  lookSensitivity
+  lookSensitivity,
+  loadEnvironment
 }: BootstrapOptions): BootResult => {
   const container = ensureContainer(document, containerId);
   const canvas = document.createElement('canvas');
@@ -52,7 +54,8 @@ export const startApp = ({
     width: viewport.width,
     height: viewport.height,
     devicePixelRatio: viewport.dpr,
-    lookSensitivity
+    lookSensitivity,
+    loadEnvironment
   });
 
   let lastTime = window.performance.now();

@@ -16,6 +16,7 @@ table ServerHello {
   client_id:string;
   server_tick_rate:int;
   snapshot_rate:int;
+  snapshot_keyframe_interval:int;
   motd:string;
   connection_nonce:string;
 }
@@ -29,6 +30,7 @@ table InputCmd {
   jump:bool;
   fire:bool;
   sprint:bool;
+  dash:bool;
 }
 
 table StateSnapshot {
@@ -37,6 +39,11 @@ table StateSnapshot {
   client_id:string;
   pos_x:double;
   pos_y:double;
+  pos_z:double;
+  vel_x:double;
+  vel_y:double;
+  vel_z:double;
+  dash_cooldown:double;
 }
 
 table Ping {
