@@ -26,7 +26,9 @@ void sim_reset(WasmSimState *state) {
 
 void sim_set_config(WasmSimState *state, double move_speed, double sprint_multiplier, double accel,
                     double friction, double gravity, double jump_velocity, double dash_impulse,
-                    double dash_cooldown, double arena_half_size, double player_radius,
+                    double dash_cooldown, double grapple_max_distance, double grapple_pull_strength,
+                    double grapple_damping, double grapple_cooldown, double grapple_min_attach_normal_y,
+                    double grapple_rope_slack, double arena_half_size, double player_radius,
                     double obstacle_min_x, double obstacle_max_x, double obstacle_min_y,
                     double obstacle_max_y) {
   if (!state) {
@@ -55,6 +57,24 @@ void sim_set_config(WasmSimState *state, double move_speed, double sprint_multip
   }
   if (std::isfinite(dash_cooldown) && dash_cooldown >= 0.0) {
     state->config.dash_cooldown = dash_cooldown;
+  }
+  if (std::isfinite(grapple_max_distance) && grapple_max_distance >= 0.0) {
+    state->config.grapple_max_distance = grapple_max_distance;
+  }
+  if (std::isfinite(grapple_pull_strength) && grapple_pull_strength >= 0.0) {
+    state->config.grapple_pull_strength = grapple_pull_strength;
+  }
+  if (std::isfinite(grapple_damping) && grapple_damping >= 0.0) {
+    state->config.grapple_damping = grapple_damping;
+  }
+  if (std::isfinite(grapple_cooldown) && grapple_cooldown >= 0.0) {
+    state->config.grapple_cooldown = grapple_cooldown;
+  }
+  if (std::isfinite(grapple_min_attach_normal_y)) {
+    state->config.grapple_min_attach_normal_y = grapple_min_attach_normal_y;
+  }
+  if (std::isfinite(grapple_rope_slack) && grapple_rope_slack >= 0.0) {
+    state->config.grapple_rope_slack = grapple_rope_slack;
   }
   if (std::isfinite(arena_half_size) && arena_half_size >= 0.0) {
     state->config.arena_half_size = arena_half_size;

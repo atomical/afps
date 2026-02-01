@@ -7,6 +7,9 @@ export interface InputCmd {
   moveY: number;
   lookDeltaX: number;
   lookDeltaY: number;
+  viewYaw: number;
+  viewPitch: number;
+  weaponSlot: number;
   jump: boolean;
   fire: boolean;
   sprint: boolean;
@@ -21,6 +24,7 @@ const clampAxis = (value: number) => {
 };
 
 const safeNumber = (value: number) => (Number.isFinite(value) ? value : 0);
+const safeSlot = (value: number) => (Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0);
 
 export const buildInputCmd = (inputSeq: number, sample: InputSample): InputCmd => ({
   type: 'InputCmd',
@@ -29,6 +33,9 @@ export const buildInputCmd = (inputSeq: number, sample: InputSample): InputCmd =
   moveY: clampAxis(sample.moveY),
   lookDeltaX: safeNumber(sample.lookDeltaX),
   lookDeltaY: safeNumber(sample.lookDeltaY),
+  viewYaw: 0,
+  viewPitch: 0,
+  weaponSlot: safeSlot(sample.weaponSlot),
   jump: Boolean(sample.jump),
   fire: Boolean(sample.fire),
   sprint: Boolean(sample.sprint),

@@ -7,6 +7,7 @@ export interface InputSample {
   fire: boolean;
   sprint: boolean;
   dash: boolean;
+  weaponSlot: number;
 }
 
 export interface InputSampler {
@@ -23,6 +24,8 @@ export interface InputBindings {
   jump: string[];
   sprint: string[];
   dash: string[];
+  weaponSlot1: string[];
+  weaponSlot2: string[];
 }
 
 export const DEFAULT_BINDINGS: InputBindings = {
@@ -32,7 +35,9 @@ export const DEFAULT_BINDINGS: InputBindings = {
   right: ['KeyD', 'ArrowRight'],
   jump: ['Space'],
   sprint: ['ShiftLeft', 'ShiftRight'],
-  dash: ['KeyE']
+  dash: ['KeyE'],
+  weaponSlot1: ['Digit1'],
+  weaponSlot2: ['Digit2']
 };
 
 const safeNumber = (value: number) => (Number.isFinite(value) ? value : 0);
@@ -50,10 +55,16 @@ export const createInputSampler = ({ target, bindings = DEFAULT_BINDINGS }: Inpu
   let fire = false;
   let lookDeltaX = 0;
   let lookDeltaY = 0;
+  let weaponSlot = 0;
   let currentBindings = bindings;
 
   const onKeyDown = (event: KeyboardEvent) => {
     pressed.add(event.code);
+    if (currentBindings.weaponSlot1.includes(event.code)) {
+      weaponSlot = 0;
+    } else if (currentBindings.weaponSlot2.includes(event.code)) {
+      weaponSlot = 1;
+    }
   };
 
   const onKeyUp = (event: KeyboardEvent) => {
@@ -111,7 +122,8 @@ export const createInputSampler = ({ target, bindings = DEFAULT_BINDINGS }: Inpu
       jump,
       fire,
       sprint,
-      dash
+      dash,
+      weaponSlot
     };
 
     lookDeltaX = 0;

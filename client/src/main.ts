@@ -10,7 +10,7 @@ import {
   getWasmSimUrl
 } from './net/env';
 import { buildPing } from './net/protocol';
-import type { Pong, StateSnapshot } from './net/protocol';
+import type { GameEvent, Pong, StateSnapshot } from './net/protocol';
 import { createStatusOverlay } from './ui/status';
 import { createInputSampler } from './input/sampler';
 import { loadBindings, saveBindings } from './input/bindings';
@@ -22,6 +22,7 @@ import { createSettingsOverlay } from './ui/settings';
 import { loadWasmSimFromUrl } from './sim/wasm';
 import { createWasmPredictionSim } from './sim/wasm_adapter';
 import { runWasmParityCheck } from './sim/parity';
+import { WEAPON_DEFS } from './weapons/config';
 
 const savedSensitivity = loadSensitivity(window.localStorage);
 const lookSensitivity = savedSensitivity ?? getLookSensitivity();
@@ -29,6 +30,15 @@ let currentBindings = loadBindings(window.localStorage);
 const { app, canvas } = startApp({ three: THREE, document, window, lookSensitivity, loadEnvironment: true });
 const status = createStatusOverlay(document);
 const hud = createHudOverlay(document);
+const resolveWeaponSlot = (slot: number) => {
+  const maxSlot = Math.max(0, WEAPON_DEFS.length - 1);
+  if (!Number.isFinite(slot)) {
+    return 0;
+  }
+  return Math.min(maxSlot, Math.max(0, Math.floor(slot)));
+};
+const resolveWeaponLabel = (slot: number) => WEAPON_DEFS[slot]?.name ?? '--';
+let currentWeaponSlot = 0;
 let sampler: ReturnType<typeof createInputSampler> | null = null;
 const settings = createSettingsOverlay(document, {
   initialSensitivity: lookSensitivity,
@@ -95,6 +105,8 @@ if (wasmSimUrl) {
 }
 
 hud.setSensitivity(lookSensitivity);
+hud.setWeapon(currentWeaponSlot, resolveWeaponLabel(currentWeaponSlot));
+hud.setWeaponCooldown(app.getWeaponCooldown(currentWeaponSlot));
 if (pointerLock.supported) {
   hud.setLockState(pointerLock.isLocked() ? 'locked' : 'unlocked');
 } else {
@@ -117,6 +129,7 @@ if (!signalingUrl) {
   let lastRttMs = 0;
   let lastPredictionError = 0;
   let snapshotKeyframeInterval: number | null = null;
+  let localConnectionId: string | null = null;
   const updateMetrics = () => {
     const now = window.performance.now();
     const snapshotAge = lastSnapshotAt > 0 ? Math.max(0, now - lastSnapshotAt) : null;
@@ -134,6 +147,28 @@ if (!signalingUrl) {
     updateMetrics();
   };
 
+  const onGameEvent = (event: GameEvent) => {
+    if (event.event === 'HitConfirmed') {
+      hud.triggerHitmarker(event.killed);
+      return;
+    }
+    if (event.event === 'ProjectileSpawn') {
+      if (localConnectionId && event.ownerId === localConnectionId) {
+        return;
+      }
+      app.spawnProjectileVfx({
+        origin: { x: event.posX, y: event.posY, z: event.posZ },
+        velocity: { x: event.velX, y: event.velY, z: event.velZ },
+        ttl: event.ttl,
+        projectileId: event.projectileId
+      });
+      return;
+    }
+    if (event.event === 'ProjectileRemove') {
+      app.removeProjectileVfx(event.projectileId);
+    }
+  };
+
   const onPong = (pong: Pong) => {
     const now = window.performance.now();
     if (Number.isFinite(pong.clientTimeMs)) {
@@ -147,12 +182,14 @@ if (!signalingUrl) {
     signalingAuthToken,
     logger,
     onSnapshot,
-    onPong
+    onPong,
+    onGameEvent
   })
     .then((session) => {
       if (!session) {
         return;
       }
+      localConnectionId = session.connectionId;
       const keyframeDetail =
         session.serverHello.snapshotKeyframeInterval !== undefined
           ? ` (kf ${session.serverHello.snapshotKeyframeInterval})`
@@ -162,20 +199,31 @@ if (!signalingUrl) {
       app.setTickRate(session.serverHello.serverTickRate);
       snapshotKeyframeInterval = session.serverHello.snapshotKeyframeInterval ?? null;
       updateMetrics();
+      hud.setWeaponCooldown(app.getWeaponCooldown(currentWeaponSlot));
 
-      sampler = createInputSampler({ target: window, bindings: currentBindings });
-      const sender = createInputSender({
-        channel: session.unreliableChannel,
-        sampler,
-        tickRate: session.serverHello.serverTickRate,
-        logger,
-        onSend: (cmd) => {
-          app.recordInput(cmd);
-          if (shouldApplyLook()) {
-            app.applyLookDelta(cmd.lookDeltaX, cmd.lookDeltaY);
+        sampler = createInputSampler({ target: window, bindings: currentBindings });
+        const sender = createInputSender({
+          channel: session.unreliableChannel,
+          sampler,
+          tickRate: session.serverHello.serverTickRate,
+          logger,
+          onSend: (cmd) => {
+            if (shouldApplyLook()) {
+              app.applyLookDelta(cmd.lookDeltaX, cmd.lookDeltaY);
+            }
+            const angles = app.getLookAngles();
+            cmd.viewYaw = angles.yaw;
+            cmd.viewPitch = angles.pitch;
+            const nextSlot = resolveWeaponSlot(cmd.weaponSlot);
+            cmd.weaponSlot = nextSlot;
+            if (nextSlot !== currentWeaponSlot) {
+              currentWeaponSlot = nextSlot;
+              hud.setWeapon(currentWeaponSlot, resolveWeaponLabel(currentWeaponSlot));
+            }
+            hud.setWeaponCooldown(app.getWeaponCooldown(currentWeaponSlot));
+            app.recordInput(cmd);
           }
-        }
-      });
+        });
       sender.start();
 
       const sendPing = () => {

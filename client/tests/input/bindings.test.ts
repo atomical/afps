@@ -24,6 +24,7 @@ describe('input bindings', () => {
     expect(normalizeBindings({ forward: [] }).forward).toEqual(DEFAULT_BINDINGS.forward);
     expect(normalizeBindings({ forward: ['KeyQ', 'KeyQ'] }).forward).toEqual(['KeyQ']);
     expect(normalizeBindings({ dash: [] }).dash).toEqual(DEFAULT_BINDINGS.dash);
+    expect(normalizeBindings({ weaponSlot1: [] }).weaponSlot1).toEqual(DEFAULT_BINDINGS.weaponSlot1);
   });
 
   it('loads defaults when storage empty or invalid', () => {

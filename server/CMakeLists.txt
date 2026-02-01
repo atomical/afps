@@ -24,6 +24,7 @@ endif()
 
 set(AFPS_SERVER_SOURCES
   src/auth.cpp
+  src/combat.cpp
   src/config.cpp
   src/health.cpp
   src/rate_limiter.cpp
@@ -65,6 +66,7 @@ enable_testing()
 set(AFPS_SERVER_TEST_SOURCES
   tests/main.cpp
   tests/test_auth.cpp
+  tests/test_combat.cpp
   tests/test_config.cpp
   tests/test_health.cpp
   tests/test_rate_limiter.cpp

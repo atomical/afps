@@ -34,6 +34,12 @@ TEST_CASE("Shared sim config JSON matches defaults") {
   REQUIRE(payload.contains("jumpVelocity"));
   REQUIRE(payload.contains("dashImpulse"));
   REQUIRE(payload.contains("dashCooldown"));
+  REQUIRE(payload.contains("grappleMaxDistance"));
+  REQUIRE(payload.contains("grapplePullStrength"));
+  REQUIRE(payload.contains("grappleDamping"));
+  REQUIRE(payload.contains("grappleCooldown"));
+  REQUIRE(payload.contains("grappleMinAttachNormalY"));
+  REQUIRE(payload.contains("grappleRopeSlack"));
   REQUIRE(payload.contains("arenaHalfSize"));
   REQUIRE(payload.contains("playerRadius"));
   REQUIRE(payload.contains("obstacleMinX"));
@@ -49,6 +55,12 @@ TEST_CASE("Shared sim config JSON matches defaults") {
   const double jump_velocity = payload.at("jumpVelocity").get<double>();
   const double dash_impulse = payload.at("dashImpulse").get<double>();
   const double dash_cooldown = payload.at("dashCooldown").get<double>();
+  const double grapple_max_distance = payload.at("grappleMaxDistance").get<double>();
+  const double grapple_pull_strength = payload.at("grapplePullStrength").get<double>();
+  const double grapple_damping = payload.at("grappleDamping").get<double>();
+  const double grapple_cooldown = payload.at("grappleCooldown").get<double>();
+  const double grapple_min_attach_normal_y = payload.at("grappleMinAttachNormalY").get<double>();
+  const double grapple_rope_slack = payload.at("grappleRopeSlack").get<double>();
   const double arena_half_size = payload.at("arenaHalfSize").get<double>();
   const double player_radius = payload.at("playerRadius").get<double>();
   const double obstacle_min_x = payload.at("obstacleMinX").get<double>();
@@ -64,6 +76,12 @@ TEST_CASE("Shared sim config JSON matches defaults") {
   CHECK(jump_velocity == doctest::Approx(afps::sim::kDefaultSimConfig.jump_velocity));
   CHECK(dash_impulse == doctest::Approx(afps::sim::kDefaultSimConfig.dash_impulse));
   CHECK(dash_cooldown == doctest::Approx(afps::sim::kDefaultSimConfig.dash_cooldown));
+  CHECK(grapple_max_distance == doctest::Approx(afps::sim::kDefaultSimConfig.grapple_max_distance));
+  CHECK(grapple_pull_strength == doctest::Approx(afps::sim::kDefaultSimConfig.grapple_pull_strength));
+  CHECK(grapple_damping == doctest::Approx(afps::sim::kDefaultSimConfig.grapple_damping));
+  CHECK(grapple_cooldown == doctest::Approx(afps::sim::kDefaultSimConfig.grapple_cooldown));
+  CHECK(grapple_min_attach_normal_y == doctest::Approx(afps::sim::kDefaultSimConfig.grapple_min_attach_normal_y));
+  CHECK(grapple_rope_slack == doctest::Approx(afps::sim::kDefaultSimConfig.grapple_rope_slack));
   CHECK(arena_half_size == doctest::Approx(afps::sim::kDefaultSimConfig.arena_half_size));
   CHECK(player_radius == doctest::Approx(afps::sim::kDefaultSimConfig.player_radius));
   CHECK(obstacle_min_x == doctest::Approx(afps::sim::kDefaultSimConfig.obstacle_min_x));

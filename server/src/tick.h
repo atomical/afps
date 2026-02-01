@@ -27,9 +27,12 @@ private:
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <vector>
 
+#include "combat.h"
 #include "signaling.h"
 #include "sim/sim.h"
+#include "weapons/weapon_defs.h"
 
 class TickLoop {
 public:
@@ -50,12 +53,19 @@ private:
   std::unordered_map<std::string, InputCmd> last_inputs_;
   std::unordered_map<std::string, afps::sim::PlayerState> players_;
   std::unordered_map<std::string, int> last_input_seq_;
+  std::unordered_map<std::string, int> last_input_server_tick_;
   std::unordered_map<std::string, StateSnapshot> last_full_snapshots_;
   std::unordered_map<std::string, int> snapshot_sequence_;
+  std::unordered_map<std::string, double> fire_cooldowns_;
+  std::unordered_map<std::string, afps::combat::PoseHistory> pose_histories_;
+  std::unordered_map<std::string, afps::combat::CombatState> combat_states_;
+  std::vector<afps::combat::ProjectileState> projectiles_;
+  int next_projectile_id_ = 1;
   afps::sim::SimConfig sim_config_ = afps::sim::kDefaultSimConfig;
   int server_tick_ = 0;
   int snapshot_keyframe_interval_ = kSnapshotKeyframeInterval;
   double snapshot_accumulator_ = 0.0;
+  int pose_history_limit_ = 0;
   size_t batch_count_ = 0;
   size_t input_count_ = 0;
   size_t snapshot_count_ = 0;

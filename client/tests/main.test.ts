@@ -8,9 +8,13 @@ const appInstance = {
   ingestSnapshot: vi.fn(),
   setSnapshotRate: vi.fn(),
   recordInput: vi.fn(),
+  spawnProjectileVfx: vi.fn(),
+  removeProjectileVfx: vi.fn(),
+  getWeaponCooldown: vi.fn().mockReturnValue(0),
   setTickRate: vi.fn(),
   setPredictionSim: vi.fn(),
   applyLookDelta: vi.fn(),
+  getLookAngles: vi.fn().mockReturnValue({ yaw: 0, pitch: 0 }),
   setLookSensitivity: vi.fn(),
   state: { cube: { rotation: { x: 0 } } }
 };
@@ -35,6 +39,9 @@ const hudMock = {
   element: document.createElement('div'),
   setLockState: vi.fn(),
   setSensitivity: vi.fn(),
+  setWeapon: vi.fn(),
+  setWeaponCooldown: vi.fn(),
+  triggerHitmarker: vi.fn(),
   dispose: vi.fn()
 };
 const settingsMock = {
@@ -52,7 +59,9 @@ const defaultBindings = {
   right: ['KeyD'],
   jump: ['Space'],
   sprint: ['ShiftLeft'],
-  dash: ['KeyE']
+  dash: ['KeyE'],
+  weaponSlot1: ['Digit1'],
+  weaponSlot2: ['Digit2']
 };
 const pointerLockMock = {
   supported: false,
@@ -156,6 +165,8 @@ describe('main entry', () => {
     appInstance.setTickRate.mockReset();
     appInstance.setPredictionSim.mockReset();
     appInstance.applyLookDelta.mockReset();
+    appInstance.getLookAngles.mockReset();
+    appInstance.getLookAngles.mockReturnValue({ yaw: 0, pitch: 0 });
     appInstance.setLookSensitivity.mockReset();
     statusMock.setState.mockReset();
     statusMock.setDetail.mockReset();
@@ -163,7 +174,12 @@ describe('main entry', () => {
     statusMock.dispose.mockReset();
     hudMock.setLockState.mockReset();
     hudMock.setSensitivity.mockReset();
+    hudMock.setWeapon.mockReset();
+    hudMock.setWeaponCooldown.mockReset();
+    hudMock.triggerHitmarker.mockReset();
     hudMock.dispose.mockReset();
+    appInstance.spawnProjectileVfx.mockReset();
+    appInstance.removeProjectileVfx.mockReset();
     settingsMock.isVisible.mockReset();
     settingsMock.setVisible.mockReset();
     settingsMock.toggle.mockReset();
@@ -224,6 +240,8 @@ describe('main entry', () => {
     expect(connectMock).not.toHaveBeenCalled();
     expect(statusMock.setState).toHaveBeenCalledWith('disabled', 'Set VITE_SIGNALING_URL');
     expect(hudMock.setSensitivity).toHaveBeenCalledWith(undefined);
+    expect(hudMock.setWeapon).toHaveBeenCalledWith(0, expect.any(String));
+    expect(hudMock.setWeaponCooldown).toHaveBeenCalledWith(0);
     expect(hudMock.setLockState).toHaveBeenCalled();
     expect(createInputSamplerMock).not.toHaveBeenCalled();
   });
@@ -351,12 +369,47 @@ describe('main entry', () => {
       velX: 0,
       velY: 0,
       velZ: 0,
-      dashCooldown: 0
+      dashCooldown: 0,
+      health: 100,
+      kills: 0,
+      deaths: 0
     };
     const sendPing = vi.fn();
-    connectMock.mockImplementation(async (config: { onSnapshot?: (snapshot: typeof snapshot) => void; onPong?: (pong: { clientTimeMs: number }) => void }) => {
+    connectMock.mockImplementation(async (config: { onSnapshot?: (snapshot: typeof snapshot) => void; onPong?: (pong: { clientTimeMs: number }) => void; onGameEvent?: (event: { type: string; event: string }) => void }) => {
       config.onSnapshot?.(snapshot);
       config.onPong?.({ clientTimeMs: 5 });
+      config.onGameEvent?.({ type: 'GameEvent', event: 'HitConfirmed', killed: true });
+      config.onGameEvent?.({
+        type: 'GameEvent',
+        event: 'ProjectileSpawn',
+        ownerId: 'other',
+        posX: 1,
+        posY: 2,
+        posZ: 3,
+        velX: 4,
+        velY: 5,
+        velZ: 6,
+        ttl: 0.5,
+        projectileId: 7
+      });
+      config.onGameEvent?.({
+        type: 'GameEvent',
+        event: 'ProjectileSpawn',
+        ownerId: 'conn',
+        posX: 9,
+        posY: 9,
+        posZ: 9,
+        velX: 1,
+        velY: 1,
+        velZ: 1,
+        ttl: 1,
+        projectileId: 8
+      });
+      config.onGameEvent?.({
+        type: 'GameEvent',
+        event: 'ProjectileRemove',
+        projectileId: 7
+      });
       return {
         connectionId: 'conn',
         serverHello: { serverTickRate: 60, snapshotRate: 20, snapshotKeyframeInterval: 5 },
@@ -373,13 +426,39 @@ describe('main entry', () => {
       expect.objectContaining({
         signalingUrl: 'https://example.test',
         signalingAuthToken: 'token',
-        onSnapshot: expect.any(Function)
+        onSnapshot: expect.any(Function),
+        onGameEvent: expect.any(Function)
       })
     );
     expect(statusMock.setState).toHaveBeenCalledWith('connected', 'conn conn (kf 5)');
     expect(appInstance.setSnapshotRate).toHaveBeenCalledWith(20);
     expect(appInstance.setTickRate).toHaveBeenCalledWith(60);
     expect(appInstance.ingestSnapshot).toHaveBeenCalledWith(snapshot, expect.any(Number));
+    expect(hudMock.triggerHitmarker).toHaveBeenCalledWith(true);
+    expect(appInstance.spawnProjectileVfx).toHaveBeenCalledWith({
+      origin: { x: 1, y: 2, z: 3 },
+      velocity: { x: 4, y: 5, z: 6 },
+      ttl: 0.5,
+      projectileId: 7
+    });
+    expect(appInstance.spawnProjectileVfx).toHaveBeenCalledTimes(2);
+    expect(appInstance.removeProjectileVfx).toHaveBeenCalledWith(7);
+    const onGameEvent = connectMock.mock.calls[0]?.[0]?.onGameEvent as
+      | ((event: { type: string; event: string; ownerId: string; posX: number; posY: number; posZ: number; velX: number; velY: number; velZ: number; ttl: number }) => void)
+      | undefined;
+    onGameEvent?.({
+      type: 'GameEvent',
+      event: 'ProjectileSpawn',
+      ownerId: 'conn',
+      posX: 0,
+      posY: 0,
+      posZ: 0,
+      velX: 0,
+      velY: 0,
+      velZ: 0,
+      ttl: 1
+    });
+    expect(appInstance.spawnProjectileVfx).toHaveBeenCalledTimes(2);
     expect(sendPing).toHaveBeenCalled();
     expect(createInputSamplerMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -396,6 +475,9 @@ describe('main entry', () => {
       moveY: 0,
       lookDeltaX: 0,
       lookDeltaY: 0,
+      viewYaw: 0,
+      viewPitch: 0,
+      weaponSlot: Number.NaN,
       jump: false,
       fire: false,
       sprint: false,
@@ -404,6 +486,9 @@ describe('main entry', () => {
     senderArgs.onSend?.(cmd);
     expect(appInstance.recordInput).toHaveBeenCalledWith(cmd);
     expect(appInstance.applyLookDelta).toHaveBeenCalledWith(0, 0);
+    const nextCmd = { ...cmd, weaponSlot: 1 };
+    senderArgs.onSend?.(nextCmd);
+    expect(hudMock.setWeapon).toHaveBeenCalledWith(1, expect.any(String));
     expect(inputSenderInstance.start).toHaveBeenCalled();
     expect(statusMock.setMetrics).toHaveBeenCalledWith(expect.stringContaining('kf 5'));
 

@@ -30,23 +30,27 @@ describe('input sampler', () => {
     dispatchKey('keydown', 'KeyD');
     dispatchKey('keydown', 'ShiftLeft');
     dispatchKey('keydown', 'KeyE');
+    dispatchKey('keydown', 'Digit2');
 
     let sample = sampler.sample();
     expect(sample.moveY).toBe(1);
     expect(sample.moveX).toBe(1);
     expect(sample.sprint).toBe(true);
     expect(sample.dash).toBe(true);
+    expect(sample.weaponSlot).toBe(1);
 
     dispatchKey('keyup', 'KeyW');
     dispatchKey('keyup', 'KeyD');
     dispatchKey('keyup', 'ShiftLeft');
     dispatchKey('keyup', 'KeyE');
+    dispatchKey('keyup', 'Digit2');
 
     sample = sampler.sample();
     expect(sample.moveY).toBe(0);
     expect(sample.moveX).toBe(0);
     expect(sample.sprint).toBe(false);
     expect(sample.dash).toBe(false);
+    expect(sample.weaponSlot).toBe(1);
 
     sampler.dispose();
   });
@@ -112,7 +116,9 @@ describe('input sampler', () => {
       right: ['KeyL'],
       jump: ['KeyU'],
       sprint: ['KeyO'],
-      dash: ['KeyP']
+      dash: ['KeyP'],
+      weaponSlot1: ['KeyZ'],
+      weaponSlot2: ['KeyX']
     };
     sampler.setBindings(custom);
 
@@ -120,12 +126,14 @@ describe('input sampler', () => {
     dispatchKey('keydown', 'KeyL');
     dispatchKey('keydown', 'KeyO');
     dispatchKey('keydown', 'KeyP');
+    dispatchKey('keydown', 'KeyX');
 
     const sample = sampler.sample();
     expect(sample.moveY).toBe(1);
     expect(sample.moveX).toBe(1);
     expect(sample.sprint).toBe(true);
     expect(sample.dash).toBe(true);
+    expect(sample.weaponSlot).toBe(1);
 
     sampler.dispose();
   });
@@ -146,7 +154,9 @@ describe('input sampler', () => {
       'ShiftRight',
       'Space',
       'KeyZ',
-      'KeyE'
+      'KeyE',
+      'Digit1',
+      'Digit2'
     ];
     const deltas = [0, 1, -1, 5, -5, 12.5, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
 
@@ -178,6 +188,8 @@ describe('input sampler', () => {
       expect(typeof sample.fire).toBe('boolean');
       expect(typeof sample.sprint).toBe('boolean');
       expect(typeof sample.dash).toBe('boolean');
+      expect(Number.isInteger(sample.weaponSlot)).toBe(true);
+      expect(sample.weaponSlot).toBeGreaterThanOrEqual(0);
     }
 
     sampler.dispose();

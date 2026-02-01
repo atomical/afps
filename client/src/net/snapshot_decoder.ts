@@ -6,6 +6,9 @@ import {
   SNAPSHOT_MASK_VEL_Y,
   SNAPSHOT_MASK_VEL_Z,
   SNAPSHOT_MASK_DASH_COOLDOWN,
+  SNAPSHOT_MASK_HEALTH,
+  SNAPSHOT_MASK_KILLS,
+  SNAPSHOT_MASK_DEATHS,
   type SnapshotMessage,
   type StateSnapshot
 } from './protocol';
@@ -41,6 +44,9 @@ export class SnapshotDecoder {
       velY: mask & SNAPSHOT_MASK_VEL_Y ? (message.velY ?? this.base.velY) : this.base.velY,
       velZ: mask & SNAPSHOT_MASK_VEL_Z ? (message.velZ ?? this.base.velZ) : this.base.velZ,
       dashCooldown: mask & SNAPSHOT_MASK_DASH_COOLDOWN ? (message.dashCooldown ?? this.base.dashCooldown) : this.base.dashCooldown,
+      health: mask & SNAPSHOT_MASK_HEALTH ? (message.health ?? this.base.health) : this.base.health,
+      kills: mask & SNAPSHOT_MASK_KILLS ? (message.kills ?? this.base.kills) : this.base.kills,
+      deaths: mask & SNAPSHOT_MASK_DEATHS ? (message.deaths ?? this.base.deaths) : this.base.deaths,
       clientId: message.clientId ?? this.base.clientId
     };
   }

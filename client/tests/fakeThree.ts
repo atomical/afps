@@ -36,6 +36,10 @@ export class FakeScene extends FakeObject3D {
   add(child: FakeObject3D) {
     this.children.push(child);
   }
+
+  remove(child: FakeObject3D) {
+    this.children = this.children.filter((entry) => entry !== child);
+  }
 }
 
 export class FakeCamera extends FakeObject3D {

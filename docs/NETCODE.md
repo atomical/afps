@@ -22,7 +22,7 @@ This document explains the current M0 netcode flow: signaling, handshake, input,
 
 4. **Gameplay**
    - Client sends `InputCmd` and `Ping` on **unreliable**.
-   - Server sends `StateSnapshot` keyframes, `StateSnapshotDelta` updates, and `Pong` on **unreliable**.
+   - Server sends `StateSnapshot` keyframes, `StateSnapshotDelta` updates, `GameEvent`, and `Pong` on **unreliable**.
 
 ---
 
@@ -42,12 +42,12 @@ This document explains the current M0 netcode flow: signaling, handshake, input,
 
 Example (keyframe interval = 5):
 ```json
-{ "type": "StateSnapshot", "serverTick": 100, "lastProcessedInputSeq": 40, "posX": 1, "posY": 2, "posZ": 0.5, "velX": 0, "velY": 0, "velZ": 0 }
+{ "type": "StateSnapshot", "serverTick": 100, "lastProcessedInputSeq": 40, "posX": 1, "posY": 2, "posZ": 0.5, "velX": 0, "velY": 0, "velZ": 0, "health": 100, "kills": 0, "deaths": 0 }
 { "type": "StateSnapshotDelta", "serverTick": 101, "baseTick": 100, "lastProcessedInputSeq": 41, "mask": 1, "posX": 1.2 }
 { "type": "StateSnapshotDelta", "serverTick": 102, "baseTick": 100, "lastProcessedInputSeq": 42, "mask": 17, "posX": 1.3, "velY": -0.2 }
 { "type": "StateSnapshotDelta", "serverTick": 103, "baseTick": 100, "lastProcessedInputSeq": 43, "mask": 0 }
 { "type": "StateSnapshotDelta", "serverTick": 104, "baseTick": 100, "lastProcessedInputSeq": 44, "mask": 8, "velX": 0.1 }
-{ "type": "StateSnapshot", "serverTick": 105, "lastProcessedInputSeq": 45, "posX": 1.4, "posY": 2, "posZ": 0.5, "velX": 0.1, "velY": -0.2, "velZ": 0 }
+{ "type": "StateSnapshot", "serverTick": 105, "lastProcessedInputSeq": 45, "posX": 1.4, "posY": 2, "posZ": 0.5, "velX": 0.1, "velY": -0.2, "velZ": 0, "health": 100, "kills": 0, "deaths": 0 }
 ```
 
 ---

@@ -8,7 +8,7 @@
 ---
 
 ## Status Header (update every session)
-- **Last updated:** `2026-02-02 01:30:00 CT`
+- **Last updated:** `2026-02-01 11:26:04 CT`
 - **Session author:** `codex`
 - **Current milestone:** `M0`
 - **CI note:** Skip CI work unless explicitly requested.
@@ -118,6 +118,12 @@
 - [2026-02-01 23:45:00 CT] (client-ui) Added keyframe interval to connection detail line and updated main flow test. (tests: npm test)
 - [2026-02-01 23:55:00 CT] (server-tests) Assert ServerHello includes snapshotKeyframeInterval in signaling handshake test. (tests: ctest)
 - [2026-02-02 00:05:00 CT] (server-tests) Verified non-default snapshot keyframe interval propagates through ServerHello. (tests: ctest)
+- [2026-02-01 10:15:47 CT] (docs/client-ui) Documented physics scope and set initial weapon cooldown in HUD startup. (tests: npm test)
+- [2026-02-01 10:26:58 CT] (gameplay/net/ui) Added GameEvent hit confirmations, HUD hitmarker feedback, and updated protocol docs. (tests: npm test, ctest)
+- [2026-02-01 10:36:44 CT] (projectiles/net) Broadcast projectile spawn GameEvents, client spawns remote projectile VFX, and docs/schema updated. (tests: npm test, ctest)
+- [2026-02-01 10:48:22 CT] (projectiles/net) Added projectile remove events and client cleanup for remote VFX. (tests: npm test, ctest)
+- [2026-02-01 10:49:38 CT] (projectiles/net) Added projectile id tracking in client VFX and projectile remove handling across protocol/tests. (tests: npm test, ctest)
+- [2026-02-01 10:51:06 CT] (combat-tests) Added hitscan range/closest-target/missing-shooter unit tests. (tests: ctest)
 - [2026-02-02 00:15:00 CT] (client-tests) Added pre-snapshot metric assertion for keyframe interval. (tests: npm test)
 - [2026-02-02 00:20:00 CT] (docs) Documented keyframe interval HUD metric in netcode guide.
 - [2026-02-02 00:25:00 CT] (docs) Added snapshotKeyframeInterval to ServerHello field list.
@@ -132,6 +138,43 @@
 - [2026-02-02 01:30:00 CT] (dash) Added dash input + cooldown to sim, snapshots, and WASM bindings; updated protocol docs/tests.
 - [2026-02-02 02:20:00 CT] (assets) Added Kenney Retro Urban Kit (CC0) environment assets and mirrored GLB pack into client public assets for map prototyping.
 - [2026-02-02 02:40:00 CT] (map) Added hardcoded Retro Urban map loader to place GLB environment props at runtime (client-side).
+- [2026-02-02 02:55:00 CT] (map) Added JSON placement manifest for Retro Urban layout and loader support for manifest overrides.
+- [2026-02-02 03:10:00 CT] (map) Added optional manifest seed/yaw randomization for placements with randomYaw; updated tests and manifest metadata.
+- [2026-02-01 08:50:16 CT] (weapons) Added weapon config validation coverage for non-record entries and restored 100% client coverage. (tests: npm test)
+- [2026-02-01 09:11:12 CT] (weapons) Added viewYaw/viewPitch to InputCmd, server-side hitscan + lag compensation pose history, and combat unit tests. (tests: npm test, ctest)
+- [2026-02-01 09:26:32 CT] (combat) Added health/respawn/score tracking, health fields in snapshots/deltas, and protocol/netcode docs updates. (tests: npm test, ctest)
+- [2026-02-01 09:42:04 CT] (projectiles) Added server-side projectile sim + collision/explosion helpers, weaponSlot input field, explosion radius in weapon defs/config, and updated tests/docs. (tests: npm test, ctest)
+- [2026-02-01 09:49:53 CT] (input) Added weapon slot keybinds (1/2), sampler tracking, and settings/docs updates to drive projectile selection. (tests: npm test, ctest)
+- [2026-02-01 09:53:47 CT] (hud) Added weapon slot HUD display + main wiring, with tests and styling updates. (tests: npm test)
+- [2026-02-01 09:59:52 CT] (vfx) Added client-side projectile VFX prediction with cooldowns and cleanup, plus tests. (tests: npm test)
+- [2026-02-01 10:03:04 CT] (vfx) Added hitscan tracer VFX prediction, cooldown gating, and expanded app tests to keep 100% coverage. (tests: npm test)
+- [2026-02-01 10:54:25 CT] (combat-tests) Added hitscan occlusion and stale-history unit tests. (tests: ctest)
+- [2026-02-01 10:57:09 CT] (combat-tests) Added hitscan yaw targeting and shooter rewind unit tests. (tests: ctest)
+- [2026-02-01 10:58:04 CT] (combat-tests) Added hitscan distance checks for rewound target positions. (tests: ctest)
+- [2026-02-01 10:58:54 CT] (combat-tests) Added rewind tick selection test for hitscan targets. (tests: ctest)
+- [2026-02-01 11:00:04 CT] (combat-tests) Added hitscan non-finite input safety coverage. (tests: ctest)
+- [2026-02-01 11:00:50 CT] (combat-tests) Added randomized hitscan safety coverage. (tests: ctest)
+- [2026-02-01 11:01:46 CT] (combat-tests) Added projectile impact/explosion invalid input coverage. (tests: ctest)
+- [2026-02-01 11:02:22 CT] (combat-tests) Added randomized projectile impact safety coverage. (tests: ctest)
+- [2026-02-01 11:03:00 CT] (combat-tests) Added randomized explosion damage safety coverage. (tests: ctest)
+- [2026-02-01 11:03:30 CT] (docs/combat) Marked hitscan/lag-comp unit tests complete in spec. (tests: ctest)
+- [2026-02-01 11:04:48 CT] (combat-tests) Added health clamp/double-kill safety tests and marked property check complete. (tests: ctest)
+- [2026-02-01 11:06:23 CT] (map-tests) Added Retro Urban manifest GLB existence test. (tests: npm test)
+- [2026-02-01 11:08:18 CT] (map) Added debug bounds toggle for Retro Urban placements and tests. (tests: npm test)
+- [2026-02-01 11:08:55 CT] (docs/map) Documented Retro Urban debug bounds env toggle in spec. (tests: npm test)
+- [2026-02-01 11:12:47 CT] (docs/runbook) Added Retro Urban bounds dev command. (tests: none)
+- [2026-02-01 11:15:14 CT] (protocol-tests) Added fuzz coverage for malformed GameEvent payloads. (tests: npm test)
+- [2026-02-01 11:16:28 CT] (docs/map) Added Retro Urban visual sanity checklist. (tests: none)
+- [2026-02-01 11:17:21 CT] (milestone) Marked projectile weapon complete in M3 checklist. (tests: none)
+- [2026-02-01 11:18:28 CT] (map-tests) Added road-tile grid alignment checks for Retro Urban manifest. (tests: npm test)
+- [2026-02-01 11:19:54 CT] (map) Added debug grid helper toggle for Retro Urban placements and tests. (tests: npm test)
+- [2026-02-01 11:20:20 CT] (docs/runbook) Added Retro Urban grid dev command. (tests: none)
+- [2026-02-01 11:21:34 CT] (map-tests) Added arena bounds checks for Retro Urban manifest. (tests: npm test)
+- [2026-02-01 11:22:02 CT] (docs/map) Noted keeping Retro Urban placements within grid and arena bounds after edits. (tests: none)
+- [2026-02-01 11:22:42 CT] (docs/map) Added Retro Urban map edit guidelines to asset README. (tests: none)
+- [2026-02-01 11:23:46 CT] (map-tools) Added Retro Urban manifest validation script. (tests: python3 tools/validate_retro_urban_map.py)
+- [2026-02-01 11:24:40 CT] (map-tools) Added rotation/scale validation to Retro Urban manifest checker. (tests: python3 tools/validate_retro_urban_map.py)
+- [2026-02-01 11:26:04 CT] (docs/abilities) Expanded grapple rules, config, and netcode notes. (tests: none)
 
 ---
 
@@ -464,6 +507,13 @@ When processing a hitscan shot:
 - Apply damage authoritatively
 - Broadcast hit event
 
+## 6.4 Physics scope (deterministic + lightweight)
+- No full rigidbody physics engine in v1; use a kinematic controller + simple projectile integration.
+- Player physics: capsule sweep + slide, gravity, friction, jump; fixed dt for determinism.
+- World collisions: AABB/planes first, triangle mesh + BVH sweeps later.
+- Projectile physics: ballistic integration with sweeps to avoid tunneling.
+- Rigidbody props (if any) are out of scope for now or server-only later.
+
 ---
 
 # 7) Feature Implementation Docs (detailed)
@@ -559,7 +609,35 @@ Phase 2: add static triangle mesh + BVH sweeps.
 
 ---
 
-## 7.3 Weapons: Hitscan + Projectile
+## 7.3 Environment & Map Layout (Retro Urban Kit)
+### Goals
+- Load low-poly CC0 environment assets for fast blockout and visual context.
+- Keep placement deterministic and simple (hardcoded positions first, data-driven later).
+
+### Implementation steps
+- [x] Add Retro Urban Kit assets (CC0) to repo and mirror GLBs under client public assets.
+- [x] Hardcode a starter arena layout (roads + barriers + props) and load via GLTFLoader at runtime.
+- [x] Add JSON placement manifest for easy iteration (no code changes).
+- [x] Add optional map seed/randomization for variety (later).
+- [x] Add `VITE_DEBUG_RETRO_URBAN_BOUNDS=true` toggle to render BoxHelper bounds for placements.
+- [x] Add `VITE_DEBUG_RETRO_URBAN_GRID=true` toggle to render a 4m grid helper.
+
+### Tests
+- [x] Unit: map loader adds GLB scene nodes to the scene.
+- [x] Unit: map loader handles asset load errors gracefully.
+- [x] Unit: manifest references existing GLB assets.
+- [ ] Visual sanity check: layout loads in dev and matches expected scale/orientation.
+
+### Visual sanity checklist (manual)
+- Run: `VITE_DEBUG_RETRO_URBAN_BOUNDS=true npm run dev`
+- Verify road tiles align on a 4m grid and side roads close the perimeter.
+- Confirm props are upright (no unintended rotations) and benches/barriers sit on the ground plane.
+- Adjust `client/public/assets/environments/cc0/kenney_retro_urban_kit/map.json` positions/rotations as needed.
+- After adjustments, keep road tiles within `arenaHalfSize` and aligned to the 4m grid tests.
+
+---
+
+## 7.4 Weapons: Hitscan + Projectile
 ### Common rules
 - Server authoritative on damage
 - Client can predict muzzle flash, recoil, tracer
@@ -584,22 +662,23 @@ Phase 2: add static triangle mesh + BVH sweeps.
 - On impact: explosion radius damage (LOS optional)
 
 ### Implementation steps
-- [ ] Add weapon definitions (damage, ROF, spread, projectile speed)
-- [ ] Implement server-side raycast against world + players
-- [ ] Implement server-side projectile sim + collision
-- [ ] Add client VFX prediction (tracer/projectile)
-- [ ] Add reconciliation for projectiles (optional early: server-only projectiles with interpolation)
+- [x] Add weapon definitions (damage, ROF, spread, projectile speed)
+- [x] Implement server-side raycast against world + players
+- [x] Implement damage + health/respawn/score state and include in snapshots
+- [x] Implement server-side projectile sim + collision
+- [x] Add client VFX prediction (tracer/projectile)
+- [x] Add reconciliation for projectiles (optional early: server-only projectiles with interpolation)
 
 ### Tests
-- [ ] Unit: hitscan ray hits expected target in fixed scene
-- [ ] Unit: lag compensation rewinds correctly
-- [ ] Unit: projectile impact + explosion damage distribution
-- [ ] Property: no negative health, no double-kill race bugs
-- [ ] Fuzz: malformed weapon events rejected safely
+- [x] Unit: hitscan ray hits expected target in fixed scene
+- [x] Unit: lag compensation rewinds correctly
+- [x] Unit: projectile impact + explosion damage distribution
+- [x] Property: no negative health, no double-kill race bugs
+- [x] Fuzz: malformed weapon events rejected safely
 
 ---
 
-## 7.4 Abilities (dash, grapple, shield, push/shockwave)
+## 7.5 Abilities (dash, grapple, shield, push/shockwave)
 > Implement one at a time; each ability must have a crisp spec and cooldown rules.
 
 ### Dash
@@ -615,13 +694,22 @@ Phase 2: add static triangle mesh + BVH sweeps.
 ### Grapple
 - Inputs: grapplePressed, grappleHeld, grappleReleased
 - Rules:
-  - raycast to valid surfaces
-  - attach point stored
-  - pull force while held
-  - break if distance > max or LOS lost
+  - raycast to valid surfaces within `grappleMaxDistance` (server authoritative)
+  - attach point stored as world-space anchor + surface normal
+  - while held: apply spring/pull force toward anchor (with damping)
+  - optional rope length clamp (cannot extend beyond initial hit distance)
+  - release on grappleReleased, LOS break, max rope stretch, or cooldown cancel
+  - prevent re-attach while on cooldown
+- Config (shared sim):
+  - `grappleMaxDistance`, `grapplePullStrength`, `grappleDamping`
+  - `grappleCooldown`, `grappleMinAttachNormalY`, `grappleRopeSlack`
+- Netcode:
+  - client predicts rope render + pull, server validates and corrects via snapshots
+  - optional GameEvent: `GrappleAttach` / `GrappleRelease` for VFX/rope state
 - Tests:
   - [ ] attaches only to allowed surfaces
   - [ ] consistent pull across client/server
+  - [ ] release conditions enforced (LOS break, max stretch, cooldown)
 
 ### Shield
 - Inputs: shieldPressed/held
@@ -645,7 +733,7 @@ Phase 2: add static triangle mesh + BVH sweeps.
 
 ---
 
-## 7.5 Rendering (Three.js) + Stylized Look
+## 7.6 Rendering (Three.js) + Stylized Look
 ### Goals
 - Clean readability at high speed
 - Toon shading + outlines
@@ -683,7 +771,7 @@ Implementation steps
 
 ---
 
-## 7.6 UI / HUD
+## 7.7 UI / HUD
 ### Requirements
 - Crosshair, hitmarker, damage numbers (optional)
 - Health/armor/ammo
@@ -708,7 +796,7 @@ Implementation steps
 
 ---
 
-## 7.7 Audio
+## 7.8 Audio
 ### Requirements
 - Weapon fire sounds, impacts, footsteps
 - Spatial audio for opponents
@@ -727,7 +815,7 @@ Tests
 
 ---
 
-## 7.8 Performance Budgets (browser)
+## 7.9 Performance Budgets (browser)
 ### Budgets (set and enforce)
 - [ ] Initial download size: `< X MB` (set)
 - [ ] Time-to-interactive: `< Y s` on mid-tier machine
@@ -854,10 +942,10 @@ Server (C++):
 - [x] Minimal anti-abuse (rate limits, size limits)
 
 ## M3 — Weapons (hitscan + projectile) + damage
-- [ ] Hitscan with lag compensation
-- [ ] Projectile weapon
-- [ ] Damage, respawn, scoring
-- [ ] VFX feedback (hitmarkers)
+- [x] Hitscan with lag compensation
+- [x] Projectile weapon
+- [x] Damage, respawn, scoring
+- [x] VFX feedback (hitmarkers)
 
 ## M4 — Abilities + polish
 - [x] Dash
@@ -879,6 +967,9 @@ Server (C++):
 - Client dev server: `cd client && npm install && npm run dev`
 - Client dev server (with signaling): `cd client && VITE_SIGNALING_URL=https://localhost:8443 VITE_SIGNALING_AUTH_TOKEN=devtoken npm run dev`
 - Client dev server (with WASM sim): `cd client && npm run wasm:build && VITE_WASM_SIM_URL=/wasm/afps_sim.js npm run dev`
+- Client dev server (Retro Urban bounds): `cd client && VITE_DEBUG_RETRO_URBAN_BOUNDS=true npm run dev`
+- Client dev server (Retro Urban grid): `cd client && VITE_DEBUG_RETRO_URBAN_GRID=true npm run dev`
+- Validate Retro Urban manifest: `python3 tools/validate_retro_urban_map.py`
 - Client WASM parity check: `cd client && npm run wasm:check`
 - Client lint: `cd client && npm run lint`
 - Client format: `cd client && npm run format`

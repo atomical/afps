@@ -64,6 +64,9 @@ export class SnapshotBuffer {
       velZ: older.snapshot.velZ + (newer.snapshot.velZ - older.snapshot.velZ) * alpha,
       dashCooldown:
         older.snapshot.dashCooldown + (newer.snapshot.dashCooldown - older.snapshot.dashCooldown) * alpha,
+      health: newer.snapshot.health,
+      kills: newer.snapshot.kills,
+      deaths: newer.snapshot.deaths,
       clientId: newer.snapshot.clientId
     };
   }

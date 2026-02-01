@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "seed": 1337,
+  "yawChoices": [0, 1.5707963267948966, 3.141592653589793, 4.71238898038469],
+  "placements": [
+    { "file": "road-asphalt-center.glb", "position": [-4, 0, -4] },
+    { "file": "road-asphalt-center.glb", "position": [-4, 0, 0] },
+    { "file": "road-asphalt-center.glb", "position": [-4, 0, 4] },
+    { "file": "road-asphalt-center.glb", "position": [0, 0, -4] },
+    { "file": "road-asphalt-center.glb", "position": [0, 0, 0] },
+    { "file": "road-asphalt-center.glb", "position": [0, 0, 4] },
+    { "file": "road-asphalt-center.glb", "position": [4, 0, -4] },
+    { "file": "road-asphalt-center.glb", "position": [4, 0, 0] },
+    { "file": "road-asphalt-center.glb", "position": [4, 0, 4] },
+
+    { "file": "road-asphalt-side.glb", "position": [-8, 0, 0], "rotation": [0, 1.5707963267948966, 0] },
+    { "file": "road-asphalt-side.glb", "position": [8, 0, 0], "rotation": [0, -1.5707963267948966, 0] },
+    { "file": "road-asphalt-side.glb", "position": [0, 0, -8] },
+    { "file": "road-asphalt-side.glb", "position": [0, 0, 8], "rotation": [0, 3.141592653589793, 0] },
+
+    { "file": "wall-a-low.glb", "position": [-8, 0, -8], "rotation": [0, 1.5707963267948966, 0] },
+    { "file": "wall-a-low.glb", "position": [8, 0, -8], "rotation": [0, -1.5707963267948966, 0] },
+    { "file": "wall-a-low.glb", "position": [-8, 0, 8], "rotation": [0, 1.5707963267948966, 0] },
+    { "file": "wall-a-low.glb", "position": [8, 0, 8], "rotation": [0, -1.5707963267948966, 0] },
+
+    { "file": "detail-bench.glb", "position": [-3, 0, -3], "rotation": [0, 1.5707963267948966, 0] },
+    { "file": "detail-dumpster-closed.glb", "position": [3, 0, -3], "rotation": [0, -0.7853981633974483, 0] },
+    { "file": "detail-barrier-type-a.glb", "position": [-1, 0, 3], "rotation": [0, 3.141592653589793, 0] },
+    { "file": "detail-barrier-type-b.glb", "position": [1, 0, 3], "rotation": [0, 3.141592653589793, 0] },
+    { "file": "detail-light-single.glb", "position": [-3.5, 0, 1.5] },
+    { "file": "detail-light-traffic.glb", "position": [3.5, 0, 1.5], "rotation": [0, 1.5707963267948966, 0] },
+    { "file": "pallet.glb", "position": [-1.5, 0, -1.5], "rotation": [0, 1.0471975511965976, 0] },
+    { "file": "detail-block.glb", "position": [1.5, 0, -1.5], "scale": 1 }
+  ]
+}

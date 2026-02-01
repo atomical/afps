@@ -11,6 +11,9 @@ const makeInput = (seq: number, moveX = 0, moveY = 0, sprint = false, jump = fal
   moveY,
   lookDeltaX: 0,
   lookDeltaY: 0,
+  viewYaw: 0,
+  viewPitch: 0,
+  weaponSlot: 0,
   jump,
   fire: false,
   sprint,
@@ -25,7 +28,10 @@ const makeSnapshot = (
   velX = 0,
   velY = 0,
   velZ = 0,
-  dashCooldown = 0
+  dashCooldown = 0,
+  health = 100,
+  kills = 0,
+  deaths = 0
 ): StateSnapshot => ({
   type: 'StateSnapshot',
   serverTick: 1,
@@ -36,7 +42,10 @@ const makeSnapshot = (
   velX,
   velY,
   velZ,
-  dashCooldown
+  dashCooldown,
+  health,
+  kills,
+  deaths
 });
 
 const createRng = (seed: number) => {

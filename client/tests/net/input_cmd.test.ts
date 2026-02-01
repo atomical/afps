@@ -12,7 +12,8 @@ describe('input cmd', () => {
       jump: true,
       fire: false,
       sprint: true,
-      dash: true
+      dash: true,
+      weaponSlot: 1
     };
 
     const cmd = buildInputCmd(-5, sample);
@@ -24,6 +25,9 @@ describe('input cmd', () => {
       moveY: -1,
       lookDeltaX: 0,
       lookDeltaY: 0,
+      viewYaw: 0,
+      viewPitch: 0,
+      weaponSlot: 1,
       jump: true,
       fire: false,
       sprint: true,
@@ -40,7 +44,8 @@ describe('input cmd', () => {
       jump: false,
       fire: true,
       sprint: false,
-      dash: false
+      dash: false,
+      weaponSlot: 0
     });
 
     const json = serializeInputCmd(cmd);
@@ -56,7 +61,8 @@ describe('input cmd', () => {
       jump: false,
       fire: false,
       sprint: false,
-      dash: false
+      dash: false,
+      weaponSlot: 2
     });
 
     expect(cmd.moveX).toBe(0);

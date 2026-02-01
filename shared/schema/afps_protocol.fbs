@@ -27,6 +27,9 @@ table InputCmd {
   move_y:double;
   look_delta_x:double;
   look_delta_y:double;
+  view_yaw:double;
+  view_pitch:double;
+  weapon_slot:int;
   jump:bool;
   fire:bool;
   sprint:bool;
@@ -44,6 +47,25 @@ table StateSnapshot {
   vel_y:double;
   vel_z:double;
   dash_cooldown:double;
+  health:double;
+  kills:int;
+  deaths:int;
+}
+
+table GameEvent {
+  event:string;
+  target_id:string;
+  owner_id:string;
+  projectile_id:int;
+  damage:double;
+  killed:bool;
+  pos_x:double;
+  pos_y:double;
+  pos_z:double;
+  vel_x:double;
+  vel_y:double;
+  vel_z:double;
+  ttl:double;
 }
 
 table Ping {

@@ -1,9 +1,11 @@
 import {
   buildClientHello as buildClientHelloMessage,
+  parseGameEvent,
   parsePong,
   parseServerHello,
   parseSnapshotMessage,
   PROTOCOL_VERSION,
+  type GameEvent,
   type Pong,
   type StateSnapshot
 } from './protocol';
@@ -29,6 +31,7 @@ interface WebRtcConnectOptions {
   buildClientHello?: (sessionToken: string, connectionId: string) => string;
   onSnapshot?: (snapshot: StateSnapshot) => void;
   onPong?: (pong: Pong) => void;
+  onGameEvent?: (event: GameEvent) => void;
 }
 
 const RELIABLE_LABEL = 'afps_reliable';
@@ -134,7 +137,8 @@ export const createWebRtcConnector = ({
   timers = defaultTimers,
   buildClientHello = buildClientHelloMessage,
   onSnapshot,
-  onPong
+  onPong,
+  onGameEvent
 }: WebRtcConnectOptions) => {
   const connect = async (): Promise<WebRtcSession> => {
     const session = await signaling.createSession();
@@ -183,6 +187,11 @@ export const createWebRtcConnector = ({
         if (snapshot) {
           onSnapshot?.(snapshot);
         }
+        return;
+      }
+      const gameEvent = parseGameEvent(message.data);
+      if (gameEvent) {
+        onGameEvent?.(gameEvent);
         return;
       }
       const pong = parsePong(message.data);

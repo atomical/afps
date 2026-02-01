@@ -179,6 +179,9 @@ On invalid handshake, the server may send:
   "moveY": 1.0,
   "lookDeltaX": 0.0,
   "lookDeltaY": 0.0,
+  "viewYaw": 0.0,
+  "viewPitch": 0.0,
+  "weaponSlot": 0,
   "jump": false,
   "fire": false,
   "sprint": false,
@@ -190,6 +193,8 @@ Validation rules:
 - `inputSeq` must be an integer >= 0 and strictly increasing per connection.
 - `moveX`, `moveY` must be finite and in [-1, 1].
 - `lookDeltaX`, `lookDeltaY` must be finite numbers.
+- `viewYaw`, `viewPitch` must be finite numbers when present.
+- `weaponSlot` must be an integer >= 0 when present.
 - `jump`, `fire`, `sprint`, `dash` must be booleans.
 
 ### Ping (client -> server)
@@ -206,6 +211,50 @@ Validation rules:
 { "type": "Pong", "clientTimeMs": 12345.0 }
 ```
 
+### GameEvent (server -> client)
+
+Hit confirmation:
+```json
+{ "type": "GameEvent", "event": "HitConfirmed", "targetId": "<id>", "damage": 12.5, "killed": true }
+```
+
+Projectile spawn:
+```json
+{
+  "type": "GameEvent",
+  "event": "ProjectileSpawn",
+  "ownerId": "<id>",
+  "projectileId": 7,
+  "posX": 1.0,
+  "posY": 2.0,
+  "posZ": 3.0,
+  "velX": 4.0,
+  "velY": 5.0,
+  "velZ": 6.0,
+  "ttl": 0.5
+}
+```
+
+Projectile remove:
+```json
+{ "type": "GameEvent", "event": "ProjectileRemove", "ownerId": "<id>", "projectileId": 7 }
+```
+
+Validation rules:
+- `event` must be a known event name (`HitConfirmed`, `ProjectileSpawn`, `ProjectileRemove`).
+- For `HitConfirmed`:
+  - `targetId` is optional; if present it must be a non-empty string.
+  - `damage` is optional; if present it must be a finite number >= 0.
+  - `killed` is optional; if present it must be a boolean.
+- For `ProjectileSpawn`:
+  - `ownerId` must be a non-empty string.
+  - `projectileId` is optional; if present it must be an integer >= 0.
+  - `posX`, `posY`, `posZ`, `velX`, `velY`, `velZ` must be finite numbers.
+  - `ttl` must be a finite number >= 0.
+- For `ProjectileRemove`:
+  - `projectileId` must be an integer >= 0.
+  - `ownerId` is optional; if present it must be a non-empty string.
+
 ### StateSnapshot (server -> client)
 
 ```json
@@ -220,6 +269,9 @@ Validation rules:
   "velY": -0.75,
   "velZ": 0.5,
   "dashCooldown": 0.25,
+  "health": 100,
+  "kills": 0,
+  "deaths": 0,
   "clientId": "<id>"
 }
 ```
@@ -230,6 +282,8 @@ Validation rules:
 - `posX`, `posY`, `posZ` must be finite numbers.
 - `velX`, `velY`, `velZ` must be finite numbers.
 - `dashCooldown` must be a finite number >= 0.
+- `health` must be a finite number >= 0.
+- `kills`, `deaths` must be integers >= 0.
 - `clientId` is optional.
 
 The server sends full `StateSnapshot` keyframes every `5` snapshots. Deltas in between reference the
@@ -258,6 +312,9 @@ Mask bitfield (`mask`):
 - `16` (1 << 4): `velY`
 - `32` (1 << 5): `velZ`
 - `64` (1 << 6): `dashCooldown`
+- `128` (1 << 7): `health`
+- `256` (1 << 8): `kills`
+- `512` (1 << 9): `deaths`
 
 Validation rules:
 - `serverTick` must be an integer >= 0.

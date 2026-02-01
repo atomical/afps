@@ -19,6 +19,9 @@ describe('SnapshotDecoder', () => {
     velY: -0.2,
     velZ: 0.05,
     dashCooldown: 0.4,
+    health: 90,
+    kills: 1,
+    deaths: 0,
     clientId: 'client-1'
   };
 
@@ -78,6 +81,9 @@ describe('SnapshotDecoder', () => {
       velY: 1.0,
       velZ: 0.05,
       dashCooldown: 0.4,
+      health: 90,
+      kills: 1,
+      deaths: 0,
       clientId: 'client-1'
     });
   });

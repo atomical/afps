@@ -14,6 +14,12 @@ struct SimConfig {
   double jump_velocity;
   double dash_impulse;
   double dash_cooldown;
+  double grapple_max_distance;
+  double grapple_pull_strength;
+  double grapple_damping;
+  double grapple_cooldown;
+  double grapple_min_attach_normal_y;
+  double grapple_rope_slack;
   double arena_half_size;
   double player_radius;
   double obstacle_min_x;
@@ -49,6 +55,12 @@ inline constexpr SimConfig kDefaultSimConfig{
     30.0,
     7.5,
     12.0,
+    0.5,
+    20.0,
+    25.0,
+    4.0,
+    1.0,
+    0.2,
     0.5,
     50.0,
     0.5,

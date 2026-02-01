@@ -129,7 +129,10 @@ describe('webrtc connector', () => {
       velX: 0,
       velY: 0,
       velZ: 0,
-      dashCooldown: 0
+      dashCooldown: 0,
+      health: 100,
+      kills: 0,
+      deaths: 0
     };
     unreliable.emitMessage(JSON.stringify(snapshot));
 
@@ -157,6 +160,9 @@ describe('webrtc connector', () => {
       velY: -0.5,
       velZ: 0,
       dashCooldown: 0,
+      health: 100,
+      kills: 0,
+      deaths: 0,
       clientId: undefined
     });
     session.close();
@@ -222,11 +228,70 @@ describe('webrtc connector', () => {
       velX: 0,
       velY: 0,
       velZ: 0,
-      dashCooldown: 0
+      dashCooldown: 0,
+      health: 100,
+      kills: 0,
+      deaths: 0
     };
     unreliable.emitMessage(JSON.stringify(snapshot));
     expect(onSnapshot).toHaveBeenCalledWith(snapshot);
 
+    session.close();
+    vi.useRealTimers();
+  });
+
+  it('forwards game events from unreliable channel', async () => {
+    vi.useFakeTimers();
+    const signaling = new FakeSignalingClient();
+    const rtcFactory = new FakePeerConnectionFactory();
+    const onGameEvent = vi.fn();
+    const connector = createWebRtcConnector({
+      signaling,
+      rtcFactory,
+      logger: silentLogger,
+      pollIntervalMs: 100,
+      connectTimeoutMs: 1000,
+      timers: createTimers(),
+      onGameEvent
+    });
+
+    const connectPromise = connector.connect();
+    const pc = await waitForPeer(rtcFactory);
+
+    const reliable = new FakeDataChannel('afps_reliable');
+    const unreliable = new FakeDataChannel('afps_unreliable');
+    pc.emitDataChannel(reliable);
+    pc.emitDataChannel(unreliable);
+    reliable.open();
+    unreliable.open();
+    await Promise.resolve();
+    reliable.emitMessage(
+      JSON.stringify({
+        type: 'ServerHello',
+        protocolVersion: 2,
+        connectionId: signaling.connectionId,
+        serverTickRate: 60,
+        snapshotRate: 20
+      })
+    );
+
+    const session = await connectPromise;
+
+    unreliable.emitMessage(
+      JSON.stringify({
+        type: 'GameEvent',
+        event: 'HitConfirmed',
+        damage: 5.5,
+        killed: true
+      })
+    );
+
+    expect(onGameEvent).toHaveBeenCalledWith({
+      type: 'GameEvent',
+      event: 'HitConfirmed',
+      damage: 5.5,
+      killed: true
+    });
     session.close();
     vi.useRealTimers();
   });

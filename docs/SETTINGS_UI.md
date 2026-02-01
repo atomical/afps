@@ -36,7 +36,7 @@ The overlay is toggled with **`O`**. It sits above the canvas and does not block
 
 ### Keybinds
 
-- **Actions:** `forward`, `backward`, `left`, `right`, `jump`, `sprint`
+- **Actions:** `forward`, `backward`, `left`, `right`, `jump`, `sprint`, `dash`, `weaponSlot1`, `weaponSlot2`
 - **Behavior:**
   - Click a button to start capture.
   - Press a key to assign the binding.
@@ -56,7 +56,10 @@ The overlay is toggled with **`O`**. It sits above the canvas and does not block
   "left": ["KeyA", "ArrowLeft"],
   "right": ["KeyD", "ArrowRight"],
   "jump": ["Space"],
-  "sprint": ["ShiftLeft", "ShiftRight"]
+  "sprint": ["ShiftLeft", "ShiftRight"],
+  "dash": ["KeyE"],
+  "weaponSlot1": ["Digit1"],
+  "weaponSlot2": ["Digit2"]
 }
 ```
 

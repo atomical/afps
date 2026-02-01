@@ -9,6 +9,12 @@ export interface SimConfig {
   jumpVelocity: number;
   dashImpulse: number;
   dashCooldown: number;
+  grappleMaxDistance: number;
+  grapplePullStrength: number;
+  grappleDamping: number;
+  grappleCooldown: number;
+  grappleMinAttachNormalY: number;
+  grappleRopeSlack: number;
   arenaHalfSize: number;
   playerRadius: number;
   obstacleMinX: number;
@@ -26,6 +32,12 @@ export const DEFAULT_SIM_CONFIG: SimConfig = {
   jumpVelocity: 7.5,
   dashImpulse: 12,
   dashCooldown: 0.5,
+  grappleMaxDistance: 20,
+  grapplePullStrength: 25,
+  grappleDamping: 4,
+  grappleCooldown: 1,
+  grappleMinAttachNormalY: 0.2,
+  grappleRopeSlack: 0.5,
   arenaHalfSize: 50,
   playerRadius: 0.5,
   obstacleMinX: 0,
@@ -49,6 +61,13 @@ export const parseSimConfig = (value: unknown): SimConfig => {
   const jumpVelocity = readNumber(record.jumpVelocity) ?? DEFAULT_SIM_CONFIG.jumpVelocity;
   const dashImpulse = readNumber(record.dashImpulse) ?? DEFAULT_SIM_CONFIG.dashImpulse;
   const dashCooldown = readNumber(record.dashCooldown) ?? DEFAULT_SIM_CONFIG.dashCooldown;
+  const grappleMaxDistance = readNumber(record.grappleMaxDistance) ?? DEFAULT_SIM_CONFIG.grappleMaxDistance;
+  const grapplePullStrength = readNumber(record.grapplePullStrength) ?? DEFAULT_SIM_CONFIG.grapplePullStrength;
+  const grappleDamping = readNumber(record.grappleDamping) ?? DEFAULT_SIM_CONFIG.grappleDamping;
+  const grappleCooldown = readNumber(record.grappleCooldown) ?? DEFAULT_SIM_CONFIG.grappleCooldown;
+  const grappleMinAttachNormalY =
+    readNumber(record.grappleMinAttachNormalY) ?? DEFAULT_SIM_CONFIG.grappleMinAttachNormalY;
+  const grappleRopeSlack = readNumber(record.grappleRopeSlack) ?? DEFAULT_SIM_CONFIG.grappleRopeSlack;
   const arenaHalfSize = readNumber(record.arenaHalfSize) ?? DEFAULT_SIM_CONFIG.arenaHalfSize;
   const playerRadius = readNumber(record.playerRadius) ?? DEFAULT_SIM_CONFIG.playerRadius;
   const obstacleMinX = readNumber(record.obstacleMinX) ?? DEFAULT_SIM_CONFIG.obstacleMinX;
@@ -64,6 +83,12 @@ export const parseSimConfig = (value: unknown): SimConfig => {
     jumpVelocity,
     dashImpulse,
     dashCooldown,
+    grappleMaxDistance,
+    grapplePullStrength,
+    grappleDamping,
+    grappleCooldown,
+    grappleMinAttachNormalY,
+    grappleRopeSlack,
     arenaHalfSize,
     playerRadius,
     obstacleMinX,

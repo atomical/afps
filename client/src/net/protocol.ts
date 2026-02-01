@@ -6,6 +6,9 @@ export const SNAPSHOT_MASK_VEL_X = 1 << 3;
 export const SNAPSHOT_MASK_VEL_Y = 1 << 4;
 export const SNAPSHOT_MASK_VEL_Z = 1 << 5;
 export const SNAPSHOT_MASK_DASH_COOLDOWN = 1 << 6;
+export const SNAPSHOT_MASK_HEALTH = 1 << 7;
+export const SNAPSHOT_MASK_KILLS = 1 << 8;
+export const SNAPSHOT_MASK_DEATHS = 1 << 9;
 const SNAPSHOT_MASK_ALL =
   SNAPSHOT_MASK_POS_X |
   SNAPSHOT_MASK_POS_Y |
@@ -13,7 +16,10 @@ const SNAPSHOT_MASK_ALL =
   SNAPSHOT_MASK_VEL_X |
   SNAPSHOT_MASK_VEL_Y |
   SNAPSHOT_MASK_VEL_Z |
-  SNAPSHOT_MASK_DASH_COOLDOWN;
+  SNAPSHOT_MASK_DASH_COOLDOWN |
+  SNAPSHOT_MASK_HEALTH |
+  SNAPSHOT_MASK_KILLS |
+  SNAPSHOT_MASK_DEATHS;
 
 export interface ClientHello {
   type: 'ClientHello';
@@ -46,6 +52,9 @@ export interface StateSnapshot {
   velY: number;
   velZ: number;
   dashCooldown: number;
+  health: number;
+  kills: number;
+  deaths: number;
   clientId?: string;
 }
 
@@ -62,6 +71,9 @@ export interface StateSnapshotDelta {
   velY?: number;
   velZ?: number;
   dashCooldown?: number;
+  health?: number;
+  kills?: number;
+  deaths?: number;
   clientId?: string;
 }
 
@@ -75,6 +87,39 @@ export interface Pong {
   clientTimeMs: number;
 }
 
+export type GameEventName = 'HitConfirmed' | 'ProjectileSpawn' | 'ProjectileRemove';
+
+export interface HitConfirmedEvent {
+  type: 'GameEvent';
+  event: 'HitConfirmed';
+  targetId?: string;
+  damage?: number;
+  killed?: boolean;
+}
+
+export interface ProjectileSpawnEvent {
+  type: 'GameEvent';
+  event: 'ProjectileSpawn';
+  ownerId: string;
+  projectileId?: number;
+  posX: number;
+  posY: number;
+  posZ: number;
+  velX: number;
+  velY: number;
+  velZ: number;
+  ttl: number;
+}
+
+export interface ProjectileRemoveEvent {
+  type: 'GameEvent';
+  event: 'ProjectileRemove';
+  ownerId?: string;
+  projectileId: number;
+}
+
+export type GameEvent = HitConfirmedEvent | ProjectileSpawnEvent | ProjectileRemoveEvent;
+
 export type SnapshotMessage = StateSnapshot | StateSnapshotDelta;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -86,6 +131,8 @@ const readNumber = (value: unknown): number | null => (typeof value === 'number'
 
 const readInt = (value: unknown): number | null =>
   typeof value === 'number' && Number.isInteger(value) ? value : null;
+
+const readBool = (value: unknown): boolean | null => (typeof value === 'boolean' ? value : null);
 
 const parseJsonPayload = (message: string): Record<string, unknown> | null => {
   let payload: unknown;
@@ -110,6 +157,25 @@ const readMaskedNumber = (
     return { ok: true };
   }
   const value = readNumber(payload[key]);
+  if (value === null) {
+    return { ok: false };
+  }
+  return { ok: true, value };
+};
+
+const readMaskedInt = (
+  payload: Record<string, unknown>,
+  key: string,
+  mask: number,
+  bit: number
+): { ok: boolean; value?: number } => {
+  if ((mask & bit) === 0) {
+    if (key in payload) {
+      return { ok: false };
+    }
+    return { ok: true };
+  }
+  const value = readInt(payload[key]);
   if (value === null) {
     return { ok: false };
   }
@@ -197,6 +263,123 @@ export const parsePong = (message: string): Pong | null => {
   };
 };
 
+export const parseGameEvent = (message: string): GameEvent | null => {
+  const payload = parseJsonPayload(message);
+  if (!payload || payload.type !== 'GameEvent') {
+    return null;
+  }
+
+  const eventName = readString(payload.event);
+  if (eventName === 'HitConfirmed') {
+    let targetId: string | undefined;
+    if ('targetId' in payload) {
+      const parsed = readString(payload.targetId);
+      if (!parsed) {
+        return null;
+      }
+      targetId = parsed;
+    }
+
+    let damage: number | undefined;
+    if ('damage' in payload) {
+      const parsed = readNumber(payload.damage);
+      if (parsed === null || parsed < 0) {
+        return null;
+      }
+      damage = parsed;
+    }
+
+    let killed: boolean | undefined;
+    if ('killed' in payload) {
+      const parsed = readBool(payload.killed);
+      if (parsed === null) {
+        return null;
+      }
+      killed = parsed;
+    }
+
+    return {
+      type: 'GameEvent',
+      event: eventName,
+      targetId,
+      damage,
+      killed
+    };
+  }
+
+  if (eventName === 'ProjectileSpawn') {
+    const ownerId = readString(payload.ownerId);
+    if (!ownerId) {
+      return null;
+    }
+    const posX = readNumber(payload.posX);
+    const posY = readNumber(payload.posY);
+    const posZ = readNumber(payload.posZ);
+    const velX = readNumber(payload.velX);
+    const velY = readNumber(payload.velY);
+    const velZ = readNumber(payload.velZ);
+    const ttl = readNumber(payload.ttl);
+    if (
+      posX === null ||
+      posY === null ||
+      posZ === null ||
+      velX === null ||
+      velY === null ||
+      velZ === null ||
+      ttl === null ||
+      ttl < 0
+    ) {
+      return null;
+    }
+
+    let projectileId: number | undefined;
+    if ('projectileId' in payload) {
+      const parsed = readInt(payload.projectileId);
+      if (parsed === null || parsed < 0) {
+        return null;
+      }
+      projectileId = parsed;
+    }
+
+    return {
+      type: 'GameEvent',
+      event: eventName,
+      ownerId,
+      projectileId,
+      posX,
+      posY,
+      posZ,
+      velX,
+      velY,
+      velZ,
+      ttl
+    };
+  }
+
+  if (eventName === 'ProjectileRemove') {
+    const projectileId = readInt(payload.projectileId);
+    if (projectileId === null || projectileId < 0) {
+      return null;
+    }
+    let ownerId: string | undefined;
+    if ('ownerId' in payload) {
+      const parsed = readString(payload.ownerId);
+      if (!parsed) {
+        return null;
+      }
+      ownerId = parsed;
+    }
+    return {
+      type: 'GameEvent',
+      event: eventName,
+      ownerId,
+      projectileId
+    };
+  }
+
+  return null;
+};
+
 const parseStateSnapshotPayload = (payload: Record<string, unknown>): StateSnapshot | null => {
   if (payload.type !== 'StateSnapshot') {
     return null;
@@ -211,6 +394,9 @@ const parseStateSnapshotPayload = (payload: Record<string, unknown>): StateSnaps
   const velY = readNumber(payload.velY);
   const velZ = readNumber(payload.velZ);
   const dashCooldown = readNumber(payload.dashCooldown);
+  const health = readNumber(payload.health);
+  const kills = readInt(payload.kills);
+  const deaths = readInt(payload.deaths);
 
   if (serverTick === null || serverTick < 0) {
     return null;
@@ -226,8 +412,14 @@ const parseStateSnapshotPayload = (payload: Record<string, unknown>): StateSnaps
     velY === null ||
     velZ === null ||
     dashCooldown === null ||
+    health === null ||
+    kills === null ||
+    deaths === null ||
     dashCooldown < 0
   ) {
+    return null;
+  }
+  if (health < 0 || kills < 0 || deaths < 0) {
     return null;
   }
 
@@ -251,6 +443,9 @@ const parseStateSnapshotPayload = (payload: Record<string, unknown>): StateSnaps
     velY,
     velZ,
     dashCooldown,
+    health,
+    kills,
+    deaths,
     clientId
   };
 };
@@ -285,11 +480,34 @@ const parseStateSnapshotDeltaPayload = (payload: Record<string, unknown>): State
   const velY = readMaskedNumber(payload, 'velY', mask, SNAPSHOT_MASK_VEL_Y);
   const velZ = readMaskedNumber(payload, 'velZ', mask, SNAPSHOT_MASK_VEL_Z);
   const dashCooldown = readMaskedNumber(payload, 'dashCooldown', mask, SNAPSHOT_MASK_DASH_COOLDOWN);
+  const health = readMaskedNumber(payload, 'health', mask, SNAPSHOT_MASK_HEALTH);
+  const kills = readMaskedInt(payload, 'kills', mask, SNAPSHOT_MASK_KILLS);
+  const deaths = readMaskedInt(payload, 'deaths', mask, SNAPSHOT_MASK_DEATHS);
 
-  if (!posX.ok || !posY.ok || !posZ.ok || !velX.ok || !velY.ok || !velZ.ok || !dashCooldown.ok) {
+  if (
+    !posX.ok ||
+    !posY.ok ||
+    !posZ.ok ||
+    !velX.ok ||
+    !velY.ok ||
+    !velZ.ok ||
+    !dashCooldown.ok ||
+    !health.ok ||
+    !kills.ok ||
+    !deaths.ok
+  ) {
     return null;
   }
   if (dashCooldown.value !== undefined && dashCooldown.value < 0) {
+    return null;
+  }
+  if (health.value !== undefined && health.value < 0) {
+    return null;
+  }
+  if (kills.value !== undefined && kills.value < 0) {
+    return null;
+  }
+  if (deaths.value !== undefined && deaths.value < 0) {
     return null;
   }
 
@@ -331,6 +549,15 @@ const parseStateSnapshotDeltaPayload = (payload: Record<string, unknown>): State
   }
   if (dashCooldown.value !== undefined) {
     delta.dashCooldown = dashCooldown.value;
+  }
+  if (health.value !== undefined) {
+    delta.health = health.value;
+  }
+  if (kills.value !== undefined) {
+    delta.kills = kills.value;
+  }
+  if (deaths.value !== undefined) {
+    delta.deaths = deaths.value;
   }
 
   return delta;

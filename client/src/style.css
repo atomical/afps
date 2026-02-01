@@ -116,6 +116,48 @@ canvas {
   transform: translateX(-50%);
 }
 
+.hud-hitmarker {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  transform: translate(-50%, -50%) scale(0.9);
+  opacity: 0;
+  transition: opacity 90ms ease, transform 90ms ease;
+}
+
+.hud-hitmarker::before,
+.hud-hitmarker::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 18px;
+  height: 2px;
+  background: rgba(230, 233, 239, 0.9);
+  box-shadow: 0 0 6px rgba(76, 195, 255, 0.4);
+}
+
+.hud-hitmarker::before {
+  transform: translateY(-50%) rotate(45deg);
+}
+
+.hud-hitmarker::after {
+  transform: translateY(-50%) rotate(-45deg);
+}
+
+.hud-hitmarker.is-active {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.hud-hitmarker.is-kill::before,
+.hud-hitmarker.is-kill::after {
+  background: rgba(255, 107, 107, 0.95);
+  box-shadow: 0 0 8px rgba(255, 107, 107, 0.5);
+}
+
 .hud-info {
   position: absolute;
   left: 12px;
@@ -139,6 +181,18 @@ canvas {
   margin-top: 6px;
   font-size: 10px;
   color: #8fa3b8;
+}
+
+.hud-weapon {
+  margin-top: 6px;
+  font-size: 10px;
+  color: #f2d9a1;
+}
+
+.hud-weapon-cooldown {
+  margin-top: 4px;
+  font-size: 10px;
+  color: #a9b6c6;
 }
 
 .hud-overlay[data-lock='locked'] .hud-lock {

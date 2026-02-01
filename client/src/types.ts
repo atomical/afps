@@ -25,6 +25,7 @@ export interface ColorLike {
 
 export interface SceneLike extends Object3DLike {
   add: (child: Object3DLike) => void;
+  remove?: (child: Object3DLike) => void;
   background?: ColorLike | null;
 }
 
@@ -96,6 +97,9 @@ export interface NetworkSnapshot {
   velY: number;
   velZ: number;
   dashCooldown: number;
+  health: number;
+  kills: number;
+  deaths: number;
   clientId?: string;
 }
 
@@ -111,14 +115,26 @@ export interface App {
     moveY: number;
     lookDeltaX: number;
     lookDeltaY: number;
+    viewYaw: number;
+    viewPitch: number;
+    weaponSlot: number;
     jump: boolean;
     fire: boolean;
     sprint: boolean;
     dash: boolean;
   }) => void;
+  spawnProjectileVfx: (payload: {
+    origin: { x: number; y: number; z: number };
+    velocity: { x: number; y: number; z: number };
+    ttl?: number;
+    projectileId?: number;
+  }) => void;
+  removeProjectileVfx: (projectileId: number) => void;
+  getWeaponCooldown: (slot: number) => number;
   setTickRate: (tickRate: number) => void;
   setPredictionSim: (sim: PredictionSim) => void;
   applyLookDelta: (deltaX: number, deltaY: number) => void;
+  getLookAngles: () => { yaw: number; pitch: number };
   setLookSensitivity: (value: number) => void;
   dispose: () => void;
 }

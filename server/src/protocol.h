@@ -17,9 +17,13 @@ constexpr int kSnapshotMaskVelX = 1 << 3;
 constexpr int kSnapshotMaskVelY = 1 << 4;
 constexpr int kSnapshotMaskVelZ = 1 << 5;
 constexpr int kSnapshotMaskDashCooldown = 1 << 6;
+constexpr int kSnapshotMaskHealth = 1 << 7;
+constexpr int kSnapshotMaskKills = 1 << 8;
+constexpr int kSnapshotMaskDeaths = 1 << 9;
 constexpr int kSnapshotMaskAll = kSnapshotMaskPosX | kSnapshotMaskPosY | kSnapshotMaskPosZ |
                                  kSnapshotMaskVelX | kSnapshotMaskVelY | kSnapshotMaskVelZ |
-                                 kSnapshotMaskDashCooldown;
+                                 kSnapshotMaskDashCooldown | kSnapshotMaskHealth | kSnapshotMaskKills |
+                                 kSnapshotMaskDeaths;
 
 struct ClientHello {
   int protocol_version = 0;
@@ -45,6 +49,9 @@ struct InputCmd {
   double move_y = 0.0;
   double look_delta_x = 0.0;
   double look_delta_y = 0.0;
+  double view_yaw = 0.0;
+  double view_pitch = 0.0;
+  int weapon_slot = 0;
   bool jump = false;
   bool fire = false;
   bool sprint = false;
@@ -59,6 +66,22 @@ struct Pong {
   double client_time_ms = 0.0;
 };
 
+struct GameEvent {
+  std::string event;
+  std::string target_id;
+  std::string owner_id;
+  int projectile_id = -1;
+  double damage = 0.0;
+  bool killed = false;
+  double pos_x = 0.0;
+  double pos_y = 0.0;
+  double pos_z = 0.0;
+  double vel_x = 0.0;
+  double vel_y = 0.0;
+  double vel_z = 0.0;
+  double ttl = 0.0;
+};
+
 struct StateSnapshot {
   int server_tick = 0;
   int last_processed_input_seq = -1;
@@ -70,6 +93,9 @@ struct StateSnapshot {
   double vel_y = 0.0;
   double vel_z = 0.0;
   double dash_cooldown = 0.0;
+  double health = 100.0;
+  int kills = 0;
+  int deaths = 0;
 };
 
 struct StateSnapshotDelta {
@@ -85,6 +111,9 @@ struct StateSnapshotDelta {
   double vel_y = 0.0;
   double vel_z = 0.0;
   double dash_cooldown = 0.0;
+  double health = 0.0;
+  int kills = 0;
+  int deaths = 0;
 };
 
 bool ParseClientHello(const std::string &message, ClientHello &out, std::string &error);
@@ -93,5 +122,6 @@ bool ParsePing(const std::string &message, Ping &out, std::string &error);
 std::string BuildServerHello(const ServerHello &hello);
 std::string BuildProtocolError(const std::string &code, const std::string &message);
 std::string BuildPong(const Pong &pong);
+std::string BuildGameEvent(const GameEvent &event);
 std::string BuildStateSnapshot(const StateSnapshot &snapshot);
 std::string BuildStateSnapshotDelta(const StateSnapshotDelta &delta);

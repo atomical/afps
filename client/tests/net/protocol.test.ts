@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildClientHello,
   buildPing,
+  parseGameEvent,
   parsePong,
   parseServerHello,
   parseSnapshotMessage,
@@ -14,7 +15,10 @@ import {
   SNAPSHOT_MASK_VEL_X,
   SNAPSHOT_MASK_VEL_Y,
   SNAPSHOT_MASK_VEL_Z,
-  SNAPSHOT_MASK_DASH_COOLDOWN
+  SNAPSHOT_MASK_DASH_COOLDOWN,
+  SNAPSHOT_MASK_HEALTH,
+  SNAPSHOT_MASK_KILLS,
+  SNAPSHOT_MASK_DEATHS
 } from '../../src/net/protocol';
 
 describe('protocol helpers', () => {
@@ -89,6 +93,9 @@ describe('protocol helpers', () => {
       velY: -0.25,
       velZ: 0.1,
       dashCooldown: 0.4,
+      health: 75,
+      kills: 2,
+      deaths: 1,
       clientId: 'client-1'
     });
 
@@ -103,6 +110,9 @@ describe('protocol helpers', () => {
       velY: -0.25,
       velZ: 0.1,
       dashCooldown: 0.4,
+      health: 75,
+      kills: 2,
+      deaths: 1,
       clientId: 'client-1'
     });
   });
@@ -159,7 +169,25 @@ describe('protocol helpers', () => {
       velY: 0,
       velZ: 0,
       dashCooldown: 0,
+      health: 100,
+      kills: 0,
+      deaths: 0,
       clientId: ''
+    }))).toBeNull();
+    expect(parseStateSnapshot(JSON.stringify({
+      type: 'StateSnapshot',
+      serverTick: 0,
+      lastProcessedInputSeq: 0,
+      posX: 0,
+      posY: 0,
+      posZ: 0,
+      velX: 0,
+      velY: 0,
+      velZ: 0,
+      dashCooldown: 0,
+      health: -1,
+      kills: 0,
+      deaths: 0
     }))).toBeNull();
   });
 
@@ -180,6 +208,171 @@ describe('protocol helpers', () => {
     expect(parsePong('null')).toBeNull();
     expect(parsePong(JSON.stringify({ type: 'Pong', clientTimeMs: -1 }))).toBeNull();
     expect(parsePong(JSON.stringify({ type: 'Other', clientTimeMs: 1 }))).toBeNull();
+  });
+
+  it('parses GameEvent payloads', () => {
+    const payload = JSON.stringify({
+      type: 'GameEvent',
+      event: 'HitConfirmed',
+      targetId: 'target-1',
+      damage: 12.5,
+      killed: true
+    });
+
+    expect(parseGameEvent(payload)).toEqual({
+      type: 'GameEvent',
+      event: 'HitConfirmed',
+      targetId: 'target-1',
+      damage: 12.5,
+      killed: true
+    });
+
+    const noKillPayload = JSON.stringify({
+      type: 'GameEvent',
+      event: 'HitConfirmed',
+      targetId: 'target-2',
+      killed: false
+    });
+
+    expect(parseGameEvent(noKillPayload)).toEqual({
+      type: 'GameEvent',
+      event: 'HitConfirmed',
+      targetId: 'target-2',
+      killed: false
+    });
+
+    const spawnPayload = JSON.stringify({
+      type: 'GameEvent',
+      event: 'ProjectileSpawn',
+      ownerId: 'owner-1',
+      projectileId: 7,
+      posX: 1,
+      posY: 2,
+      posZ: 3,
+      velX: 4,
+      velY: 5,
+      velZ: 6,
+      ttl: 0.5
+    });
+
+    expect(parseGameEvent(spawnPayload)).toEqual({
+      type: 'GameEvent',
+      event: 'ProjectileSpawn',
+      ownerId: 'owner-1',
+      projectileId: 7,
+      posX: 1,
+      posY: 2,
+      posZ: 3,
+      velX: 4,
+      velY: 5,
+      velZ: 6,
+      ttl: 0.5
+    });
+
+    const removePayload = JSON.stringify({
+      type: 'GameEvent',
+      event: 'ProjectileRemove',
+      ownerId: 'owner-2',
+      projectileId: 9
+    });
+
+    expect(parseGameEvent(removePayload)).toEqual({
+      type: 'GameEvent',
+      event: 'ProjectileRemove',
+      ownerId: 'owner-2',
+      projectileId: 9
+    });
+  });
+
+  it('rejects invalid GameEvent payloads', () => {
+    expect(parseGameEvent('nope')).toBeNull();
+    expect(parseGameEvent(JSON.stringify({ type: 'GameEvent', event: 'Other' }))).toBeNull();
+    expect(parseGameEvent(JSON.stringify({ type: 'GameEvent', event: 'HitConfirmed', damage: -1 }))).toBeNull();
+    expect(parseGameEvent(JSON.stringify({ type: 'GameEvent', event: 'HitConfirmed', killed: 'no' }))).toBeNull();
+    expect(parseGameEvent(JSON.stringify({ type: 'GameEvent', event: 'HitConfirmed', targetId: '' }))).toBeNull();
+    expect(parseGameEvent(JSON.stringify({ type: 'GameEvent', event: 'ProjectileSpawn' }))).toBeNull();
+    expect(parseGameEvent(JSON.stringify({ type: 'GameEvent', event: 'ProjectileSpawn', ownerId: '' }))).toBeNull();
+    expect(parseGameEvent(JSON.stringify({
+      type: 'GameEvent',
+      event: 'ProjectileSpawn',
+      ownerId: 'owner',
+      posX: 0,
+      posY: 0,
+      posZ: 0,
+      velX: 0,
+      velY: 0,
+      velZ: 0,
+      ttl: -1
+    }))).toBeNull();
+    expect(parseGameEvent(JSON.stringify({
+      type: 'GameEvent',
+      event: 'ProjectileSpawn',
+      ownerId: 'owner',
+      projectileId: -2,
+      posX: 0,
+      posY: 0,
+      posZ: 0,
+      velX: 0,
+      velY: 0,
+      velZ: 0,
+      ttl: 1
+    }))).toBeNull();
+    expect(parseGameEvent(JSON.stringify({ type: 'GameEvent', event: 'ProjectileRemove' }))).toBeNull();
+    expect(parseGameEvent(JSON.stringify({
+      type: 'GameEvent',
+      event: 'ProjectileRemove',
+      projectileId: -1
+    }))).toBeNull();
+    expect(parseGameEvent(JSON.stringify({
+      type: 'GameEvent',
+      event: 'ProjectileRemove',
+      projectileId: 3,
+      ownerId: ''
+    }))).toBeNull();
+  });
+
+  it('rejects malformed GameEvent payloads (fuzzed)', () => {
+    const randomString = (seed: number, length: number) => {
+      let value = '';
+      let state = seed >>> 0;
+      for (let i = 0; i < length; i += 1) {
+        state = (state * 1664525 + 1013904223) >>> 0;
+        const code = 32 + (state % 95);
+        value += String.fromCharCode(code);
+      }
+      return value;
+    };
+
+    for (let i = 0; i < 64; i += 1) {
+      const garbage = randomString(i + 1, 12);
+      expect(parseGameEvent(garbage)).toBeNull();
+    }
+
+    for (let i = 0; i < 64; i += 1) {
+      const payload = JSON.stringify({
+        type: 'GameEvent',
+        event: `Unknown${i}`,
+        damage: 'nope',
+        targetId: i % 2 === 0 ? '' : 42
+      });
+      expect(parseGameEvent(payload)).toBeNull();
+    }
+
+    for (let i = 0; i < 64; i += 1) {
+      const payload = JSON.stringify({
+        type: 'GameEvent',
+        event: 'ProjectileSpawn',
+        ownerId: i % 3 === 0 ? '' : 123,
+        posX: 'x',
+        posY: 0,
+        posZ: 0,
+        velX: 0,
+        velY: 0,
+        velZ: 0,
+        ttl: -1
+      });
+      expect(parseGameEvent(payload)).toBeNull();
+    }
   });
 
   it('rejects non-integer snapshot ticks', () => {
@@ -205,7 +398,10 @@ describe('protocol helpers', () => {
       SNAPSHOT_MASK_VEL_X |
       SNAPSHOT_MASK_VEL_Y |
       SNAPSHOT_MASK_VEL_Z |
-      SNAPSHOT_MASK_DASH_COOLDOWN;
+      SNAPSHOT_MASK_DASH_COOLDOWN |
+      SNAPSHOT_MASK_HEALTH |
+      SNAPSHOT_MASK_KILLS |
+      SNAPSHOT_MASK_DEATHS;
     const payload = JSON.stringify({
       type: 'StateSnapshotDelta',
       serverTick: 10,
@@ -219,6 +415,9 @@ describe('protocol helpers', () => {
       velY: -0.5,
       velZ: 0.1,
       dashCooldown: 0.35,
+      health: 80,
+      kills: 1,
+      deaths: 0,
       clientId: 'client-1'
     });
 
@@ -235,6 +434,9 @@ describe('protocol helpers', () => {
       velY: -0.5,
       velZ: 0.1,
       dashCooldown: 0.35,
+      health: 80,
+      kills: 1,
+      deaths: 0,
       clientId: 'client-1'
     });
   });
@@ -289,7 +491,7 @@ describe('protocol helpers', () => {
       serverTick: 1,
       baseTick: 1,
       lastProcessedInputSeq: 0,
-      mask: 128
+      mask: 4096
     }))).toBeNull();
     expect(parseStateSnapshotDelta(JSON.stringify({
       type: 'StateSnapshotDelta',
@@ -312,7 +514,23 @@ describe('protocol helpers', () => {
       baseTick: 1,
       lastProcessedInputSeq: 0,
       mask: 0,
+      kills: 1
+    }))).toBeNull();
+    expect(parseStateSnapshotDelta(JSON.stringify({
+      type: 'StateSnapshotDelta',
+      serverTick: 1,
+      baseTick: 1,
+      lastProcessedInputSeq: 0,
+      mask: 0,
       clientId: ''
+    }))).toBeNull();
+    expect(parseStateSnapshotDelta(JSON.stringify({
+      type: 'StateSnapshotDelta',
+      serverTick: 1,
+      baseTick: 1,
+      lastProcessedInputSeq: 0,
+      mask: SNAPSHOT_MASK_KILLS,
+      kills: 'bad'
     }))).toBeNull();
     expect(parseStateSnapshotDelta(JSON.stringify({
       type: 'StateSnapshotDelta',
@@ -321,6 +539,30 @@ describe('protocol helpers', () => {
       lastProcessedInputSeq: 0,
       mask: SNAPSHOT_MASK_DASH_COOLDOWN,
       dashCooldown: -0.1
+    }))).toBeNull();
+    expect(parseStateSnapshotDelta(JSON.stringify({
+      type: 'StateSnapshotDelta',
+      serverTick: 1,
+      baseTick: 1,
+      lastProcessedInputSeq: 0,
+      mask: SNAPSHOT_MASK_HEALTH,
+      health: -5
+    }))).toBeNull();
+    expect(parseStateSnapshotDelta(JSON.stringify({
+      type: 'StateSnapshotDelta',
+      serverTick: 1,
+      baseTick: 1,
+      lastProcessedInputSeq: 0,
+      mask: SNAPSHOT_MASK_KILLS,
+      kills: -1
+    }))).toBeNull();
+    expect(parseStateSnapshotDelta(JSON.stringify({
+      type: 'StateSnapshotDelta',
+      serverTick: 1,
+      baseTick: 1,
+      lastProcessedInputSeq: 0,
+      mask: SNAPSHOT_MASK_DEATHS,
+      deaths: -2
     }))).toBeNull();
   });
 
@@ -335,7 +577,10 @@ describe('protocol helpers', () => {
       velX: 0.5,
       velY: -0.25,
       velZ: 0.1,
-      dashCooldown: 0.4
+      dashCooldown: 0.4,
+      health: 100,
+      kills: 0,
+      deaths: 0
     });
     const deltaPayload = JSON.stringify({
       type: 'StateSnapshotDelta',

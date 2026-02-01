@@ -21,7 +21,7 @@ The generated JS module must export the following functions:
 - `_sim_create`
 - `_sim_destroy`
 - `_sim_reset`
-- `_sim_set_config` (handle, moveSpeed, sprintMultiplier, accel, friction, gravity, jumpVelocity, dashImpulse, dashCooldown, arenaHalfSize, playerRadius, obstacleMinX, obstacleMaxX, obstacleMinY, obstacleMaxY)
+- `_sim_set_config` (handle, moveSpeed, sprintMultiplier, accel, friction, gravity, jumpVelocity, dashImpulse, dashCooldown, grappleMaxDistance, grapplePullStrength, grappleDamping, grappleCooldown, grappleMinAttachNormalY, grappleRopeSlack, arenaHalfSize, playerRadius, obstacleMinX, obstacleMaxX, obstacleMinY, obstacleMaxY)
 - `_sim_set_state` (handle, x, y, z, velX, velY, velZ, dashCooldown)
 - `_sim_step` (handle, dt, moveX, moveY, sprint, jump, dash)
 - `_sim_get_x`

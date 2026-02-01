@@ -3,7 +3,56 @@ const loadRetroUrbanMapMock = vi.fn();
 vi.mock('../src/environment/retro_urban_map', () => ({
   loadRetroUrbanMap: (...args: unknown[]) => loadRetroUrbanMapMock(...args)
 }));
+vi.mock('../src/weapons/config', () => ({
+  WEAPON_DEFS: [
+    {
+      id: 'rifle',
+      name: 'Rifle',
+      kind: 'hitscan',
+      damage: 12,
+      fireRate: 8,
+      spreadDeg: 1.5,
+      range: 60,
+      projectileSpeed: 0,
+      explosionRadius: 0
+    },
+    {
+      id: 'launcher',
+      name: 'Launcher',
+      kind: 'projectile',
+      damage: 80,
+      fireRate: 1,
+      spreadDeg: 0,
+      range: 0,
+      projectileSpeed: 22,
+      explosionRadius: 4.5
+    },
+    {
+      id: 'slowpoke',
+      name: 'Slowpoke',
+      kind: 'projectile',
+      damage: 10,
+      fireRate: 2,
+      spreadDeg: 0,
+      range: 0,
+      projectileSpeed: 0,
+      explosionRadius: 2
+    },
+    {
+      id: 'jammer',
+      name: 'Jammer',
+      kind: 'projectile',
+      damage: 5,
+      fireRate: 0,
+      spreadDeg: 0,
+      range: 0,
+      projectileSpeed: 10,
+      explosionRadius: 2
+    }
+  ]
+}));
 import { createApp } from '../src/app';
+import { WEAPON_DEFS } from '../src/weapons/config';
 import { SIM_CONFIG } from '../src/sim/config';
 import { createFakeThree, FakeCamera, FakeRenderer, FakeScene } from './fakeThree';
 
@@ -59,7 +108,10 @@ describe('createApp', () => {
         velX: 0,
         velY: 0,
         velZ: 0,
-        dashCooldown: 0
+        dashCooldown: 0,
+        health: 100,
+        kills: 0,
+        deaths: 0
       },
       0
     );
@@ -74,7 +126,10 @@ describe('createApp', () => {
         velX: 0,
         velY: 0,
         velZ: 0,
-        dashCooldown: 0
+        dashCooldown: 0,
+        health: 100,
+        kills: 0,
+        deaths: 0
       },
       100
     );
@@ -101,6 +156,9 @@ describe('createApp', () => {
       moveY: 0,
       lookDeltaX: 0,
       lookDeltaY: 0,
+      viewYaw: 0,
+      viewPitch: 0,
+      weaponSlot: 0,
       jump: false,
       fire: false,
       sprint: false,
@@ -112,6 +170,238 @@ describe('createApp', () => {
     const expected = SIM_CONFIG.accel * (1 / 60) * (1 / 60);
     expect(app.state.cube.position.x).toBeCloseTo(expected);
     expect(app.state.camera.position.x).toBeCloseTo(expected);
+  });
+
+  it('spawns projectile VFX for projectile weapon fire', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+
+    expect(scene.children.length).toBe(3);
+    app.recordInput({
+      type: 'InputCmd',
+      inputSeq: 1,
+      moveX: 0,
+      moveY: 0,
+      lookDeltaX: 0,
+      lookDeltaY: 0,
+      viewYaw: 0,
+      viewPitch: 0,
+      weaponSlot: 1,
+      jump: false,
+      fire: true,
+      sprint: false,
+      dash: false
+    });
+
+    expect(scene.children.length).toBe(4);
+    expect(app.getWeaponCooldown(1)).toBeCloseTo(1);
+    app.recordInput({
+      type: 'InputCmd',
+      inputSeq: 2,
+      moveX: 0,
+      moveY: 0,
+      lookDeltaX: 0,
+      lookDeltaY: 0,
+      viewYaw: 0,
+      viewPitch: 0,
+      weaponSlot: 1,
+      jump: false,
+      fire: true,
+      sprint: false,
+      dash: false
+    });
+    expect(scene.children.length).toBe(4);
+
+    app.renderFrame(0.5, 1000);
+    expect(scene.children.length).toBe(4);
+    expect(app.getWeaponCooldown(1)).toBeCloseTo(0.5);
+    app.renderFrame(2, 1500);
+    expect(scene.children.length).toBe(3);
+    expect(app.getWeaponCooldown(1)).toBe(0);
+    app.renderFrame(0.1, 1700);
+  });
+
+  it('spawns projectile VFX for server projectile events', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+
+    expect(scene.children.length).toBe(3);
+    app.spawnProjectileVfx({
+      origin: { x: 1, y: 2, z: 3 },
+      velocity: { x: 4, y: 0, z: -2 },
+      ttl: 0.5,
+      projectileId: 12
+    });
+
+    expect(scene.children.length).toBe(4);
+    app.removeProjectileVfx(12);
+    expect(scene.children.length).toBe(3);
+    app.renderFrame(0.6, 1000);
+    expect(scene.children.length).toBe(3);
+  });
+
+  it('ignores server projectile VFX when payload is invalid', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+
+    app.spawnProjectileVfx({
+      origin: { x: Number.NaN, y: 0, z: 0 },
+      velocity: { x: 1, y: 0, z: 0 }
+    });
+
+    expect(scene.children.length).toBe(3);
+    app.removeProjectileVfx(-1);
+    app.removeProjectileVfx(999);
+  });
+
+  it('ignores server projectile VFX when projectile id is invalid', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+
+    app.spawnProjectileVfx({
+      origin: { x: 0, y: 0, z: 0 },
+      velocity: { x: 1, y: 0, z: 0 },
+      projectileId: -2
+    });
+
+    expect(scene.children.length).toBe(3);
+  });
+
+  it('replaces server projectile VFX with the same id', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+
+    app.spawnProjectileVfx({
+      origin: { x: 1, y: 1, z: 1 },
+      velocity: { x: 1, y: 0, z: 0 },
+      projectileId: 5
+    });
+    const firstProjectile = scene.children[3];
+    expect(scene.children.length).toBe(4);
+
+    app.spawnProjectileVfx({
+      origin: { x: 2, y: 2, z: 2 },
+      velocity: { x: 0, y: 1, z: 0 },
+      projectileId: 5
+    });
+
+    expect(scene.children.length).toBe(4);
+    expect(scene.children.includes(firstProjectile)).toBe(false);
+  });
+
+  it('ignores projectile VFX for hitscan weapon fire', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+
+    app.recordInput({
+      type: 'InputCmd',
+      inputSeq: 1,
+      moveX: 0,
+      moveY: 0,
+      lookDeltaX: 0,
+      lookDeltaY: 0,
+      viewYaw: 0,
+      viewPitch: 0,
+      weaponSlot: Number.NaN,
+      jump: false,
+      fire: true,
+      sprint: false,
+      dash: false
+    });
+
+    expect(scene.children.length).toBe(4);
+    app.renderFrame(0.1, 1000);
+    expect(scene.children.length).toBe(3);
+  });
+
+  it('skips projectile VFX when projectile speed is invalid', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+
+    app.recordInput({
+      type: 'InputCmd',
+      inputSeq: 1,
+      moveX: 0,
+      moveY: 0,
+      lookDeltaX: 0,
+      lookDeltaY: 0,
+      viewYaw: 0,
+      viewPitch: 0,
+      weaponSlot: 2,
+      jump: false,
+      fire: true,
+      sprint: false,
+      dash: false
+    });
+
+    expect(scene.children.length).toBe(3);
+    app.renderFrame(0.1, 1000);
+  });
+
+  it('skips projectile VFX when fire rate is invalid', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+
+    app.recordInput({
+      type: 'InputCmd',
+      inputSeq: 1,
+      moveX: 0,
+      moveY: 0,
+      lookDeltaX: 0,
+      lookDeltaY: 0,
+      viewYaw: 0,
+      viewPitch: 0,
+      weaponSlot: 3,
+      jump: false,
+      fire: true,
+      sprint: false,
+      dash: false
+    });
+
+    expect(scene.children.length).toBe(3);
+  });
+
+  it('skips VFX when no weapons are configured', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+    const saved = WEAPON_DEFS.splice(0, WEAPON_DEFS.length);
+
+    app.recordInput({
+      type: 'InputCmd',
+      inputSeq: 1,
+      moveX: 0,
+      moveY: 0,
+      lookDeltaX: 0,
+      lookDeltaY: 0,
+      viewYaw: 0,
+      viewPitch: 0,
+      weaponSlot: 0,
+      jump: false,
+      fire: true,
+      sprint: false,
+      dash: false
+    });
+
+    expect(scene.children.length).toBe(3);
+    WEAPON_DEFS.push(...saved);
   });
 
   it('applies predicted vertical offset on jump', () => {
@@ -126,6 +416,9 @@ describe('createApp', () => {
       moveY: 0,
       lookDeltaX: 0,
       lookDeltaY: 0,
+      viewYaw: 0,
+      viewPitch: 0,
+      weaponSlot: 0,
       jump: true,
       fire: false,
       sprint: false,
@@ -151,6 +444,9 @@ describe('createApp', () => {
       moveY: 0,
       lookDeltaX: 0,
       lookDeltaY: 0,
+      viewYaw: 0,
+      viewPitch: 0,
+      weaponSlot: 0,
       jump: false,
       fire: false,
       sprint: false,
@@ -184,6 +480,9 @@ describe('createApp', () => {
       moveY: 0,
       lookDeltaX: 0,
       lookDeltaY: 0,
+      viewYaw: 0,
+      viewPitch: 0,
+      weaponSlot: 0,
       jump: false,
       fire: false,
       sprint: false,
@@ -244,6 +543,58 @@ describe('createApp', () => {
     app.applyLookDelta(50, 0);
 
     expect(camera.rotation.y).toBeCloseTo(firstYaw + 0.5);
+  });
+
+  it('exposes look angles alongside snapshot-driven rendering', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1, lookSensitivity: 0.01 });
+
+    app.applyLookDelta(100, 0);
+    const angles = app.getLookAngles();
+    expect(angles.yaw).toBeGreaterThan(0);
+
+    app.setSnapshotRate(10);
+    app.ingestSnapshot(
+      {
+        type: 'StateSnapshot',
+        serverTick: 1,
+        lastProcessedInputSeq: 1,
+        posX: 0,
+        posY: 0,
+        posZ: 0,
+        velX: 0,
+        velY: 0,
+        velZ: 0,
+        dashCooldown: 0,
+        health: 100,
+        kills: 0,
+        deaths: 0
+      },
+      0
+    );
+    app.ingestSnapshot(
+      {
+        type: 'StateSnapshot',
+        serverTick: 2,
+        lastProcessedInputSeq: 2,
+        posX: 6,
+        posY: 2,
+        posZ: 1,
+        velX: 0,
+        velY: 0,
+        velZ: 0,
+        dashCooldown: 0,
+        health: 90,
+        kills: 1,
+        deaths: 0
+      },
+      100
+    );
+    app.renderFrame(0, 250);
+
+    expect(app.state.cube.position.x).toBeCloseTo(3);
+    expect(app.state.cube.position.z).toBeCloseTo(1);
   });
 
   it('keeps default positions without snapshots or prediction', () => {

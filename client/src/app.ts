@@ -3,6 +3,7 @@ import type { InputCmd } from './net/input_cmd';
 import { ClientPrediction, type PredictionSim } from './net/prediction';
 import { SnapshotBuffer } from './net/snapshot_buffer';
 import { loadRetroUrbanMap } from './environment/retro_urban_map';
+import { WEAPON_DEFS } from './weapons/config';
 
 export interface CreateAppOptions {
   three: ThreeLike;
@@ -25,10 +26,29 @@ const DEFAULTS = {
   cameraHeight: 1.6,
   background: 0x0b0d12,
   cubeColor: 0x4cc3ff,
+  projectileColor: 0xf2d9a1,
+  projectileSize: 0.12,
+  projectileTtl: 1.2,
+  tracerColor: 0xffd27d,
+  tracerThickness: 0.03,
+  tracerTtl: 0.08,
+  tracerLength: 24,
   ambientIntensity: 0.4,
   keyLightIntensity: 0.9,
   snapshotRate: 20,
   tickRate: 60
+};
+
+type ProjectileVfx = {
+  id?: number;
+  mesh: AppState['cube'];
+  velocity: { x: number; y: number; z: number };
+  ttl: number;
+};
+
+type TracerVfx = {
+  mesh: AppState['cube'];
+  ttl: number;
 };
 
 export const createApp = ({
@@ -65,6 +85,18 @@ export const createApp = ({
   keyLight.position.set(2, 4, 3);
   scene.add(keyLight);
 
+  const projectileGeometry = new three.BoxGeometry(
+    DEFAULTS.projectileSize,
+    DEFAULTS.projectileSize,
+    DEFAULTS.projectileSize
+  );
+  const projectileMaterial = new three.MeshStandardMaterial({ color: DEFAULTS.projectileColor });
+  const tracerMaterial = new three.MeshStandardMaterial({ color: DEFAULTS.tracerColor });
+  const projectiles: ProjectileVfx[] = [];
+  const projectileIndex = new Map<number, ProjectileVfx>();
+  const tracers: TracerVfx[] = [];
+  const fireCooldowns = new Map<number, number>();
+
   if (loadEnvironment) {
     void loadRetroUrbanMap(scene);
   }
@@ -89,6 +121,112 @@ export const createApp = ({
     lookSensitivity = initialLookSensitivity;
   }
 
+  const clampWeaponSlot = (slot: number) => {
+    const maxSlot = Math.max(0, WEAPON_DEFS.length - 1);
+    if (!Number.isFinite(slot)) {
+      return 0;
+    }
+    return Math.min(maxSlot, Math.max(0, Math.floor(slot)));
+  };
+
+  const getWeaponDef = (slot: number) => WEAPON_DEFS[clampWeaponSlot(slot)];
+
+  const computeDirection = (yaw: number, pitch: number) => {
+    const safeYaw = Number.isFinite(yaw) ? yaw : 0;
+    const safePitch = Number.isFinite(pitch) ? pitch : 0;
+    const cosPitch = Math.cos(safePitch);
+    let x = Math.sin(safeYaw) * cosPitch;
+    let y = Math.sin(safePitch);
+    let z = -Math.cos(safeYaw) * cosPitch;
+    const len = Math.hypot(x, y, z) || 1;
+    x /= len;
+    y /= len;
+    z /= len;
+    return { x, y, z };
+  };
+
+  const spawnProjectile = (
+    origin: { x: number; y: number; z: number },
+    dir: { x: number; y: number; z: number },
+    speed: number
+  ) => {
+    const velocity = { x: dir.x * speed, y: dir.y * speed, z: dir.z * speed };
+    spawnProjectileWithVelocity(origin, velocity, DEFAULTS.projectileTtl);
+  };
+
+  const removeProjectile = (projectile: ProjectileVfx) => {
+    scene.remove?.(projectile.mesh);
+    if (projectile.id !== undefined) {
+      projectileIndex.delete(projectile.id);
+    }
+  };
+
+  const spawnProjectileWithVelocity = (
+    origin: { x: number; y: number; z: number },
+    velocity: { x: number; y: number; z: number },
+    ttl: number,
+    projectileId?: number
+  ) => {
+    if (
+      !Number.isFinite(origin.x) ||
+      !Number.isFinite(origin.y) ||
+      !Number.isFinite(origin.z) ||
+      !Number.isFinite(velocity.x) ||
+      !Number.isFinite(velocity.y) ||
+      !Number.isFinite(velocity.z)
+    ) {
+      return;
+    }
+    if (projectileId !== undefined && (!Number.isFinite(projectileId) || projectileId < 0)) {
+      return;
+    }
+    const safeTtl = Number.isFinite(ttl) && ttl > 0 ? ttl : DEFAULTS.projectileTtl;
+    if (projectileId !== undefined) {
+      const existing = projectileIndex.get(projectileId);
+      if (existing) {
+        removeProjectile(existing);
+      }
+    }
+    const mesh = new three.Mesh(projectileGeometry, projectileMaterial);
+    mesh.position.set(origin.x, origin.y, origin.z);
+    scene.add(mesh);
+    const projectile: ProjectileVfx = {
+      id: projectileId,
+      mesh,
+      velocity: { x: velocity.x, y: velocity.y, z: velocity.z },
+      ttl: safeTtl
+    };
+    projectiles.push(projectile);
+    if (projectileId !== undefined) {
+      projectileIndex.set(projectileId, projectile);
+    }
+  };
+
+  const spawnTracer = (
+    origin: { x: number; y: number; z: number },
+    dir: { x: number; y: number; z: number },
+    yaw: number,
+    pitch: number,
+    length: number
+  ) => {
+    const safeLength = Number.isFinite(length) && length > 0 ? length : DEFAULTS.tracerLength;
+    const tracerGeometry = new three.BoxGeometry(
+      DEFAULTS.tracerThickness,
+      DEFAULTS.tracerThickness,
+      safeLength
+    );
+    const mesh = new three.Mesh(tracerGeometry, tracerMaterial);
+    mesh.rotation.y = Number.isFinite(yaw) ? yaw : 0;
+    mesh.rotation.x = Number.isFinite(pitch) ? pitch : 0;
+    mesh.position.set(
+      origin.x + dir.x * safeLength * 0.5,
+      origin.y + dir.y * safeLength * 0.5,
+      origin.z + dir.z * safeLength * 0.5
+    );
+    scene.add(mesh);
+    tracers.push({ mesh, ttl: DEFAULTS.tracerTtl });
+  };
+
   const ingestSnapshot = (snapshot: NetworkSnapshot, nowMs: number) => {
     snapshotBuffer.push(snapshot, nowMs);
     prediction.reconcile(snapshot);
@@ -100,6 +238,64 @@ export const createApp = ({
 
   const recordInput = (cmd: InputCmd) => {
     prediction.recordInput(cmd);
+    if (!cmd.fire) {
+      return;
+    }
+    const weapon = getWeaponDef(cmd.weaponSlot);
+    if (!weapon) {
+      return;
+    }
+    const fireRate = weapon.fireRate;
+    if (!Number.isFinite(fireRate) || fireRate <= 0) {
+      return;
+    }
+    const slot = clampWeaponSlot(cmd.weaponSlot);
+    const cooldown = fireCooldowns.get(slot) ?? 0;
+    if (cooldown > 0) {
+      return;
+    }
+    const dir = computeDirection(cmd.viewYaw, cmd.viewPitch);
+    const origin = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+    if (weapon.kind === 'projectile') {
+      const speed = weapon.projectileSpeed;
+      if (!Number.isFinite(speed) || speed <= 0) {
+        return;
+      }
+      spawnProjectile(origin, dir, speed);
+    } else {
+      spawnTracer(origin, dir, cmd.viewYaw, cmd.viewPitch, weapon.range);
+    }
+    fireCooldowns.set(slot, 1 / fireRate);
+  };
+
+  const getWeaponCooldown = (slot: number) => fireCooldowns.get(clampWeaponSlot(slot)) ?? 0;
+
+  const spawnProjectileVfx = (payload: {
+    origin: { x: number; y: number; z: number };
+    velocity: { x: number; y: number; z: number };
+    ttl?: number;
+  }) => {
+    spawnProjectileWithVelocity(
+      payload.origin,
+      payload.velocity,
+      payload.ttl ?? DEFAULTS.projectileTtl,
+      payload.projectileId
+    );
+  };
+
+  const removeProjectileVfx = (projectileId: number) => {
+    if (!Number.isFinite(projectileId) || projectileId < 0) {
+      return;
+    }
+    const projectile = projectileIndex.get(projectileId);
+    if (!projectile) {
+      return;
+    }
+    removeProjectile(projectile);
+    const index = projectiles.indexOf(projectile);
+    if (index >= 0) {
+      projectiles.splice(index, 1);
+    }
   };
 
   const setTickRate = (tickRate: number) => {
@@ -120,6 +316,11 @@ export const createApp = ({
     camera.rotation.x = lookPitch;
   };
 
+  const getLookAngles = () => ({
+    yaw: Number.isFinite(lookYaw) ? lookYaw : 0,
+    pitch: Number.isFinite(lookPitch) ? lookPitch : 0
+  });
+
   const setLookSensitivity = (value: number) => {
     if (Number.isFinite(value) && value > 0) {
       lookSensitivity = value;
@@ -128,6 +329,41 @@ export const createApp = ({
 
   const renderFrame = (deltaSeconds: number, nowMs?: number) => {
     const safeDelta = Math.max(0, deltaSeconds);
+    if (safeDelta > 0) {
+      for (const [slot, cooldown] of fireCooldowns.entries()) {
+        if (cooldown <= 0) {
+          continue;
+        }
+        const next = Math.max(0, cooldown - safeDelta);
+        fireCooldowns.set(slot, next);
+      }
+    }
+    if (projectiles.length > 0 && safeDelta > 0) {
+      for (let i = projectiles.length - 1; i >= 0; i -= 1) {
+        const projectile = projectiles[i];
+        projectile.ttl -= safeDelta;
+        if (projectile.ttl <= 0) {
+          removeProjectile(projectile);
+          projectiles.splice(i, 1);
+          continue;
+        }
+        projectile.mesh.position.set(
+          projectile.mesh.position.x + projectile.velocity.x * safeDelta,
+          projectile.mesh.position.y + projectile.velocity.y * safeDelta,
+          projectile.mesh.position.z + projectile.velocity.z * safeDelta
+        );
+      }
+    }
+    if (tracers.length > 0 && safeDelta > 0) {
+      for (let i = tracers.length - 1; i >= 0; i -= 1) {
+        const tracer = tracers[i];
+        tracer.ttl -= safeDelta;
+        if (tracer.ttl <= 0) {
+          scene.remove?.(tracer.mesh);
+          tracers.splice(i, 1);
+        }
+      }
+    }
     state.cubeRotation += safeDelta * state.rotationSpeed;
     cube.rotation.x = state.cubeRotation;
     cube.rotation.y = state.cubeRotation * 0.8;
@@ -174,9 +410,13 @@ export const createApp = ({
     ingestSnapshot,
     setSnapshotRate,
     recordInput,
+    spawnProjectileVfx,
+    removeProjectileVfx,
+    getWeaponCooldown,
     setTickRate,
     setPredictionSim,
     applyLookDelta,
+    getLookAngles,
     setLookSensitivity,
     dispose
   };

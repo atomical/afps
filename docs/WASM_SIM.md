@@ -41,7 +41,7 @@ The WASM module exports the following C functions:
 - `sim_create() -> handle`
 - `sim_destroy(handle)`
 - `sim_reset(handle)`
-- `sim_set_config(handle, moveSpeed, sprintMultiplier, accel, friction, gravity, jumpVelocity, dashImpulse, dashCooldown, arenaHalfSize, playerRadius, obstacleMinX, obstacleMaxX, obstacleMinY, obstacleMaxY)`
+- `sim_set_config(handle, moveSpeed, sprintMultiplier, accel, friction, gravity, jumpVelocity, dashImpulse, dashCooldown, grappleMaxDistance, grapplePullStrength, grappleDamping, grappleCooldown, grappleMinAttachNormalY, grappleRopeSlack, arenaHalfSize, playerRadius, obstacleMinX, obstacleMaxX, obstacleMinY, obstacleMaxY)`
 - `sim_set_state(handle, x, y, z, velX, velY, velZ, dashCooldown)`
 - `sim_step(handle, dt, moveX, moveY, sprint, jump, dash)`
 - `sim_get_x(handle)`

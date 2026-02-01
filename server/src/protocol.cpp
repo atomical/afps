@@ -160,6 +160,31 @@ bool ParseInputCmd(const std::string &message, InputCmd &out, std::string &error
   if (!ReadNumber(payload, "lookDeltaY", out.look_delta_y, error)) {
     return false;
   }
+  if (payload.contains("viewYaw")) {
+    if (!ReadNumber(payload, "viewYaw", out.view_yaw, error)) {
+      return false;
+    }
+  } else {
+    out.view_yaw = 0.0;
+  }
+  if (payload.contains("viewPitch")) {
+    if (!ReadNumber(payload, "viewPitch", out.view_pitch, error)) {
+      return false;
+    }
+  } else {
+    out.view_pitch = 0.0;
+  }
+  if (payload.contains("weaponSlot")) {
+    if (!ReadInt(payload, "weaponSlot", out.weapon_slot, error)) {
+      return false;
+    }
+    if (out.weapon_slot < 0) {
+      error = "invalid_field: weaponSlot";
+      return false;
+    }
+  } else {
+    out.weapon_slot = 0;
+  }
   if (!ReadBool(payload, "jump", out.jump, error)) {
     return false;
   }
@@ -238,6 +263,47 @@ std::string BuildPong(const Pong &pong) {
   return payload.dump();
 }
 
+std::string BuildGameEvent(const GameEvent &event) {
+  json payload;
+  payload["type"] = "GameEvent";
+  payload["event"] = event.event;
+  if (event.event == "ProjectileSpawn") {
+    if (!event.owner_id.empty()) {
+      payload["ownerId"] = event.owner_id;
+    }
+    if (event.projectile_id >= 0) {
+      payload["projectileId"] = event.projectile_id;
+    }
+    payload["posX"] = event.pos_x;
+    payload["posY"] = event.pos_y;
+    payload["posZ"] = event.pos_z;
+    payload["velX"] = event.vel_x;
+    payload["velY"] = event.vel_y;
+    payload["velZ"] = event.vel_z;
+    payload["ttl"] = event.ttl;
+    return payload.dump();
+  }
+  if (event.event == "ProjectileRemove") {
+    if (!event.owner_id.empty()) {
+      payload["ownerId"] = event.owner_id;
+    }
+    if (event.projectile_id >= 0) {
+      payload["projectileId"] = event.projectile_id;
+    }
+    return payload.dump();
+  }
+  if (!event.target_id.empty()) {
+    payload["targetId"] = event.target_id;
+  }
+  if (std::isfinite(event.damage) && event.damage >= 0.0) {
+    payload["damage"] = event.damage;
+  }
+  if (event.killed) {
+    payload["killed"] = true;
+  }
+  return payload.dump();
+}
+
 std::string BuildStateSnapshot(const StateSnapshot &snapshot) {
   json payload;
   payload["type"] = "StateSnapshot";
@@ -253,6 +319,9 @@ std::string BuildStateSnapshot(const StateSnapshot &snapshot) {
   payload["velY"] = snapshot.vel_y;
   payload["velZ"] = snapshot.vel_z;
   payload["dashCooldown"] = snapshot.dash_cooldown;
+  payload["health"] = snapshot.health;
+  payload["kills"] = snapshot.kills;
+  payload["deaths"] = snapshot.deaths;
   return payload.dump();
 }
 
@@ -286,6 +355,15 @@ std::string BuildStateSnapshotDelta(const StateSnapshotDelta &delta) {
   }
   if (delta.mask & kSnapshotMaskDashCooldown) {
     payload["dashCooldown"] = delta.dash_cooldown;
+  }
+  if (delta.mask & kSnapshotMaskHealth) {
+    payload["health"] = delta.health;
+  }
+  if (delta.mask & kSnapshotMaskKills) {
+    payload["kills"] = delta.kills;
+  }
+  if (delta.mask & kSnapshotMaskDeaths) {
+    payload["deaths"] = delta.deaths;
   }
   return payload.dump();
 }

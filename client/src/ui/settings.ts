@@ -93,7 +93,9 @@ export const createSettingsOverlay = (
     ['right', 'Right'],
     ['jump', 'Jump'],
     ['sprint', 'Sprint'],
-    ['dash', 'Dash']
+    ['dash', 'Dash'],
+    ['weaponSlot1', 'Weapon 1'],
+    ['weaponSlot2', 'Weapon 2']
   ];
 
   const formatBindingLabel = (code: string) => (code.length > 0 ? code.replace('Key', '') : '--');

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "weapons": [
+    {
+      "id": "rifle",
+      "name": "Rifle",
+      "kind": "hitscan",
+      "damage": 12,
+      "fireRate": 8,
+      "spreadDeg": 1.5,
+      "range": 60,
+      "explosionRadius": 0
+    },
+    {
+      "id": "launcher",
+      "name": "Launcher",
+      "kind": "projectile",
+      "damage": 80,
+      "fireRate": 1,
+      "spreadDeg": 0,
+      "projectileSpeed": 22,
+      "explosionRadius": 4.5
+    }
+  ]
+}

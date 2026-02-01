@@ -1,4 +1,4 @@
-import type { Pong, StateSnapshot } from './protocol';
+import type { GameEvent, Pong, StateSnapshot } from './protocol';
 import type { Logger, PeerConnectionFactory, SignalingClient, TimerLike, WebRtcSession } from './types';
 import { createSignalingClient } from './signaling';
 import { createWebRtcConnector, defaultPeerConnectionFactory } from './webrtc';
@@ -11,6 +11,7 @@ export interface NetworkRuntimeConfig {
   logger?: Logger;
   onSnapshot?: (snapshot: StateSnapshot) => void;
   onPong?: (pong: Pong) => void;
+  onGameEvent?: (event: GameEvent) => void;
 }
 
 interface RuntimeDependencies {
@@ -29,6 +30,7 @@ interface RuntimeDependencies {
     buildClientHello?: (sessionToken: string, connectionId: string) => string;
     onSnapshot?: (snapshot: StateSnapshot) => void;
     onPong?: (pong: Pong) => void;
+    onGameEvent?: (event: GameEvent) => void;
   }) => { connect: () => Promise<WebRtcSession> };
   fetcher?: typeof fetch;
   rtcFactory?: PeerConnectionFactory;
@@ -59,7 +61,8 @@ export const connectIfConfigured = async (
     connectTimeoutMs: config.connectTimeoutMs,
     timers: deps.timers,
     onSnapshot: config.onSnapshot,
-    onPong: config.onPong
+    onPong: config.onPong,
+    onGameEvent: config.onGameEvent
   });
 
   return connector.connect();

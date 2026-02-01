@@ -73,6 +73,8 @@ const createDeps = () => {
     connectTimeoutMs?: number;
     timers?: unknown;
     onSnapshot?: unknown;
+    onPong?: unknown;
+    onGameEvent?: unknown;
   } | null = null;
   const createWebRtcConnector = (options: {
     signaling: SignalingClient;
@@ -82,6 +84,8 @@ const createDeps = () => {
     connectTimeoutMs?: number;
     timers?: unknown;
     onSnapshot?: unknown;
+    onPong?: unknown;
+    onGameEvent?: unknown;
   }) => {
     connectorCalled = true;
     lastConnectorOptions = options;
@@ -178,6 +182,18 @@ describe('connectIfConfigured', () => {
     );
 
     expect(deps.lastConnectorOptions?.onPong).toBe(onPong);
+  });
+
+  it('passes game event handler to connector', async () => {
+    const deps = createDeps();
+    const onGameEvent = vi.fn();
+
+    await connectIfConfigured(
+      { signalingUrl: 'https://example.test', signalingAuthToken: 'secret', onGameEvent },
+      deps
+    );
+
+    expect(deps.lastConnectorOptions?.onGameEvent).toBe(onGameEvent);
   });
 
   it('uses default factories when not provided', async () => {
