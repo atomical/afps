@@ -11,6 +11,9 @@ This document describes the current rendering setup and the planned toon + outli
 - No post-processing yet.
 - Base toon material in place using `MeshToonMaterial` + a small gradient ramp texture.
 - Renderer output color space is set to sRGB and tone mapping is disabled for consistent bands.
+- OutlinePass is wired for the cube as a baseline silhouette.
+- OutlinePass starts with reduced edge strength/thickness and a 2x downsample ratio to reduce noise.
+- Outline colors are assigned per team (one OutlinePass per team), with a short hit-flash on confirm.
 
 ---
 
@@ -71,11 +74,13 @@ This document describes the current rendering setup and the planned toon + outli
 - Shader compile sanity checks in CI (headless WebGL if possible).
 - Snapshot tests for material configuration.
 - Performance smoke test with baseline scene and budgeted frame time.
+- Client perf budgets live in `client/perf/budgets.json` and are enforced via `npm run perf:check`.
+- Use `PERF_BUDGET_SCALE=1.5` to relax budgets on slower machines.
 
 ---
 
 ## Known gaps
 
-- No post-processing chain wired yet.
+- No additional post-processing beyond outlines.
 - No asset pipeline (models/textures) defined yet.
-- No GPU budget targets set.
+- GPU budget targets should be refined once we have a representative scene.

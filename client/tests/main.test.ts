@@ -18,11 +18,14 @@ const appInstance = {
     shieldTimer: 0,
     shieldActive: false
   }),
+  setWeaponViewmodel: vi.fn(),
   setTickRate: vi.fn(),
   setPredictionSim: vi.fn(),
   applyLookDelta: vi.fn(),
   getLookAngles: vi.fn().mockReturnValue({ yaw: 0, pitch: 0 }),
   setLookSensitivity: vi.fn(),
+  setOutlineTeam: vi.fn(),
+  triggerOutlineFlash: vi.fn(),
   state: { cube: { rotation: { x: 0 } } }
 };
 const inputSenderInstance = {
@@ -61,6 +64,7 @@ const settingsMock = {
   setVisible: vi.fn(),
   toggle: vi.fn(),
   setSensitivity: vi.fn(),
+  setLookInversion: vi.fn(),
   setMetricsVisible: vi.fn(),
   dispose: vi.fn()
 };
@@ -132,6 +136,10 @@ let settingsOptions:
       onSensitivityChange?: (value: number) => void;
       onBindingsChange?: (bindings: Record<string, string[]>) => void;
       initialBindings?: Record<string, string[]>;
+      initialInvertLookX?: boolean;
+      initialInvertLookY?: boolean;
+      onInvertLookXChange?: (value: boolean) => void;
+      onInvertLookYChange?: (value: boolean) => void;
       onShowMetricsChange?: (visible: boolean) => void;
       initialShowMetrics?: boolean;
     }
@@ -165,6 +173,15 @@ const sensitivityMock = {
 
 vi.mock('../src/input/sensitivity', () => sensitivityMock);
 
+const lookInversionMock = {
+  loadInvertX: vi.fn(),
+  loadInvertY: vi.fn(),
+  saveInvertX: vi.fn(),
+  saveInvertY: vi.fn()
+};
+
+vi.mock('../src/input/look_inversion', () => lookInversionMock);
+
 const metricsSettingsMock = {
   loadMetricsVisibility: vi.fn(),
   saveMetricsVisibility: vi.fn()
@@ -192,6 +209,8 @@ describe('main entry', () => {
     appInstance.getLookAngles.mockReset();
     appInstance.getLookAngles.mockReturnValue({ yaw: 0, pitch: 0 });
     appInstance.setLookSensitivity.mockReset();
+    appInstance.setOutlineTeam.mockReset();
+    appInstance.triggerOutlineFlash.mockReset();
     statusMock.setState.mockReset();
     statusMock.setDetail.mockReset();
     statusMock.setMetrics.mockReset();
@@ -212,6 +231,7 @@ describe('main entry', () => {
     settingsMock.setVisible.mockReset();
     settingsMock.toggle.mockReset();
     settingsMock.setSensitivity.mockReset();
+    settingsMock.setLookInversion.mockReset();
     settingsMock.setMetricsVisible.mockReset();
     settingsMock.dispose.mockReset();
     settingsOptions = undefined;
@@ -247,6 +267,12 @@ describe('main entry', () => {
     sensitivityMock.loadSensitivity.mockReset();
     sensitivityMock.saveSensitivity.mockReset();
     sensitivityMock.loadSensitivity.mockReturnValue(undefined);
+    lookInversionMock.loadInvertX.mockReset();
+    lookInversionMock.loadInvertY.mockReset();
+    lookInversionMock.saveInvertX.mockReset();
+    lookInversionMock.saveInvertY.mockReset();
+    lookInversionMock.loadInvertX.mockReturnValue(undefined);
+    lookInversionMock.loadInvertY.mockReturnValue(undefined);
     metricsSettingsMock.loadMetricsVisibility.mockReset();
     metricsSettingsMock.saveMetricsVisibility.mockReset();
     metricsSettingsMock.loadMetricsVisibility.mockReturnValue(true);
@@ -268,9 +294,13 @@ describe('main entry', () => {
     expect(args.window).toBe(window);
     expect(bindingsMock.loadBindings).toHaveBeenCalledWith(window.localStorage);
     expect(sensitivityMock.loadSensitivity).toHaveBeenCalledWith(window.localStorage);
+    expect(lookInversionMock.loadInvertX).toHaveBeenCalledWith(window.localStorage);
+    expect(lookInversionMock.loadInvertY).toHaveBeenCalledWith(window.localStorage);
     expect(metricsSettingsMock.loadMetricsVisibility).toHaveBeenCalledWith(window.localStorage);
     expect(settingsOptions?.initialBindings).toEqual(defaultBindings);
     expect(settingsOptions?.initialShowMetrics).toBe(true);
+    expect(settingsOptions?.initialInvertLookX).toBe(false);
+    expect(settingsOptions?.initialInvertLookY).toBe(false);
     expect(connectMock).not.toHaveBeenCalled();
     expect(statusMock.setState).toHaveBeenCalledWith('disabled', 'Set VITE_SIGNALING_URL');
     expect(statusMock.setMetricsVisible).toHaveBeenCalledWith(true);
@@ -377,7 +407,7 @@ describe('main entry', () => {
   it('skips ping send when channel not open', async () => {
     const sendPing = vi.fn();
     connectMock.mockResolvedValue({
-      connectionId: 'conn',
+      connectionId: '',
       serverHello: { serverTickRate: 60, snapshotRate: 20 },
       unreliableChannel: { label: 'afps_unreliable', readyState: 'connecting', send: sendPing }
     });
@@ -387,6 +417,7 @@ describe('main entry', () => {
     await import('../src/main');
 
     expect(sendPing).not.toHaveBeenCalled();
+    expect(appInstance.setOutlineTeam).toHaveBeenCalledWith(0);
   });
 
   it('handles non-error rejections', async () => {
@@ -480,6 +511,7 @@ describe('main entry', () => {
     expect(hudMock.setVitals).toHaveBeenCalledWith({ health: 100, ammo: Infinity });
     expect(hudMock.setScore).toHaveBeenCalledWith({ kills: 0, deaths: 0 });
     expect(hudMock.triggerHitmarker).toHaveBeenCalledWith(true);
+    expect(appInstance.triggerOutlineFlash).toHaveBeenCalledWith({ killed: true });
     expect(appInstance.spawnProjectileVfx).toHaveBeenCalledWith({
       origin: { x: 1, y: 2, z: 3 },
       velocity: { x: 4, y: 5, z: 6 },
@@ -516,8 +548,8 @@ describe('main entry', () => {
     const cmd = {
       type: 'InputCmd',
       inputSeq: 1,
-      moveX: 0,
-      moveY: 0,
+      moveX: 1,
+      moveY: 1,
       lookDeltaX: 0,
       lookDeltaY: 0,
       viewYaw: 0,
@@ -570,6 +602,21 @@ describe('main entry', () => {
     expect(appInstance.setLookSensitivity).toHaveBeenCalledWith(0.005);
     expect(hudMock.setSensitivity).toHaveBeenCalledWith(0.005);
     expect(sensitivityMock.saveSensitivity).toHaveBeenCalledWith(0.005, window.localStorage);
+  });
+
+  it('updates look inversion from settings overlay', async () => {
+    envMock.getSignalingUrl.mockReturnValue(undefined);
+    envMock.getSignalingAuthToken.mockReturnValue(undefined);
+
+    await import('../src/main');
+
+    expect(settingsOptions?.onInvertLookXChange).toBeTypeOf('function');
+    settingsOptions?.onInvertLookXChange?.(true);
+    expect(lookInversionMock.saveInvertX).toHaveBeenCalledWith(true, window.localStorage);
+
+    expect(settingsOptions?.onInvertLookYChange).toBeTypeOf('function');
+    settingsOptions?.onInvertLookYChange?.(true);
+    expect(lookInversionMock.saveInvertY).toHaveBeenCalledWith(true, window.localStorage);
   });
 
   it('updates metrics visibility from settings overlay', async () => {

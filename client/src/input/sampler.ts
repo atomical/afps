@@ -45,8 +45,8 @@ export const DEFAULT_BINDINGS: InputBindings = {
   grapple: ['KeyQ'],
   shield: ['KeyF'],
   shockwave: ['KeyR'],
-  weaponSlot1: ['Digit1'],
-  weaponSlot2: ['Digit2']
+  weaponSlot1: ['Digit1', 'Numpad1'],
+  weaponSlot2: ['Digit2', 'Numpad2']
 };
 
 const safeNumber = (value: number) => (Number.isFinite(value) ? value : 0);

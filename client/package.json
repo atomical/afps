@@ -12,6 +12,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
+    "perf:check": "PERF_CHECK=1 vitest run --config vitest.perf.config.ts",
     "wasm:build": "bash ../tools/wasm_sync.sh",
     "wasm:parity": "node ../tools/wasm_parity_check.mjs",
     "wasm:check": "npm run wasm:build && npm run wasm:parity"

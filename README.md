@@ -10,10 +10,16 @@ npm install
 npm run dev
 ```
 
-To auto-connect to the HTTPS signaling server, set:
+To auto-connect to the signaling server, set:
 
 ```bash
-VITE_SIGNALING_URL=https://localhost:8443 VITE_SIGNALING_AUTH_TOKEN=devtoken npm run dev
+VITE_SIGNALING_URL=http://localhost:8443 VITE_SIGNALING_AUTH_TOKEN=devtoken npm run dev
+```
+
+To run server + client together (HTTP signaling, default):
+
+```bash
+./tools/run_dev.sh
 ```
 
 To enable the WASM sim (requires Emscripten):
@@ -43,10 +49,16 @@ npm run wasm:check
 cd server
 cmake -S . -B build
 cmake --build build
-cd certs
-openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=localhost"
-cd ..
-./build/afps_server --cert certs/cert.pem --key certs/key.pem --auth-token devtoken --host 0.0.0.0 --port 8443 --snapshot-keyframe-interval 5
+./build/afps_server --http --auth-token devtoken --host 0.0.0.0 --port 8443 --snapshot-keyframe-interval 5
 ```
 
 `--snapshot-keyframe-interval` controls how often full `StateSnapshot` keyframes are sent (0 = always full).
+
+To run HTTPS locally (optional):
+
+```bash
+cd server
+mkdir -p certs
+openssl req -x509 -newkey rsa:2048 -keyout certs/key.pem -out certs/cert.pem -days 365 -nodes -subj "/CN=localhost"
+./build/afps_server --cert certs/cert.pem --key certs/key.pem --auth-token devtoken --host 0.0.0.0 --port 8443 --snapshot-keyframe-interval 5
+```

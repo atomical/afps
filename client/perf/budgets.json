@@ -1,0 +1,10 @@
+{
+  "predictionRecordInput": {
+    "iterations": 10000,
+    "budgetMs": 250
+  },
+  "snapshotBufferSample": {
+    "iterations": 10000,
+    "budgetMs": 150
+  }
+}

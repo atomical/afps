@@ -81,7 +81,11 @@ const startCandidatePolling = (
     if (!active) {
       return;
     }
-    await poll();
+    try {
+      await poll();
+    } catch {
+      // Swallow polling errors to avoid unhandled promise rejections.
+    }
   };
 
   const intervalId = timers.setInterval(tick, intervalMs);
@@ -200,15 +204,26 @@ export const createWebRtcConnector = ({
       }
     };
 
-    const stopPolling = startCandidatePolling(timers, pollIntervalMs, async () => {
-      const candidates = await signaling.fetchCandidates(session.sessionToken, connection.connectionId);
-      for (const candidate of candidates.candidates) {
-        await peerConnection.addIceCandidate({ candidate: candidate.candidate, sdpMid: candidate.sdpMid });
+    let stopPolling: (() => void) | null = null;
+    stopPolling = startCandidatePolling(timers, pollIntervalMs, async () => {
+      try {
+        const candidates = await signaling.fetchCandidates(session.sessionToken, connection.connectionId);
+        for (const candidate of candidates.candidates) {
+          await peerConnection.addIceCandidate({ candidate: candidate.candidate, sdpMid: candidate.sdpMid });
+        }
+      } catch (error) {
+        const status =
+          typeof error === 'object' && error !== null && 'status' in error ? (error as { status?: number }).status : undefined;
+        const message = error instanceof Error ? error.message : String(error);
+        logger.warn(`candidate poll failed: ${message}`);
+        if (status === 400 || status === 404) {
+          stopPolling?.();
+        }
       }
     });
 
     const close = () => {
-      stopPolling();
+      stopPolling?.();
       if (reliableChannel) {
         reliableChannel.close();
       }
@@ -230,6 +245,13 @@ export const createWebRtcConnector = ({
         return;
       }
       void signaling.sendCandidate(session.sessionToken, connection.connectionId, candidate);
+    };
+
+    peerConnection.oniceconnectionstatechange = () => {
+      const state = peerConnection.iceConnectionState;
+      if (state === 'connected' || state === 'completed' || state === 'failed' || state === 'closed') {
+        stopPolling?.();
+      }
     };
 
     peerConnection.ondatachannel = (event) => {

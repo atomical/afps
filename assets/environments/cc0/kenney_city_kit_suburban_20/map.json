@@ -1,0 +1,558 @@
+{
+  "version": 1,
+  "seed": 42,
+  "yawChoices": [
+    0,
+    1.5707963267948966,
+    3.141592653589793,
+    4.71238898038469
+  ],
+  "placements": [
+    {
+      "file": "roads/road-bend.glb",
+      "position": [
+        -12,
+        0,
+        -12
+      ],
+      "rotation": [
+        0,
+        -1.5707963267948966,
+        0
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        -12,
+        0,
+        -8
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        -12,
+        0,
+        -4
+      ]
+    },
+    {
+      "file": "roads/road-intersection.glb",
+      "position": [
+        -12,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        1.5707963267948966,
+        0
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        -12,
+        0,
+        4
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        -12,
+        0,
+        8
+      ]
+    },
+    {
+      "file": "roads/road-bend.glb",
+      "position": [
+        -12,
+        0,
+        12
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        -8,
+        0,
+        -12
+      ],
+      "rotation": [
+        0,
+        1.5707963267948966,
+        0
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        -8,
+        0,
+        12
+      ],
+      "rotation": [
+        0,
+        1.5707963267948966,
+        0
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        -4,
+        0,
+        -12
+      ],
+      "rotation": [
+        0,
+        1.5707963267948966,
+        0
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        -4,
+        0,
+        12
+      ],
+      "rotation": [
+        0,
+        1.5707963267948966,
+        0
+      ]
+    },
+    {
+      "file": "roads/road-intersection.glb",
+      "position": [
+        0,
+        0,
+        -12
+      ],
+      "rotation": [
+        0,
+        3.141592653589793,
+        0
+      ]
+    },
+    {
+      "file": "roads/road-intersection.glb",
+      "position": [
+        0,
+        0,
+        12
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        4,
+        0,
+        -12
+      ],
+      "rotation": [
+        0,
+        1.5707963267948966,
+        0
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        4,
+        0,
+        12
+      ],
+      "rotation": [
+        0,
+        1.5707963267948966,
+        0
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        8,
+        0,
+        -12
+      ],
+      "rotation": [
+        0,
+        1.5707963267948966,
+        0
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        8,
+        0,
+        12
+      ],
+      "rotation": [
+        0,
+        1.5707963267948966,
+        0
+      ]
+    },
+    {
+      "file": "roads/road-bend.glb",
+      "position": [
+        12,
+        0,
+        -12
+      ],
+      "rotation": [
+        0,
+        3.141592653589793,
+        0
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        12,
+        0,
+        -8
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        12,
+        0,
+        -4
+      ]
+    },
+    {
+      "file": "roads/road-intersection.glb",
+      "position": [
+        12,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        -1.5707963267948966,
+        0
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        12,
+        0,
+        4
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        12,
+        0,
+        8
+      ]
+    },
+    {
+      "file": "roads/road-bend.glb",
+      "position": [
+        12,
+        0,
+        12
+      ],
+      "rotation": [
+        0,
+        1.5707963267948966,
+        0
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        -8,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        1.5707963267948966,
+        0
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        -4,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        1.5707963267948966,
+        0
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        4,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        1.5707963267948966,
+        0
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        8,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        1.5707963267948966,
+        0
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        0,
+        0,
+        -8
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        0,
+        0,
+        -4
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        0,
+        0,
+        4
+      ]
+    },
+    {
+      "file": "roads/road-straight.glb",
+      "position": [
+        0,
+        0,
+        8
+      ]
+    },
+    {
+      "file": "roads/road-crossroad.glb",
+      "position": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "building-type-a.glb",
+      "position": [
+        -8,
+        0,
+        -8
+      ],
+      "randomYaw": true
+    },
+    {
+      "file": "building-type-b.glb",
+      "position": [
+        -8,
+        0,
+        -4
+      ],
+      "randomYaw": true
+    },
+    {
+      "file": "building-type-c.glb",
+      "position": [
+        -8,
+        0,
+        4
+      ],
+      "randomYaw": true
+    },
+    {
+      "file": "building-type-d.glb",
+      "position": [
+        -8,
+        0,
+        8
+      ],
+      "randomYaw": true
+    },
+    {
+      "file": "building-type-e.glb",
+      "position": [
+        -4,
+        0,
+        -8
+      ],
+      "randomYaw": true
+    },
+    {
+      "file": "building-type-f.glb",
+      "position": [
+        -4,
+        0,
+        -4
+      ],
+      "randomYaw": true
+    },
+    {
+      "file": "building-type-g.glb",
+      "position": [
+        -4,
+        0,
+        4
+      ],
+      "randomYaw": true
+    },
+    {
+      "file": "building-type-h.glb",
+      "position": [
+        -4,
+        0,
+        8
+      ],
+      "randomYaw": true
+    },
+    {
+      "file": "building-type-i.glb",
+      "position": [
+        4,
+        0,
+        -8
+      ],
+      "randomYaw": true
+    },
+    {
+      "file": "building-type-j.glb",
+      "position": [
+        4,
+        0,
+        -4
+      ],
+      "randomYaw": true
+    },
+    {
+      "file": "building-type-k.glb",
+      "position": [
+        4,
+        0,
+        4
+      ],
+      "randomYaw": true
+    },
+    {
+      "file": "building-type-l.glb",
+      "position": [
+        4,
+        0,
+        8
+      ],
+      "randomYaw": true
+    },
+    {
+      "file": "building-type-m.glb",
+      "position": [
+        8,
+        0,
+        -8
+      ],
+      "randomYaw": true
+    },
+    {
+      "file": "building-type-n.glb",
+      "position": [
+        8,
+        0,
+        -4
+      ],
+      "randomYaw": true
+    },
+    {
+      "file": "building-type-o.glb",
+      "position": [
+        8,
+        0,
+        4
+      ],
+      "randomYaw": true
+    },
+    {
+      "file": "building-type-p.glb",
+      "position": [
+        8,
+        0,
+        8
+      ],
+      "randomYaw": true
+    },
+    {
+      "file": "tree-large.glb",
+      "position": [
+        -9.6,
+        0,
+        9.6
+      ]
+    },
+    {
+      "file": "tree-small.glb",
+      "position": [
+        9.6,
+        0,
+        -9.6
+      ]
+    },
+    {
+      "file": "tree-large.glb",
+      "position": [
+        -9.6,
+        0,
+        -9.6
+      ]
+    },
+    {
+      "file": "tree-small.glb",
+      "position": [
+        9.6,
+        0,
+        9.6
+      ]
+    },
+    {
+      "file": "planter.glb",
+      "position": [
+        -4.8,
+        0,
+        3.2
+      ]
+    },
+    {
+      "file": "planter.glb",
+      "position": [
+        4.8,
+        0,
+        -3.2
+      ]
+    }
+  ]
+}

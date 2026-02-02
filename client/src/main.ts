@@ -1,5 +1,8 @@
 import './style.css';
 import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { OutlinePass } from 'three/examples/jsm/postprocessing/OutlinePass.js';
 import { startApp } from './bootstrap';
 import { connectIfConfigured } from './net/runtime';
 import {
@@ -15,6 +18,7 @@ import { createStatusOverlay } from './ui/status';
 import { createInputSampler } from './input/sampler';
 import { loadBindings, saveBindings } from './input/bindings';
 import { loadSensitivity, saveSensitivity } from './input/sensitivity';
+import { loadInvertX, loadInvertY, saveInvertX, saveInvertY } from './input/look_inversion';
 import { createInputSender } from './net/input_sender';
 import { createPointerLockController } from './input/pointer_lock';
 import { createHudOverlay } from './ui/hud';
@@ -25,12 +29,24 @@ import { createWasmPredictionSim } from './sim/wasm_adapter';
 import { runWasmParityCheck } from './sim/parity';
 import { WEAPON_DEFS } from './weapons/config';
 
+const three = {
+  ...THREE,
+  EffectComposer,
+  RenderPass,
+  OutlinePass,
+  Vector2: THREE.Vector2
+};
+
 const savedSensitivity = loadSensitivity(window.localStorage);
 const lookSensitivity = savedSensitivity ?? getLookSensitivity();
+const savedInvertX = loadInvertX(window.localStorage);
+const savedInvertY = loadInvertY(window.localStorage);
+let invertLookX = savedInvertX ?? false;
+let invertLookY = savedInvertY ?? false;
 const savedMetricsVisible = loadMetricsVisibility(window.localStorage);
 let metricsVisible = savedMetricsVisible;
 let currentBindings = loadBindings(window.localStorage);
-const { app, canvas } = startApp({ three: THREE, document, window, lookSensitivity, loadEnvironment: true });
+const { app, canvas } = startApp({ three, document, window, lookSensitivity, loadEnvironment: true });
 const status = createStatusOverlay(document);
 status.setMetricsVisible(metricsVisible);
 const hud = createHudOverlay(document);
@@ -42,16 +58,36 @@ const resolveWeaponSlot = (slot: number) => {
   return Math.min(maxSlot, Math.max(0, Math.floor(slot)));
 };
 const resolveWeaponLabel = (slot: number) => WEAPON_DEFS[slot]?.name ?? '--';
+const resolveTeamIndex = (connectionId: string | null) => {
+  if (!connectionId) {
+    return 0;
+  }
+  let hash = 0;
+  for (let i = 0; i < connectionId.length; i += 1) {
+    hash = (hash + connectionId.charCodeAt(i)) % 2;
+  }
+  return hash;
+};
 let currentWeaponSlot = 0;
 let sampler: ReturnType<typeof createInputSampler> | null = null;
 const settings = createSettingsOverlay(document, {
   initialSensitivity: lookSensitivity,
   initialBindings: currentBindings,
   initialShowMetrics: metricsVisible,
+  initialInvertLookX: invertLookX,
+  initialInvertLookY: invertLookY,
   onSensitivityChange: (value) => {
     app.setLookSensitivity(value);
     hud.setSensitivity(value);
     saveSensitivity(value, window.localStorage);
+  },
+  onInvertLookXChange: (value) => {
+    invertLookX = value;
+    saveInvertX(value, window.localStorage);
+  },
+  onInvertLookYChange: (value) => {
+    invertLookY = value;
+    saveInvertY(value, window.localStorage);
   },
   onBindingsChange: (bindings) => {
     currentBindings = bindings;
@@ -64,6 +100,7 @@ const settings = createSettingsOverlay(document, {
     saveMetricsVisibility(visible, window.localStorage);
   }
 });
+settings.setLookInversion(invertLookX, invertLookY);
 const pointerLock = createPointerLockController({
   document,
   element: canvas,
@@ -79,6 +116,22 @@ const logger = {
   error: (message: string) => status.setDetail(`error: ${message}`)
 };
 const shouldApplyLook = () => !pointerLock.supported || pointerLock.isLocked();
+const applyMovementYaw = (cmd: { moveX: number; moveY: number }, yaw: number) => {
+  const safeYaw = Number.isFinite(yaw) ? yaw : 0;
+  const cosYaw = Math.cos(safeYaw);
+  const sinYaw = Math.sin(safeYaw);
+  const localX = Number.isFinite(cmd.moveX) ? cmd.moveX : 0;
+  const localY = Number.isFinite(cmd.moveY) ? cmd.moveY : 0;
+  let worldX = localX * cosYaw + localY * sinYaw;
+  let worldY = localX * sinYaw - localY * cosYaw;
+  const length = Math.hypot(worldX, worldY);
+  if (length > 1) {
+    worldX /= length;
+    worldY /= length;
+  }
+  cmd.moveX = Math.max(-1, Math.min(1, worldX));
+  cmd.moveY = Math.max(-1, Math.min(1, worldY));
+};
 
 const wasmSimUrl = getWasmSimUrl();
 const wasmParityEnabled = getWasmSimParity();
@@ -164,6 +217,7 @@ if (!signalingUrl) {
   const onGameEvent = (event: GameEvent) => {
     if (event.event === 'HitConfirmed') {
       hud.triggerHitmarker(event.killed);
+      app.triggerOutlineFlash({ killed: event.killed });
       return;
     }
     if (event.event === 'ProjectileSpawn') {
@@ -204,6 +258,7 @@ if (!signalingUrl) {
         return;
       }
       localConnectionId = session.connectionId;
+      app.setOutlineTeam(resolveTeamIndex(localConnectionId));
       const keyframeDetail =
         session.serverHello.snapshotKeyframeInterval !== undefined
           ? ` (kf ${session.serverHello.snapshotKeyframeInterval})`
@@ -223,17 +278,23 @@ if (!signalingUrl) {
           tickRate: session.serverHello.serverTickRate,
           logger,
           onSend: (cmd) => {
+            const lookX = invertLookX ? -cmd.lookDeltaX : cmd.lookDeltaX;
+            const lookY = invertLookY ? -cmd.lookDeltaY : cmd.lookDeltaY;
+            cmd.lookDeltaX = lookX;
+            cmd.lookDeltaY = lookY;
             if (shouldApplyLook()) {
-              app.applyLookDelta(cmd.lookDeltaX, cmd.lookDeltaY);
+              app.applyLookDelta(lookX, lookY);
             }
             const angles = app.getLookAngles();
             cmd.viewYaw = angles.yaw;
             cmd.viewPitch = angles.pitch;
+            applyMovementYaw(cmd, cmd.viewYaw);
             const nextSlot = resolveWeaponSlot(cmd.weaponSlot);
             cmd.weaponSlot = nextSlot;
             if (nextSlot !== currentWeaponSlot) {
               currentWeaponSlot = nextSlot;
               hud.setWeapon(currentWeaponSlot, resolveWeaponLabel(currentWeaponSlot));
+              app.setWeaponViewmodel(WEAPON_DEFS[currentWeaponSlot]?.id);
             }
             hud.setWeaponCooldown(app.getWeaponCooldown(currentWeaponSlot));
             app.recordInput(cmd);

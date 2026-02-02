@@ -7,10 +7,16 @@ describe('settings overlay', () => {
     const onChange = vi.fn();
     const onBindingsChange = vi.fn();
     const onShowMetricsChange = vi.fn();
+    const onInvertLookXChange = vi.fn();
+    const onInvertLookYChange = vi.fn();
     const settings = createSettingsOverlay(document, {
       initialSensitivity: 0.003,
       onSensitivityChange: onChange,
       onBindingsChange,
+      initialInvertLookX: true,
+      initialInvertLookY: false,
+      onInvertLookXChange,
+      onInvertLookYChange,
       initialShowMetrics: false,
       onShowMetricsChange
     });
@@ -33,7 +39,21 @@ describe('settings overlay', () => {
     expect(button.textContent).toContain('I');
     expect(onBindingsChange).toHaveBeenCalled();
 
-    const metricsToggle = settings.element.querySelector('.settings-toggle input') as HTMLInputElement;
+    const toggleRows = Array.from(settings.element.querySelectorAll('.settings-toggle'));
+    const invertXRow = toggleRows.find((row) => row.textContent?.includes('Invert mouse X')) as HTMLElement;
+    const invertYRow = toggleRows.find((row) => row.textContent?.includes('Invert mouse Y')) as HTMLElement;
+    const metricsRow = toggleRows.find((row) => row.textContent?.includes('Show net stats')) as HTMLElement;
+    const invertXToggle = invertXRow.querySelector('input') as HTMLInputElement;
+    const invertYToggle = invertYRow.querySelector('input') as HTMLInputElement;
+    const metricsToggle = metricsRow.querySelector('input') as HTMLInputElement;
+
+    expect(invertXToggle.checked).toBe(true);
+    expect(invertYToggle.checked).toBe(false);
+    invertXToggle.click();
+    expect(onInvertLookXChange).toHaveBeenCalledWith(false);
+    invertYToggle.click();
+    expect(onInvertLookYChange).toHaveBeenCalledWith(true);
+
     expect(metricsToggle.checked).toBe(false);
     metricsToggle.click();
     expect(onShowMetricsChange).toHaveBeenCalledWith(true);

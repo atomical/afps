@@ -67,6 +67,10 @@ ParseResult ParseArgs(int argc, const char *const *argv) {
       if (!value.empty()) {
         result.config.host = value;
       }
+    } else if (arg == "--http") {
+      result.config.use_https = false;
+    } else if (arg == "--https") {
+      result.config.use_https = true;
     } else if (arg == "--port") {
       auto value = require_value("--port");
       if (!value.empty()) {
@@ -114,11 +118,13 @@ ParseResult ParseArgs(int argc, const char *const *argv) {
 
 std::vector<std::string> ValidateConfig(const ServerConfig &config) {
   std::vector<std::string> errors;
-  if (config.cert_path.empty()) {
-    errors.push_back("Missing --cert path");
-  }
-  if (config.key_path.empty()) {
-    errors.push_back("Missing --key path");
+  if (config.use_https) {
+    if (config.cert_path.empty()) {
+      errors.push_back("Missing --cert path");
+    }
+    if (config.key_path.empty()) {
+      errors.push_back("Missing --key path");
+    }
   }
   if (config.auth_token.empty()) {
     errors.push_back("Missing --auth-token value");

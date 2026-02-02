@@ -39,9 +39,11 @@ export class FakeDataChannel implements DataChannelLike {
 export class FakePeerConnection implements RtcPeerConnectionLike {
   localDescription: RTCSessionDescriptionInit | null = null;
   onicecandidate: ((event: { candidate: RTCIceCandidateInit | null }) => void) | null = null;
+  oniceconnectionstatechange: (() => void) | null = null;
   ondatachannel: ((event: { channel: DataChannelLike }) => void) | null = null;
   remoteDescription: RTCSessionDescriptionInit | null = null;
   iceCandidates: RTCIceCandidateInit[] = [];
+  iceConnectionState: RTCIceConnectionState = 'new';
   closed = false;
 
   async setRemoteDescription(description: RTCSessionDescriptionInit) {
@@ -66,6 +68,11 @@ export class FakePeerConnection implements RtcPeerConnectionLike {
 
   emitIceCandidate(candidate: RTCIceCandidateInit | null) {
     this.onicecandidate?.({ candidate });
+  }
+
+  setIceConnectionState(state: RTCIceConnectionState) {
+    this.iceConnectionState = state;
+    this.oniceconnectionstatechange?.();
   }
 
   emitDataChannel(channel: DataChannelLike) {

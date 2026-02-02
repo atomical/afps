@@ -8,8 +8,8 @@ type Placement = {
   randomYaw?: boolean;
 };
 
-const ASSET_ROOT = '/assets/environments/cc0/kenney_retro_urban_kit/glb/';
-const MANIFEST_URL = '/assets/environments/cc0/kenney_retro_urban_kit/map.json';
+const ASSET_ROOT = '/assets/environments/cc0/kenney_city_kit_suburban_20/glb/';
+const MANIFEST_URL = '/assets/environments/cc0/kenney_city_kit_suburban_20/map.json';
 const DEFAULT_YAW_CHOICES = [0, Math.PI / 2, Math.PI, (Math.PI * 3) / 2];
 const DEBUG_BOUNDS_FLAG = 'VITE_DEBUG_RETRO_URBAN_BOUNDS';
 const DEBUG_GRID_FLAG = 'VITE_DEBUG_RETRO_URBAN_GRID';
@@ -125,38 +125,32 @@ const buildPlacements = (): Placement[] => {
   const placements: Placement[] = [];
   const tile = 4;
 
-  for (let x = -1; x <= 1; x += 1) {
-    for (let z = -1; z <= 1; z += 1) {
-      placements.push({
-        file: 'road-asphalt-center.glb',
-        position: [x * tile, 0, z * tile]
-      });
+  for (let x = -2; x <= 2; x += 1) {
+    placements.push({ file: 'roads/road-straight.glb', position: [x * tile, 0, 0], rotation: [0, Math.PI / 2, 0] });
+    if (x !== 0) {
+      placements.push({ file: 'roads/road-straight.glb', position: [0, 0, x * tile] });
     }
   }
 
   placements.push(
-    { file: 'road-asphalt-side.glb', position: [-2 * tile, 0, 0], rotation: [0, Math.PI / 2, 0] },
-    { file: 'road-asphalt-side.glb', position: [2 * tile, 0, 0], rotation: [0, -Math.PI / 2, 0] },
-    { file: 'road-asphalt-side.glb', position: [0, 0, -2 * tile] },
-    { file: 'road-asphalt-side.glb', position: [0, 0, 2 * tile], rotation: [0, Math.PI, 0] }
+    { file: 'roads/road-crossroad.glb', position: [0, 0, 0] },
+    { file: 'roads/road-bend.glb', position: [-2 * tile, 0, 2 * tile] },
+    { file: 'roads/road-bend.glb', position: [2 * tile, 0, 2 * tile], rotation: [0, Math.PI / 2, 0] },
+    { file: 'roads/road-bend.glb', position: [2 * tile, 0, -2 * tile], rotation: [0, Math.PI, 0] },
+    { file: 'roads/road-bend.glb', position: [-2 * tile, 0, -2 * tile], rotation: [0, -Math.PI / 2, 0] }
   );
 
   placements.push(
-    { file: 'wall-a-low.glb', position: [-2 * tile, 0, -2 * tile], rotation: [0, Math.PI / 2, 0] },
-    { file: 'wall-a-low.glb', position: [2 * tile, 0, -2 * tile], rotation: [0, -Math.PI / 2, 0] },
-    { file: 'wall-a-low.glb', position: [-2 * tile, 0, 2 * tile], rotation: [0, Math.PI / 2, 0] },
-    { file: 'wall-a-low.glb', position: [2 * tile, 0, 2 * tile], rotation: [0, -Math.PI / 2, 0] }
+    { file: 'building-type-a.glb', position: [-1 * tile, 0, -1 * tile], randomYaw: true },
+    { file: 'building-type-b.glb', position: [1 * tile, 0, -1 * tile], randomYaw: true },
+    { file: 'building-type-c.glb', position: [-1 * tile, 0, 1 * tile], randomYaw: true },
+    { file: 'building-type-d.glb', position: [1 * tile, 0, 1 * tile], randomYaw: true }
   );
 
   placements.push(
-    { file: 'detail-bench.glb', position: [-3, 0, -3], rotation: [0, Math.PI / 2, 0] },
-    { file: 'detail-dumpster-closed.glb', position: [3, 0, -3], rotation: [0, -Math.PI / 4, 0] },
-    { file: 'detail-barrier-type-a.glb', position: [-1, 0, 3], rotation: [0, Math.PI, 0] },
-    { file: 'detail-barrier-type-b.glb', position: [1, 0, 3], rotation: [0, Math.PI, 0] },
-    { file: 'detail-light-single.glb', position: [-3.5, 0, 1.5] },
-    { file: 'detail-light-traffic.glb', position: [3.5, 0, 1.5], rotation: [0, Math.PI / 2, 0] },
-    { file: 'pallet.glb', position: [-1.5, 0, -1.5], rotation: [0, Math.PI / 3, 0] },
-    { file: 'detail-block.glb', position: [1.5, 0, -1.5], scale: 1 }
+    { file: 'tree-large.glb', position: [-1.5 * tile, 0, 1.5 * tile] },
+    { file: 'tree-small.glb', position: [1.5 * tile, 0, -1.5 * tile] },
+    { file: 'planter.glb', position: [-0.5 * tile, 0, 0.5 * tile] }
   );
 
   return placements;
@@ -170,24 +164,24 @@ const loadManifestPlacements = async (): Promise<Placement[]> => {
   try {
     const response = await fetch(MANIFEST_URL);
     if (!response.ok) {
-      console.warn(`retro urban manifest fetch failed: ${response.status}`);
+      console.warn(`suburban manifest fetch failed: ${response.status}`);
       return fallback;
     }
     const data = (await response.json()) as unknown;
     if (!isRecord(data)) {
-      console.warn('retro urban manifest invalid shape');
+      console.warn('suburban manifest invalid shape');
       return fallback;
     }
     const placements = normalizePlacements(data.placements);
     if (!placements) {
-      console.warn('retro urban manifest invalid placements');
+      console.warn('suburban manifest invalid placements');
       return fallback;
     }
     const seed = toNumber(data.seed) ?? 0;
     const yawChoices = normalizeYawChoices(data.yawChoices) ?? DEFAULT_YAW_CHOICES;
     return applyRandomYaw(placements, seed, yawChoices);
   } catch (error) {
-    console.warn('retro urban manifest load failed', error);
+    console.warn('suburban manifest load failed', error);
     return fallback;
   }
 };
@@ -239,11 +233,11 @@ export const loadRetroUrbanMap = async (scene: SceneLike) => {
         },
         undefined,
         (error) => {
-          console.warn(`retro urban asset failed: ${placement.file}`, error);
+          console.warn(`suburban asset failed: ${placement.file}`, error);
         }
       );
     }
   } catch (error) {
-    console.warn('retro urban map load skipped', error);
+    console.warn('suburban map load skipped', error);
   }
 };

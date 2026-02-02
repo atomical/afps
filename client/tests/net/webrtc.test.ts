@@ -169,6 +169,104 @@ describe('webrtc connector', () => {
     vi.useRealTimers();
   });
 
+  it('stops candidate polling on connection-not-found errors', async () => {
+    vi.useFakeTimers();
+    const signaling = new FakeSignalingClient();
+    const fetchError = Object.assign(new Error('Request failed: 400 connection_not_found'), { status: 400 });
+    const fetchCandidatesMock = vi.fn().mockRejectedValue(fetchError);
+    signaling.fetchCandidates = fetchCandidatesMock;
+    const warn = vi.fn();
+    const rtcFactory = new FakePeerConnectionFactory();
+    const connector = createWebRtcConnector({
+      signaling,
+      rtcFactory,
+      logger: { ...silentLogger, warn },
+      pollIntervalMs: 100,
+      connectTimeoutMs: 1000,
+      timers: createTimers()
+    });
+
+    const connectPromise = connector.connect();
+    const pc = await waitForPeer(rtcFactory);
+
+    const reliable = new FakeDataChannel('afps_reliable');
+    const unreliable = new FakeDataChannel('afps_unreliable');
+    pc.emitDataChannel(reliable);
+    pc.emitDataChannel(unreliable);
+    reliable.open();
+    unreliable.open();
+    await Promise.resolve();
+    reliable.emitMessage(
+      JSON.stringify({
+        type: 'ServerHello',
+        protocolVersion: 2,
+        connectionId: signaling.connectionId,
+        serverTickRate: 60,
+        snapshotRate: 20
+      })
+    );
+
+    const session = await connectPromise;
+    expect(session.connectionId).toBe(signaling.connectionId);
+
+    vi.advanceTimersByTime(100);
+    await Promise.resolve();
+    expect(fetchCandidatesMock).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('candidate poll failed'));
+
+    vi.advanceTimersByTime(500);
+    await Promise.resolve();
+    expect(fetchCandidatesMock).toHaveBeenCalledTimes(1);
+
+    vi.useRealTimers();
+  });
+
+  it('stops candidate polling when ICE reaches a terminal state', async () => {
+    vi.useFakeTimers();
+    const signaling = new FakeSignalingClient();
+    const rtcFactory = new FakePeerConnectionFactory();
+    const connector = createWebRtcConnector({
+      signaling,
+      rtcFactory,
+      logger: silentLogger,
+      pollIntervalMs: 100,
+      connectTimeoutMs: 1000,
+      timers: createTimers()
+    });
+
+    const connectPromise = connector.connect();
+    const pc = await waitForPeer(rtcFactory);
+
+    const reliable = new FakeDataChannel('afps_reliable');
+    const unreliable = new FakeDataChannel('afps_unreliable');
+    pc.emitDataChannel(reliable);
+    pc.emitDataChannel(unreliable);
+    reliable.open();
+    unreliable.open();
+    await Promise.resolve();
+    reliable.emitMessage(
+      JSON.stringify({
+        type: 'ServerHello',
+        protocolVersion: 2,
+        connectionId: signaling.connectionId,
+        serverTickRate: 60,
+        snapshotRate: 20
+      })
+    );
+
+    await connectPromise;
+
+    vi.advanceTimersByTime(100);
+    await Promise.resolve();
+    const initialPolls = signaling.fetchCandidatesCalls.length;
+    pc.setIceConnectionState('connected');
+
+    vi.advanceTimersByTime(500);
+    await Promise.resolve();
+    expect(signaling.fetchCandidatesCalls.length).toBe(initialPolls);
+    vi.useRealTimers();
+  });
+
   it('ignores delta snapshots until a keyframe arrives', async () => {
     vi.useFakeTimers();
     const signaling = new FakeSignalingClient();

@@ -22,8 +22,8 @@ def is_on_grid(value: float, grid: float, epsilon: float = 1e-6) -> bool:
 
 def main() -> int:
     root = Path(__file__).resolve().parents[1]
-    map_path = root / "client/public/assets/environments/cc0/kenney_retro_urban_kit/map.json"
-    glb_root = root / "client/public/assets/environments/cc0/kenney_retro_urban_kit/glb"
+    map_path = root / "client/public/assets/environments/cc0/kenney_city_kit_suburban_20/map.json"
+    glb_root = root / "client/public/assets/environments/cc0/kenney_city_kit_suburban_20/glb"
     config_path = root / "shared/sim/config.json"
 
     errors: list[str] = []
@@ -83,17 +83,17 @@ def main() -> int:
                 errors.append(f"placement[{idx}] invalid scale {scale}")
         if abs(x) > half_size or abs(z) > half_size:
             errors.append(f"placement[{idx}] {file_name} outside arenaHalfSize ({x}, {z})")
-        if file_name.startswith("road-asphalt"):
+        if file_name.startswith("roads/road-"):
             if not is_on_grid(x, 4.0) or not is_on_grid(z, 4.0) or abs(y) > 1e-6:
                 errors.append(f"placement[{idx}] road off grid {file_name} @ {x},{y},{z}")
 
     if errors:
-        print("[error] Retro Urban map validation failed:", file=sys.stderr)
+        print("[error] Suburban map validation failed:", file=sys.stderr)
         for err in errors:
             print(f"  - {err}", file=sys.stderr)
         return 1
 
-    print("[ok] Retro Urban map validated")
+    print("[ok] Suburban map validated")
     return 0
 
 

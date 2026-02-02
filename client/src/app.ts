@@ -1,8 +1,9 @@
-import type { App, AppDimensions, AppState, NetworkSnapshot, ThreeLike } from './types';
+import type { App, AppDimensions, AppState, NetworkSnapshot, Object3DLike, ThreeLike } from './types';
 import type { InputCmd } from './net/input_cmd';
 import { ClientPrediction, type PredictionSim } from './net/prediction';
 import { SnapshotBuffer } from './net/snapshot_buffer';
 import { loadRetroUrbanMap } from './environment/retro_urban_map';
+import { attachWeaponViewmodel, loadWeaponViewmodel } from './environment/weapon_viewmodel';
 import { WEAPON_DEFS } from './weapons/config';
 
 export interface CreateAppOptions {
@@ -36,6 +37,18 @@ const DEFAULTS = {
   ambientIntensity: 0.4,
   keyLightIntensity: 0.9,
   toonBands: 4,
+  outlinesEnabled: true,
+  outlineStrength: 1.2,
+  outlineThickness: 0.6,
+  outlineGlow: 0,
+  outlineDownSampleRatio: 2,
+  outlineTeamColors: [0x4cc3ff, 0xff6b6b],
+  outlineTeamHiddenColors: [0x0f1624, 0x1a0b0b],
+  outlineFlashColor: 0xfff1b8,
+  outlineFlashHiddenColor: 0x2a1a0d,
+  outlineFlashStrength: 2.0,
+  outlineFlashThickness: 1.0,
+  outlineFlashDurationMs: 140,
   snapshotRate: 20,
   tickRate: 60
 };
@@ -91,6 +104,21 @@ export const createApp = ({
   toonRamp.generateMipmaps = false;
   toonRamp.needsUpdate = true;
 
+  const supportsOutlines = Boolean(
+    DEFAULTS.outlinesEnabled && three.EffectComposer && three.RenderPass && three.OutlinePass && three.Vector2
+  );
+  let composer: ReturnType<NonNullable<typeof three.EffectComposer>> | null = null;
+  const outlinePasses: Array<ReturnType<NonNullable<typeof three.OutlinePass>>> = [];
+  const outlineTeamVisibleColors = DEFAULTS.outlineTeamColors.map((color) => new three.Color(color));
+  const outlineTeamHiddenColors = DEFAULTS.outlineTeamHiddenColors.map((color) => new three.Color(color));
+  const outlineFlashVisibleColor = new three.Color(DEFAULTS.outlineFlashColor);
+  const outlineFlashHiddenColor = new three.Color(DEFAULTS.outlineFlashHiddenColor);
+  const outlineTeamCount = Math.max(1, outlineTeamVisibleColors.length);
+  let outlineTeamIndex = 0;
+  let outlineFlashUntil = 0;
+  let outlineFlashTeamIndex = 0;
+  let outlineFlashActive = false;
+
   const geometry = new three.BoxGeometry(DEFAULTS.cubeSize, DEFAULTS.cubeSize, DEFAULTS.cubeSize);
   const material = new three.MeshToonMaterial({ color: DEFAULTS.cubeColor, gradientMap: toonRamp });
   const cube = new three.Mesh(geometry, material);
@@ -103,6 +131,122 @@ export const createApp = ({
   const keyLight = new three.DirectionalLight(0xffffff, DEFAULTS.keyLightIntensity);
   keyLight.position.set(2, 4, 3);
   scene.add(keyLight);
+
+  const clampOutlineTeam = (team: number) => {
+    if (!Number.isFinite(team)) {
+      return 0;
+    }
+    return Math.max(0, Math.min(outlineTeamCount - 1, Math.floor(team)));
+  };
+
+  const getOutlineTeamColor = (colors: typeof outlineTeamVisibleColors, index: number) =>
+    colors[index] ?? colors[0];
+
+  const applyOutlineBase = (pass: ReturnType<NonNullable<typeof three.OutlinePass>>, team: number) => {
+    pass.edgeStrength = DEFAULTS.outlineStrength;
+    pass.edgeThickness = DEFAULTS.outlineThickness;
+    pass.edgeGlow = DEFAULTS.outlineGlow;
+    pass.visibleEdgeColor = getOutlineTeamColor(outlineTeamVisibleColors, team);
+    pass.hiddenEdgeColor = getOutlineTeamColor(outlineTeamHiddenColors, team);
+  };
+
+  const applyOutlineFlash = (
+    pass: ReturnType<NonNullable<typeof three.OutlinePass>>,
+    flashStrength: number,
+    flashThickness: number
+  ) => {
+    pass.edgeStrength = flashStrength;
+    pass.edgeThickness = flashThickness;
+    pass.edgeGlow = DEFAULTS.outlineGlow;
+    pass.visibleEdgeColor = outlineFlashVisibleColor;
+    pass.hiddenEdgeColor = outlineFlashHiddenColor;
+  };
+
+  const refreshOutlineSelection = () => {
+    outlinePasses.forEach((pass, index) => {
+      pass.selectedObjects = index === outlineTeamIndex ? [cube] : [];
+    });
+  };
+
+  const refreshOutlineFlash = (nowMs: number) => {
+    if (!outlineFlashActive) {
+      return;
+    }
+    if (nowMs <= outlineFlashUntil) {
+      return;
+    }
+    outlineFlashActive = false;
+    const pass = outlinePasses[outlineFlashTeamIndex];
+    if (pass) {
+      applyOutlineBase(pass, outlineFlashTeamIndex);
+    }
+  };
+
+  const setOutlineTeam = (team: number) => {
+    if (outlinePasses.length === 0) {
+      outlineTeamIndex = clampOutlineTeam(team);
+      return;
+    }
+    const next = clampOutlineTeam(team);
+    if (next === outlineTeamIndex) {
+      return;
+    }
+    if (outlineFlashActive && outlineFlashTeamIndex === outlineTeamIndex) {
+      const pass = outlinePasses[outlineFlashTeamIndex];
+      if (pass) {
+        applyOutlineBase(pass, outlineFlashTeamIndex);
+      }
+      outlineFlashActive = false;
+    }
+    outlineTeamIndex = next;
+    refreshOutlineSelection();
+  };
+
+  const triggerOutlineFlash = (options?: {
+    killed?: boolean;
+    team?: number;
+    nowMs?: number;
+    durationMs?: number;
+  }) => {
+    if (outlinePasses.length === 0) {
+      return;
+    }
+    const now = options?.nowMs ?? performance.now();
+    const durationMs =
+      Number.isFinite(options?.durationMs) && (options?.durationMs ?? 0) > 0
+        ? (options?.durationMs as number)
+        : DEFAULTS.outlineFlashDurationMs;
+    const team = clampOutlineTeam(options?.team ?? outlineTeamIndex);
+    const flashStrength = options?.killed ? DEFAULTS.outlineFlashStrength * 1.2 : DEFAULTS.outlineFlashStrength;
+    const flashThickness = options?.killed ? DEFAULTS.outlineFlashThickness * 1.1 : DEFAULTS.outlineFlashThickness;
+
+    outlineFlashTeamIndex = team;
+    outlineFlashUntil = now + durationMs;
+    outlineFlashActive = true;
+    const pass = outlinePasses[team];
+    if (pass) {
+      applyOutlineFlash(pass, flashStrength, flashThickness);
+    }
+  };
+
+  if (supportsOutlines && three.EffectComposer && three.RenderPass && three.OutlinePass && three.Vector2) {
+    composer = new three.EffectComposer(renderer);
+    const renderPass = new three.RenderPass(scene, camera);
+    composer.addPass(renderPass);
+    for (let i = 0; i < outlineTeamCount; i += 1) {
+      const pass = new three.OutlinePass(new three.Vector2(width, height), scene, camera);
+      pass.selectedObjects = [];
+      pass.edgeStrength = DEFAULTS.outlineStrength;
+      pass.edgeThickness = DEFAULTS.outlineThickness;
+      pass.edgeGlow = DEFAULTS.outlineGlow;
+      pass.downSampleRatio = DEFAULTS.outlineDownSampleRatio;
+      pass.pulsePeriod = 0;
+      applyOutlineBase(pass, i);
+      outlinePasses.push(pass);
+      composer.addPass(pass);
+    }
+    refreshOutlineSelection();
+  }
 
   const projectileGeometry = new three.BoxGeometry(
     DEFAULTS.projectileSize,
@@ -121,6 +265,31 @@ export const createApp = ({
 
   if (loadEnvironment) {
     void loadRetroUrbanMap(scene);
+  }
+
+  let weaponViewmodelRoot: Object3DLike | null = null;
+  let weaponViewmodelParent: Object3DLike | null = null;
+  let weaponViewmodelToken = 0;
+  const setWeaponViewmodel = (weaponId?: string) => {
+    if (!loadEnvironment) {
+      return;
+    }
+    const token = weaponViewmodelToken + 1;
+    weaponViewmodelToken = token;
+    void Promise.resolve(loadWeaponViewmodel({ scene, camera, weaponId, attach: false })).then((root) => {
+      if (!root || token !== weaponViewmodelToken) {
+        return;
+      }
+      if (weaponViewmodelRoot && weaponViewmodelParent?.remove) {
+        weaponViewmodelParent.remove(weaponViewmodelRoot);
+      }
+      weaponViewmodelParent = attachWeaponViewmodel(scene, camera, root);
+      weaponViewmodelRoot = root;
+    });
+  };
+
+  if (loadEnvironment) {
+    setWeaponViewmodel(WEAPON_DEFS[0]?.id);
   }
 
   const state: AppState = {
@@ -329,13 +498,25 @@ export const createApp = ({
     prediction.setSim(sim);
   };
 
+  const wrapAngle = (value: number) => {
+    if (!Number.isFinite(value)) {
+      return 0;
+    }
+    const twoPi = Math.PI * 2;
+    let wrapped = (value + Math.PI) % twoPi;
+    if (wrapped < 0) {
+      wrapped += twoPi;
+    }
+    return wrapped - Math.PI;
+  };
+
   const applyLookDelta = (deltaX: number, deltaY: number) => {
     const safeX = Number.isFinite(deltaX) ? deltaX : 0;
     const safeY = Number.isFinite(deltaY) ? deltaY : 0;
-    lookYaw += safeX * lookSensitivity;
+    lookYaw = wrapAngle(lookYaw + safeX * lookSensitivity);
     lookPitch -= safeY * lookSensitivity;
     lookPitch = Math.max(-DEFAULTS.maxPitch, Math.min(DEFAULTS.maxPitch, lookPitch));
-    camera.rotation.y = lookYaw;
+    camera.rotation.y = -lookYaw;
     camera.rotation.x = lookPitch;
   };
 
@@ -351,6 +532,7 @@ export const createApp = ({
   };
 
   const renderFrame = (deltaSeconds: number, nowMs?: number) => {
+    const now = nowMs ?? performance.now();
     const safeDelta = Math.max(0, deltaSeconds);
     if (safeDelta > 0) {
       for (const [slot, cooldown] of fireCooldowns.entries()) {
@@ -399,7 +581,7 @@ export const createApp = ({
       targetY = predicted.y;
       targetZ = predicted.z;
     } else {
-      const snapshot = snapshotBuffer.sample(nowMs ?? performance.now());
+      const snapshot = snapshotBuffer.sample(now);
       if (snapshot) {
         targetX = snapshot.posX;
         targetY = snapshot.posY;
@@ -411,7 +593,12 @@ export const createApp = ({
       cube.position.set(targetX, 0.5 + height, targetY);
       camera.position.set(targetX, DEFAULTS.cameraHeight + height, targetY);
     }
-    renderer.render(scene, camera);
+    refreshOutlineFlash(now);
+    if (composer) {
+      composer.render();
+    } else {
+      renderer.render(scene, camera);
+    }
   };
 
   const resize = (nextWidth: number, nextHeight: number, nextDpr: number) => {
@@ -420,9 +607,14 @@ export const createApp = ({
     camera.updateProjectionMatrix();
     renderer.setPixelRatio(nextDpr);
     renderer.setSize(nextWidth, nextHeight);
+    composer?.setSize?.(nextWidth, nextHeight);
+    outlinePasses.forEach((pass) => pass.setSize?.(nextWidth, nextHeight));
   };
 
   const dispose = () => {
+    if (weaponViewmodelRoot && weaponViewmodelParent?.remove) {
+      weaponViewmodelParent.remove(weaponViewmodelRoot);
+    }
     renderer.dispose?.();
   };
 
@@ -437,11 +629,14 @@ export const createApp = ({
     removeProjectileVfx,
     getWeaponCooldown,
     getAbilityCooldowns,
+    setWeaponViewmodel,
     setTickRate,
     setPredictionSim,
     applyLookDelta,
     getLookAngles,
     setLookSensitivity,
+    setOutlineTeam,
+    triggerOutlineFlash,
     dispose
   };
 };

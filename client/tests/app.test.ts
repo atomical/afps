@@ -3,6 +3,12 @@ const loadRetroUrbanMapMock = vi.fn();
 vi.mock('../src/environment/retro_urban_map', () => ({
   loadRetroUrbanMap: (...args: unknown[]) => loadRetroUrbanMapMock(...args)
 }));
+const loadWeaponViewmodelMock = vi.fn();
+const attachWeaponViewmodelMock = vi.fn();
+vi.mock('../src/environment/weapon_viewmodel', () => ({
+  loadWeaponViewmodel: (...args: unknown[]) => loadWeaponViewmodelMock(...args),
+  attachWeaponViewmodel: (...args: unknown[]) => attachWeaponViewmodelMock(...args)
+}));
 vi.mock('../src/weapons/config', () => ({
   WEAPON_DEFS: [
     {
@@ -54,11 +60,14 @@ vi.mock('../src/weapons/config', () => ({
 import { createApp } from '../src/app';
 import { WEAPON_DEFS } from '../src/weapons/config';
 import { SIM_CONFIG } from '../src/sim/config';
-import { createFakeThree, FakeCamera, FakeRenderer, FakeScene } from './fakeThree';
+import { createFakeThree, FakeCamera, FakeEffectComposer, FakeOutlinePass, FakeRenderer, FakeScene } from './fakeThree';
 
 describe('createApp', () => {
   beforeEach(() => {
     loadRetroUrbanMapMock.mockReset();
+    loadWeaponViewmodelMock.mockReset();
+    attachWeaponViewmodelMock.mockReset();
+    FakeEffectComposer.instances = [];
   });
 
   it('builds a scene with renderer and camera defaults', () => {
@@ -89,6 +98,64 @@ describe('createApp', () => {
 
     expect(app.state.cube.rotation.x).toBeGreaterThan(startRotation);
     expect(renderer.renderCalls).toBe(1);
+  });
+
+  it('falls back to renderer when post-processing is unavailable', () => {
+    const baseThree = createFakeThree();
+    const three = {
+      ...baseThree,
+      EffectComposer: undefined,
+      RenderPass: undefined,
+      OutlinePass: undefined,
+      Vector2: undefined
+    };
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+
+    const renderer = app.state.renderer as FakeRenderer;
+
+    app.setOutlineTeam(1);
+    app.triggerOutlineFlash();
+    app.renderFrame(0.1, 1000);
+
+    expect(renderer.renderCalls).toBe(1);
+  });
+
+  it('assigns outline teams and flashes on hit', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+
+    const composer = FakeEffectComposer.instances[0];
+    const outlinePasses = composer.passes.filter(
+      (pass): pass is FakeOutlinePass => pass instanceof FakeOutlinePass
+    );
+
+    expect(outlinePasses.length).toBeGreaterThan(1);
+    expect(outlinePasses[0].selectedObjects.length).toBe(1);
+    expect(outlinePasses[1].selectedObjects.length).toBe(0);
+
+    app.setOutlineTeam(Number.NaN);
+    expect(outlinePasses[0].selectedObjects.length).toBe(1);
+
+    const baseStrength = outlinePasses[0].edgeStrength;
+    app.triggerOutlineFlash({ nowMs: 1000, durationMs: 100 });
+    expect(outlinePasses[0].edgeStrength).not.toBe(baseStrength);
+
+    app.setOutlineTeam(1);
+    expect(outlinePasses[0].edgeStrength).toBe(baseStrength);
+    expect(outlinePasses[0].selectedObjects.length).toBe(0);
+    expect(outlinePasses[1].selectedObjects.length).toBe(1);
+
+    const teamStrength = outlinePasses[1].edgeStrength;
+    app.triggerOutlineFlash({ nowMs: 2000, durationMs: 10, team: 1, killed: true });
+    expect(outlinePasses[1].edgeStrength).not.toBe(teamStrength);
+
+    app.renderFrame(0, 2005);
+    expect(outlinePasses[1].edgeStrength).not.toBe(teamStrength);
+
+    app.renderFrame(0, 2100);
+    expect(outlinePasses[1].edgeStrength).toBe(teamStrength);
   });
 
   it('applies interpolated snapshots to cube position', () => {
@@ -562,7 +629,7 @@ describe('createApp', () => {
     const camera = app.state.camera as FakeCamera;
     app.applyLookDelta(100, -50);
 
-    expect(camera.rotation.y).toBeCloseTo(1);
+    expect(camera.rotation.y).toBeCloseTo(-1);
     expect(camera.rotation.x).toBeCloseTo(0.5);
 
     const beforePitch = camera.rotation.x;
@@ -570,7 +637,30 @@ describe('createApp', () => {
     expect(camera.rotation.x).toBe(beforePitch);
 
     app.applyLookDelta(0, 1e6);
-    expect(camera.rotation.x).toBeGreaterThanOrEqual(-Math.PI / 2);
+    expect(camera.rotation.x).toBeLessThanOrEqual(Math.PI / 2);
+  });
+
+  it('wraps yaw and handles extreme look inputs', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1, lookSensitivity: 0.01 });
+    const camera = app.state.camera as FakeCamera;
+
+    app.applyLookDelta(-400, 0);
+    expect(camera.rotation.y).toBeGreaterThanOrEqual(-Math.PI);
+    expect(camera.rotation.y).toBeLessThanOrEqual(Math.PI);
+
+    const extreme = createApp({
+      three,
+      canvas: document.createElement('canvas'),
+      width: 320,
+      height: 240,
+      devicePixelRatio: 1,
+      lookSensitivity: 1e308
+    });
+    const extremeCamera = extreme.state.camera as FakeCamera;
+    extreme.applyLookDelta(1e308, 0);
+    expect(extremeCamera.rotation.y).toBeCloseTo(0);
   });
 
   it('updates look sensitivity at runtime', () => {
@@ -585,7 +675,7 @@ describe('createApp', () => {
     app.setLookSensitivity(0.02);
     app.applyLookDelta(50, 0);
 
-    expect(camera.rotation.y).toBeCloseTo(firstYaw + 1);
+    expect(camera.rotation.y).toBeCloseTo(firstYaw - 1);
   });
 
   it('ignores invalid look sensitivity updates', () => {
@@ -600,7 +690,7 @@ describe('createApp', () => {
     app.setLookSensitivity(Number.NaN);
     app.applyLookDelta(50, 0);
 
-    expect(camera.rotation.y).toBeCloseTo(firstYaw + 0.5);
+    expect(camera.rotation.y).toBeCloseTo(firstYaw - 0.5);
   });
 
   it('exposes look angles alongside snapshot-driven rendering', () => {
@@ -675,6 +765,43 @@ describe('createApp', () => {
     createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1, loadEnvironment: true });
 
     expect(loadRetroUrbanMapMock).toHaveBeenCalled();
+    expect(loadWeaponViewmodelMock).toHaveBeenCalledWith(
+      expect.objectContaining({ weaponId: WEAPON_DEFS[0]?.id })
+    );
+  });
+
+  it('skips weapon viewmodel loading when environment is disabled', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1, loadEnvironment: false });
+
+    app.setWeaponViewmodel('launcher');
+
+    expect(loadWeaponViewmodelMock).not.toHaveBeenCalled();
+    expect(attachWeaponViewmodelMock).not.toHaveBeenCalled();
+  });
+
+  it('swaps weapon viewmodels and cleans up previous attachments', async () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const rootA = { position: { x: 0, y: 0, z: 0, set: vi.fn() }, rotation: { x: 0, y: 0, z: 0 } };
+    const rootB = { position: { x: 0, y: 0, z: 0, set: vi.fn() }, rotation: { x: 0, y: 0, z: 0 } };
+    const parent = { remove: vi.fn() };
+
+    attachWeaponViewmodelMock.mockReturnValue(parent);
+    loadWeaponViewmodelMock.mockReturnValueOnce(rootA).mockReturnValueOnce(rootB);
+
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1, loadEnvironment: true });
+
+    await Promise.resolve();
+    app.setWeaponViewmodel('launcher');
+    await Promise.resolve();
+
+    expect(attachWeaponViewmodelMock).toHaveBeenCalled();
+    expect(parent.remove).toHaveBeenCalledWith(rootA);
+
+    app.dispose();
+    expect(parent.remove).toHaveBeenCalledWith(rootB);
   });
 
   it('resizes the camera and renderer', () => {

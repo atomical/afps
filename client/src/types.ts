@@ -13,10 +13,17 @@ export interface EulerLike {
   z: number;
 }
 
+export interface Vector2Like {
+  x: number;
+  y: number;
+  set: (x: number, y: number) => void;
+}
+
 export interface Object3DLike {
   position: Vector3Like;
   rotation: EulerLike;
   add?: (child: Object3DLike) => void;
+  remove?: (child: Object3DLike) => void;
 }
 
 export interface ColorLike {
@@ -58,6 +65,24 @@ export interface DataTextureLike {
   needsUpdate?: boolean;
 }
 
+export interface EffectComposerLike {
+  addPass: (pass: unknown) => void;
+  render: () => void;
+  setSize?: (width: number, height: number) => void;
+}
+
+export interface OutlinePassLike {
+  selectedObjects: Object3DLike[];
+  edgeStrength?: number;
+  edgeThickness?: number;
+  edgeGlow?: number;
+  pulsePeriod?: number;
+  downSampleRatio?: number;
+  visibleEdgeColor?: ColorLike;
+  hiddenEdgeColor?: ColorLike;
+  setSize?: (width: number, height: number) => void;
+}
+
 export interface MeshLike extends Object3DLike {
   geometry?: GeometryLike;
   material?: MaterialLike;
@@ -82,6 +107,10 @@ export interface ThreeLike {
   NearestFilter: unknown;
   SRGBColorSpace: unknown;
   NoToneMapping: unknown;
+  Vector2?: new (x: number, y: number) => Vector2Like;
+  EffectComposer?: new (renderer: RendererLike) => EffectComposerLike;
+  RenderPass?: new (scene: SceneLike, camera: CameraLike) => unknown;
+  OutlinePass?: new (resolution: Vector2Like, scene: SceneLike, camera: CameraLike) => OutlinePassLike;
 }
 
 export interface AppDimensions {
@@ -157,10 +186,18 @@ export interface App {
   removeProjectileVfx: (projectileId: number) => void;
   getWeaponCooldown: (slot: number) => number;
   getAbilityCooldowns: () => AbilityCooldowns;
+  setWeaponViewmodel: (weaponId?: string) => void;
   setTickRate: (tickRate: number) => void;
   setPredictionSim: (sim: PredictionSim) => void;
   applyLookDelta: (deltaX: number, deltaY: number) => void;
   getLookAngles: () => { yaw: number; pitch: number };
   setLookSensitivity: (value: number) => void;
+  setOutlineTeam: (team: number) => void;
+  triggerOutlineFlash: (options?: {
+    killed?: boolean;
+    team?: number;
+    nowMs?: number;
+    durationMs?: number;
+  }) => void;
   dispose: () => void;
 }

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const clientRoot = path.resolve(testDir, '..', '..');
-const assetRoot = path.join(clientRoot, 'public', 'assets', 'environments', 'cc0', 'kenney_retro_urban_kit');
+const assetRoot = path.join(clientRoot, 'public', 'assets', 'environments', 'cc0', 'kenney_city_kit_suburban_20');
 const manifestPath = path.join(assetRoot, 'map.json');
 const glbRoot = path.join(assetRoot, 'glb');
 const sharedConfigPath = path.resolve(clientRoot, '..', 'shared', 'sim', 'config.json');
@@ -27,7 +27,7 @@ describe('retro urban manifest', () => {
         missing.push(file);
       }
     }
-    expect(missing, `Missing Retro Urban GLBs: ${missing.join(', ')}`).toHaveLength(0);
+    expect(missing, `Missing Suburban GLBs: ${missing.join(', ')}`).toHaveLength(0);
   });
 
   it('keeps road tiles aligned on the 4m grid', () => {
@@ -38,7 +38,7 @@ describe('retro urban manifest', () => {
     const epsilon = 1e-6;
     const offGrid: string[] = [];
     for (const placement of placements) {
-      if (!placement.file || !placement.file.startsWith('road-asphalt')) {
+      if (!placement.file || !placement.file.startsWith('roads/road-')) {
         continue;
       }
       const [x, y, z] = placement.position ?? [NaN, NaN, NaN];

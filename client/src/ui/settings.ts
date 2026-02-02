@@ -7,6 +7,7 @@ export interface SettingsOverlay {
   setVisible: (visible: boolean) => void;
   toggle: () => void;
   setSensitivity: (value: number) => void;
+  setLookInversion: (invertX: boolean, invertY: boolean) => void;
   setMetricsVisible: (visible: boolean) => void;
   dispose: () => void;
 }
@@ -14,6 +15,10 @@ export interface SettingsOverlay {
 export interface SettingsOptions {
   initialSensitivity?: number;
   onSensitivityChange?: (value: number) => void;
+  initialInvertLookX?: boolean;
+  initialInvertLookY?: boolean;
+  onInvertLookXChange?: (value: boolean) => void;
+  onInvertLookYChange?: (value: boolean) => void;
   initialBindings?: InputBindings;
   onBindingsChange?: (bindings: InputBindings) => void;
   initialShowMetrics?: boolean;
@@ -35,6 +40,10 @@ export const createSettingsOverlay = (
   {
     initialSensitivity,
     onSensitivityChange,
+    initialInvertLookX,
+    initialInvertLookY,
+    onInvertLookXChange,
+    onInvertLookYChange,
     initialBindings,
     onBindingsChange,
     initialShowMetrics,
@@ -83,6 +92,22 @@ export const createSettingsOverlay = (
   const metricsGroup = doc.createElement('div');
   metricsGroup.className = 'settings-group settings-toggles';
 
+  const invertXRow = doc.createElement('label');
+  invertXRow.className = 'settings-toggle';
+  const invertXToggle = doc.createElement('input');
+  invertXToggle.type = 'checkbox';
+  const invertXLabel = doc.createElement('span');
+  invertXLabel.textContent = 'Invert mouse X';
+  invertXRow.append(invertXToggle, invertXLabel);
+
+  const invertYRow = doc.createElement('label');
+  invertYRow.className = 'settings-toggle';
+  const invertYToggle = doc.createElement('input');
+  invertYToggle.type = 'checkbox';
+  const invertYLabel = doc.createElement('span');
+  invertYLabel.textContent = 'Invert mouse Y';
+  invertYRow.append(invertYToggle, invertYLabel);
+
   const metricsRow = doc.createElement('label');
   metricsRow.className = 'settings-toggle';
   const metricsToggle = doc.createElement('input');
@@ -90,7 +115,7 @@ export const createSettingsOverlay = (
   const metricsLabel = doc.createElement('span');
   metricsLabel.textContent = 'Show net stats';
   metricsRow.append(metricsToggle, metricsLabel);
-  metricsGroup.append(metricsRow);
+  metricsGroup.append(invertXRow, invertYRow, metricsRow);
 
   const bindingsTitle = doc.createElement('div');
   bindingsTitle.className = 'settings-subtitle';
@@ -192,6 +217,19 @@ export const createSettingsOverlay = (
     onSensitivityChange?.(next);
   });
 
+  const setLookInversion = (invertX: boolean, invertY: boolean) => {
+    invertXToggle.checked = invertX;
+    invertYToggle.checked = invertY;
+  };
+
+  invertXToggle.addEventListener('change', () => {
+    onInvertLookXChange?.(invertXToggle.checked);
+  });
+
+  invertYToggle.addEventListener('change', () => {
+    onInvertLookYChange?.(invertYToggle.checked);
+  });
+
   const setMetricsVisible = (visible: boolean) => {
     metricsToggle.checked = visible;
   };
@@ -215,6 +253,7 @@ export const createSettingsOverlay = (
       ? initialSensitivity
       : DEFAULT_SENSITIVITY
   );
+  setLookInversion(Boolean(initialInvertLookX), Boolean(initialInvertLookY));
   setMetricsVisible(initialShowMetrics ?? true);
 
   const dispose = () => {
@@ -222,5 +261,14 @@ export const createSettingsOverlay = (
     overlay.remove();
   };
 
-  return { element: overlay, isVisible, setVisible, toggle, setSensitivity, setMetricsVisible, dispose };
+  return {
+    element: overlay,
+    isVisible,
+    setVisible,
+    toggle,
+    setSensitivity,
+    setLookInversion,
+    setMetricsVisible,
+    dispose
+  };
 };

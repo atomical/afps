@@ -16,6 +16,21 @@ export class FakeEuler {
   z = 0;
 }
 
+export class FakeVector2 {
+  x = 0;
+  y = 0;
+
+  constructor(x = 0, y = 0) {
+    this.x = x;
+    this.y = y;
+  }
+
+  set(x: number, y: number) {
+    this.x = x;
+    this.y = y;
+  }
+}
+
 export class FakeObject3D {
   position = new FakeVector3();
   rotation = new FakeEuler();
@@ -154,6 +169,67 @@ export class FakeDataTexture {
   }
 }
 
+export class FakeEffectComposer {
+  static instances: FakeEffectComposer[] = [];
+  renderer: FakeRenderer;
+  passes: unknown[] = [];
+  renderCalls = 0;
+  size = { width: 0, height: 0 };
+
+  constructor(renderer: FakeRenderer) {
+    this.renderer = renderer;
+    FakeEffectComposer.instances.push(this);
+  }
+
+  addPass(pass: unknown) {
+    this.passes.push(pass);
+  }
+
+  render() {
+    this.renderCalls += 1;
+    this.renderer.render();
+  }
+
+  setSize(width: number, height: number) {
+    this.size = { width, height };
+  }
+}
+
+export class FakeRenderPass {
+  scene: FakeScene;
+  camera: FakeCamera;
+
+  constructor(scene: FakeScene, camera: FakeCamera) {
+    this.scene = scene;
+    this.camera = camera;
+  }
+}
+
+export class FakeOutlinePass {
+  resolution: FakeVector2;
+  scene: FakeScene;
+  camera: FakeCamera;
+  selectedObjects: FakeObject3D[] = [];
+  edgeStrength?: number;
+  edgeThickness?: number;
+  edgeGlow?: number;
+  pulsePeriod?: number;
+  downSampleRatio?: number;
+  visibleEdgeColor?: FakeColor;
+  hiddenEdgeColor?: FakeColor;
+  size = { width: 0, height: 0 };
+
+  constructor(resolution: FakeVector2, scene: FakeScene, camera: FakeCamera) {
+    this.resolution = resolution;
+    this.scene = scene;
+    this.camera = camera;
+  }
+
+  setSize(width: number, height: number) {
+    this.size = { width, height };
+  }
+}
+
 export const createFakeThree = () => ({
   Scene: FakeScene,
   PerspectiveCamera: FakeCamera,
@@ -168,5 +244,9 @@ export const createFakeThree = () => ({
   DataTexture: FakeDataTexture,
   NearestFilter: 'NearestFilter',
   SRGBColorSpace: 'SRGBColorSpace',
-  NoToneMapping: 'NoToneMapping'
+  NoToneMapping: 'NoToneMapping',
+  Vector2: FakeVector2,
+  EffectComposer: FakeEffectComposer,
+  RenderPass: FakeRenderPass,
+  OutlinePass: FakeOutlinePass
 });

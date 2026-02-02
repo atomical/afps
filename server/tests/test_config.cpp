@@ -32,6 +32,7 @@ TEST_CASE("ParseArgs parses required flags") {
   CHECK(result.config.ice_servers.size() == 1);
   CHECK(result.config.ice_servers[0] == "stun:stun.example.com:3478");
   CHECK(result.config.snapshot_keyframe_interval == 3);
+  CHECK(result.config.use_https);
 }
 
 TEST_CASE("ParseArgs reports missing values") {
@@ -44,7 +45,7 @@ TEST_CASE("ParseArgs reports missing values") {
   CHECK(result.errors[0] == "Missing value for --port");
 }
 
-TEST_CASE("ValidateConfig requires cert and key") {
+TEST_CASE("ValidateConfig requires cert and key when HTTPS") {
   ServerConfig config;
   config.cert_path = "";
   config.key_path = "";
@@ -53,4 +54,31 @@ TEST_CASE("ValidateConfig requires cert and key") {
   const auto errors = ValidateConfig(config);
 
   CHECK(errors.size() == 3);
+}
+
+TEST_CASE("ValidateConfig skips cert and key when HTTP") {
+  ServerConfig config;
+  config.use_https = false;
+  config.cert_path = "";
+  config.key_path = "";
+  config.auth_token = "";
+
+  const auto errors = ValidateConfig(config);
+
+  CHECK(errors.size() == 1);
+}
+
+TEST_CASE("ParseArgs accepts --http") {
+  const char *argv[] = {
+      "afps_server",
+      "--http",
+      "--auth-token",
+      "secret"};
+  const int argc = static_cast<int>(sizeof(argv) / sizeof(argv[0]));
+
+  const auto result = ParseArgs(argc, argv);
+
+  CHECK(result.errors.empty());
+  CHECK(result.config.use_https == false);
+  CHECK(result.config.auth_token == "secret");
 }

@@ -8,7 +8,7 @@
 ---
 
 ## Status Header (update every session)
-- **Last updated:** `2026-02-01 16:30:39 CT`
+- **Last updated:** `2026-02-02 08:27:00 CT`
 - **Session author:** `codex`
 - **Current milestone:** `M5`
 - **CI note:** Skip CI work unless explicitly requested.
@@ -178,6 +178,7 @@
 - [2026-02-01 11:24:40 CT] (map-tools) Added rotation/scale validation to Retro Urban manifest checker. (tests: python3 tools/validate_retro_urban_map.py)
 - [2026-02-01 11:26:04 CT] (docs/abilities) Expanded grapple rules, config, and netcode notes. (tests: none)
 - [2026-02-01 12:17:07 CT] (grapple-input) Wired grapple input through sampler/bindings, InputCmd, server parsing, sim/WASM step signatures, and docs. (tests: npm test, ctest)
+- [2026-02-01 17:45:00 CT] (map/assets) Rebuilt the environment using Kenney City Kit Suburban + Roads, added new manifest/assets, and updated loader/tests/validation. (tests: npm test)
 - [2026-02-01 12:45:00 CT] (grapple) Implemented grapple anchor raycast + rope pull in shared sim/JS, expanded WASM ABI with view angles, and added shared sim unit test. (tests: not run)
 - [2026-02-01 13:01:45 CT] (grapple-tests) Added JS prediction grapple edge-case coverage + wrapAngle guard refactor; client tests/coverage and server ctest pass.
 - [2026-02-01 13:25:10 CT] (grapple-tests) Added floor/ceiling plane raycast bounds handling in shared sim/JS, expanded grapple raycast edge-case coverage, and added shared sim attach behavior tests. (tests: npm test, ctest)
@@ -186,6 +187,17 @@
 - [2026-02-01 16:26:22 CT] (rendering) Implemented base toon shading with MeshToonMaterial + gradient ramp, set sRGB output/tone mapping, and updated rendering docs/tests. (tests: npm test)
 - [2026-02-01 16:30:10 CT] (docs/rendering) Documented outline approaches in docs/OUTLINES.md and linked from docs/RENDERING.md. (tests: none)
 - [2026-02-01 16:30:39 CT] (docs/rendering) Added outline decision checklist entry referencing docs/OUTLINES.md. (tests: none)
+- [2026-02-01 16:35:06 CT] (rendering) Implemented OutlinePass pipeline, updated rendering docs, and added fallback test for non-postprocess renderer. (tests: npm test)
+- [2026-02-01 16:41:37 CT] (rendering) Tuned OutlinePass edge strength/thickness and downsample ratio to reduce noise; updated rendering docs. (tests: npm test)
+- [2026-02-01 16:51:44 CT] (server/http) Added CORS headers and OPTIONS preflight handling for HTTPS signaling endpoints. (tests: not run)
+- [2026-02-01 16:53:17 CT] (tools) Added tools/run_server.sh to rebuild and start the HTTPS server with cert generation; updated runbook. (tests: not run)
+- [2026-02-01 16:56:52 CT] (server/http) Added --http flag for local HTTP signaling, updated runbook/script defaults, and adjusted config/tests/docs. (tests: ctest)
+- [2026-02-01 17:02:38 CT] (server/http) Avoided duplicate CORS headers on preflight by guarding header injection. (tests: ctest)
+- [2026-02-01 17:03:46 CT] (tools) Added tools/run_dev.sh to boot server + client together; updated runbook/README. (tests: not run)
+- [2026-02-01 17:13:05 CT] (rendering) Added team-based outline passes and hit-flash behavior, wired hit events to outline flash, and updated docs/tests. (tests: npm test)
+- [2026-02-01 17:16:38 CT] (rendering-tests) Covered outline flash/team edge cases and main entry outline hooks; client tests green. (tests: npm test)
+- [2026-02-02 08:05:00 CT] (perf) Added client perf budgets + perf check harness and documented the budgets/command. (tests: npm run perf:check)
+- [2026-02-02 08:27:00 CT] (tooling) Added tools/perf_check.sh wrapper for client perf budgets. (tests: ./tools/perf_check.sh)
 
 ---
 
@@ -209,6 +221,12 @@
   **Alternatives considered:** Custom `ShaderMaterial` ramp; full post-process quantization.  
   **Why this:** Built-in toon material keeps code small and leverages Three.js lighting while preserving crisp bands.  
   **Consequences:** Limited stylization until we add rim lighting/outlines or custom shaders.
+
+- [2026-02-01 16:33:52 CT] **Decision:** Use Three.js `OutlinePass` (selective) for the first outline implementation.  
+  **Context:** Need a quick, controllable outline pass that can target players/weapons without heavy shader work.  
+  **Alternatives considered:** Depth+normal edge detection; inverted hull per-mesh.  
+  **Why this:** OutlinePass is straightforward to wire with EffectComposer and can be limited to selected meshes.  
+  **Consequences:** Multi-pass cost scales with resolution; may switch to inverted hull for weapons later.
 
 - [YYYY-MM-DD HH:mm:ss CT] **Decision:** …  
   **Context:** …  
@@ -627,13 +645,13 @@ Phase 2: add static triangle mesh + BVH sweeps.
 
 ---
 
-## 7.3 Environment & Map Layout (Retro Urban Kit)
+## 7.3 Environment & Map Layout (Kenney City Kit Suburban)
 ### Goals
 - Load low-poly CC0 environment assets for fast blockout and visual context.
 - Keep placement deterministic and simple (hardcoded positions first, data-driven later).
 
 ### Implementation steps
-- [x] Add Retro Urban Kit assets (CC0) to repo and mirror GLBs under client public assets.
+- [x] Add Kenney City Kit Suburban + Roads assets (CC0) to repo and mirror GLBs under client public assets.
 - [x] Hardcode a starter arena layout (roads + barriers + props) and load via GLTFLoader at runtime.
 - [x] Add JSON placement manifest for easy iteration (no code changes).
 - [x] Add optional map seed/randomization for variety (later).
@@ -650,7 +668,7 @@ Phase 2: add static triangle mesh + BVH sweeps.
 - Run: `VITE_DEBUG_RETRO_URBAN_BOUNDS=true npm run dev`
 - Verify road tiles align on a 4m grid and side roads close the perimeter.
 - Confirm props are upright (no unintended rotations) and benches/barriers sit on the ground plane.
-- Adjust `client/public/assets/environments/cc0/kenney_retro_urban_kit/map.json` positions/rotations as needed.
+- Adjust `client/public/assets/environments/cc0/kenney_city_kit_suburban_20/map.json` positions/rotations as needed.
 - After adjustments, keep road tiles within `arenaHalfSize` and aligned to the 4m grid tests.
 
 ---
@@ -785,10 +803,10 @@ Outline docs
 - `docs/OUTLINES.md` (pros/cons + recommendation)
 
 Implementation steps
-- [ ] Choose outline approach (Decision Log)
-- [ ] Implement via EffectComposer
-- [ ] Tune thresholds to avoid noisy edges
-- [ ] Add “hit flash” or team outline as needed
+- [x] Choose outline approach (Decision Log)
+- [x] Implement via EffectComposer
+- [x] Tune thresholds to avoid noisy edges
+- [x] Add “hit flash” or team outline as needed
 
 ### Tests
 - [ ] Snapshot tests for shader compilation (headless WebGL where possible)
@@ -982,8 +1000,8 @@ Server (C++):
 
 ## M5 — Stylized rendering + perf budgets
 - [x] Toon shading
-- [ ] Outlines
-- [ ] Performance tests and budgets enforced
+- [x] Outlines
+- [x] Performance tests and budgets enforced
 
 ---
 
@@ -991,17 +1009,22 @@ Server (C++):
 
 ## 11.1 Dev commands (fill in)
 - Client dev server: `cd client && npm install && npm run dev`
-- Client dev server (with signaling): `cd client && VITE_SIGNALING_URL=https://localhost:8443 VITE_SIGNALING_AUTH_TOKEN=devtoken npm run dev`
+- Client dev server (with signaling): `cd client && VITE_SIGNALING_URL=http://localhost:8443 VITE_SIGNALING_AUTH_TOKEN=devtoken npm run dev`
 - Client dev server (with WASM sim): `cd client && npm run wasm:build && VITE_WASM_SIM_URL=/wasm/afps_sim.js npm run dev`
-- Client dev server (Retro Urban bounds): `cd client && VITE_DEBUG_RETRO_URBAN_BOUNDS=true npm run dev`
-- Client dev server (Retro Urban grid): `cd client && VITE_DEBUG_RETRO_URBAN_GRID=true npm run dev`
-- Validate Retro Urban manifest: `python3 tools/validate_retro_urban_map.py`
+- Client dev server (Suburban bounds): `cd client && VITE_DEBUG_RETRO_URBAN_BOUNDS=true npm run dev`
+- Client dev server (Suburban grid): `cd client && VITE_DEBUG_RETRO_URBAN_GRID=true npm run dev`
+- Validate Suburban manifest: `python3 tools/validate_retro_urban_map.py`
 - Client WASM parity check: `cd client && npm run wasm:check`
 - Client lint: `cd client && npm run lint`
 - Client format: `cd client && npm run format`
 - Client format check: `cd client && npm run format:check`
 - Client tests: `cd client && npm test`
+- Client perf check: `cd client && npm run perf:check`
+- Client perf check (wrapper): `./tools/perf_check.sh`
 - Server build: `cd server && cmake -S . -B build && cmake --build build`
+- Server run (HTTP, builds + runs): `./tools/run_server.sh`
+- Server run (HTTPS, builds + certs): `SERVER_USE_HTTPS=1 ./tools/run_server.sh`
+- Server + client (HTTP dev): `./tools/run_dev.sh`
 - Server tests: `cd server && ctest --test-dir build`
 - C++ format: `./tools/format_cpp.sh`
 - C++ format check: `./tools/lint_cpp.sh`
