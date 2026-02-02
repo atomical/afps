@@ -11,6 +11,7 @@ export interface EulerLike {
   x: number;
   y: number;
   z: number;
+  order?: string;
 }
 
 export interface Vector2Like {
@@ -97,6 +98,7 @@ export interface ThreeLike {
   PerspectiveCamera: new (fov: number, aspect: number, near: number, far: number) => CameraLike;
   WebGLRenderer: new (options: { canvas: HTMLCanvasElement; antialias: boolean }) => RendererLike;
   BoxGeometry: new (width: number, height: number, depth: number) => GeometryLike;
+  PlaneGeometry: new (width: number, height: number) => GeometryLike;
   MeshStandardMaterial: new (params: { color: number }) => MaterialLike;
   MeshToonMaterial: new (params: { color: number; gradientMap?: DataTextureLike }) => MaterialLike;
   Mesh: new (geometry: GeometryLike, material: MaterialLike) => MeshLike;

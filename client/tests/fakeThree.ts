@@ -14,6 +14,7 @@ export class FakeEuler {
   x = 0;
   y = 0;
   z = 0;
+  order = 'XYZ';
 }
 
 export class FakeVector2 {
@@ -118,6 +119,12 @@ export class FakeGeometry {
     this.width = width;
     this.height = height;
     this.depth = depth;
+  }
+}
+
+export class FakePlaneGeometry extends FakeGeometry {
+  constructor(width: number, height: number) {
+    super(width, height, 0);
   }
 }
 
@@ -235,6 +242,7 @@ export const createFakeThree = () => ({
   PerspectiveCamera: FakeCamera,
   WebGLRenderer: FakeRenderer,
   BoxGeometry: FakeGeometry,
+  PlaneGeometry: FakePlaneGeometry,
   MeshStandardMaterial: FakeMaterial,
   MeshToonMaterial: FakeMaterial,
   Mesh: FakeMesh,

@@ -18,6 +18,7 @@ const DEBUG_GRID_SIZE = 40;
 const DEBUG_GRID_DIVISIONS = 10;
 const DEBUG_GRID_COLOR_MAJOR = 0x335577;
 const DEBUG_GRID_COLOR_MINOR = 0x223344;
+const MAP_SCALE = 1.5;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -109,15 +110,20 @@ const applyTransform = (
   object: { position: Vector3Like; rotation: { x: number; y: number; z: number }; scale?: Vector3Like },
   placement: Placement
 ) => {
-  object.position.set(...placement.position);
+  object.position.set(
+    placement.position[0] * MAP_SCALE,
+    placement.position[1] * MAP_SCALE,
+    placement.position[2] * MAP_SCALE
+  );
   if (placement.rotation) {
     const [rx, ry, rz] = placement.rotation;
     object.rotation.x = rx;
     object.rotation.y = ry;
     object.rotation.z = rz;
   }
-  if (placement.scale && object.scale) {
-    object.scale.set(placement.scale, placement.scale, placement.scale);
+  if (object.scale) {
+    const scale = (placement.scale ?? 1) * MAP_SCALE;
+    object.scale.set(scale, scale, scale);
   }
 };
 

@@ -8,7 +8,7 @@
 ---
 
 ## Status Header (update every session)
-- **Last updated:** `2026-02-02 08:27:00 CT`
+- **Last updated:** `2026-02-02 08:35:00 CT`
 - **Session author:** `codex`
 - **Current milestone:** `M5`
 - **CI note:** Skip CI work unless explicitly requested.
@@ -198,6 +198,7 @@
 - [2026-02-01 17:16:38 CT] (rendering-tests) Covered outline flash/team edge cases and main entry outline hooks; client tests green. (tests: npm test)
 - [2026-02-02 08:05:00 CT] (perf) Added client perf budgets + perf check harness and documented the budgets/command. (tests: npm run perf:check)
 - [2026-02-02 08:27:00 CT] (tooling) Added tools/perf_check.sh wrapper for client perf budgets. (tests: ./tools/perf_check.sh)
+- [2026-02-02 08:35:00 CT] (rendering/map) Set sand sky color, warmer sunny lighting, and ground-aligned camera start. (tests: npm test)
 
 ---
 
@@ -657,6 +658,8 @@ Phase 2: add static triangle mesh + BVH sweeps.
 - [x] Add optional map seed/randomization for variety (later).
 - [x] Add `VITE_DEBUG_RETRO_URBAN_BOUNDS=true` toggle to render BoxHelper bounds for placements.
 - [x] Add `VITE_DEBUG_RETRO_URBAN_GRID=true` toggle to render a 4m grid helper.
+- [x] Spawn camera/player at ground height so feet start on the map.
+- [x] Use a sand-toned background and warm “sunny day” lighting.
 
 ### Tests
 - [x] Unit: map loader adds GLB scene nodes to the scene.

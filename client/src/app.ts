@@ -25,7 +25,10 @@ const DEFAULTS = {
   lookSensitivity: 0.002,
   maxPitch: Math.PI / 2 - 0.01,
   cameraHeight: 1.6,
-  background: 0x0b0d12,
+  background: 0x86bff0,
+  groundColor: 0xe2c38a,
+  groundSize: 220,
+  groundOffsetY: -0.02,
   cubeColor: 0x4cc3ff,
   projectileColor: 0xf2d9a1,
   projectileSize: 0.12,
@@ -34,8 +37,10 @@ const DEFAULTS = {
   tracerThickness: 0.03,
   tracerTtl: 0.08,
   tracerLength: 24,
-  ambientIntensity: 0.4,
-  keyLightIntensity: 0.9,
+  ambientColor: 0xfff2d8,
+  ambientIntensity: 0.55,
+  keyLightColor: 0xfff7df,
+  keyLightIntensity: 1.15,
   toonBands: 4,
   outlinesEnabled: true,
   outlineStrength: 1.2,
@@ -80,7 +85,10 @@ export const createApp = ({
   scene.background = new three.Color(DEFAULTS.background);
 
   const camera = new three.PerspectiveCamera(DEFAULTS.fov, width / height, DEFAULTS.near, DEFAULTS.far);
-  camera.position.set(0, 1, 3);
+  camera.position.set(0, DEFAULTS.cameraHeight, 0);
+  if (camera.rotation) {
+    camera.rotation.order = 'YXZ';
+  }
 
   const renderer = new three.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(devicePixelRatio);
@@ -104,6 +112,13 @@ export const createApp = ({
   toonRamp.generateMipmaps = false;
   toonRamp.needsUpdate = true;
 
+  const groundGeometry = new three.PlaneGeometry(DEFAULTS.groundSize, DEFAULTS.groundSize);
+  const groundMaterial = new three.MeshToonMaterial({ color: DEFAULTS.groundColor, gradientMap: toonRamp });
+  const ground = new three.Mesh(groundGeometry, groundMaterial);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.set(0, DEFAULTS.groundOffsetY, 0);
+  scene.add(ground);
+
   const supportsOutlines = Boolean(
     DEFAULTS.outlinesEnabled && three.EffectComposer && three.RenderPass && three.OutlinePass && three.Vector2
   );
@@ -125,11 +140,11 @@ export const createApp = ({
   cube.position.set(0, 0.5, 0);
   scene.add(cube);
 
-  const ambient = new three.AmbientLight(0xffffff, DEFAULTS.ambientIntensity);
+  const ambient = new three.AmbientLight(DEFAULTS.ambientColor, DEFAULTS.ambientIntensity);
   scene.add(ambient);
 
-  const keyLight = new three.DirectionalLight(0xffffff, DEFAULTS.keyLightIntensity);
-  keyLight.position.set(2, 4, 3);
+  const keyLight = new three.DirectionalLight(DEFAULTS.keyLightColor, DEFAULTS.keyLightIntensity);
+  keyLight.position.set(4, 6, 2);
   scene.add(keyLight);
 
   const clampOutlineTeam = (team: number) => {
@@ -517,7 +532,7 @@ export const createApp = ({
     lookPitch -= safeY * lookSensitivity;
     lookPitch = Math.max(-DEFAULTS.maxPitch, Math.min(DEFAULTS.maxPitch, lookPitch));
     camera.rotation.y = -lookYaw;
-    camera.rotation.x = lookPitch;
+    camera.rotation.x = -lookPitch;
   };
 
   const getLookAngles = () => ({

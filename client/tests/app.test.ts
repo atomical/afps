@@ -82,8 +82,8 @@ describe('createApp', () => {
     expect(renderer.pixelRatio).toBe(2);
     expect(renderer.size).toEqual({ width: 800, height: 600 });
     expect(camera.aspect).toBeCloseTo(800 / 600);
-    expect(camera.position.z).toBe(3);
-    expect(scene.children.length).toBe(3);
+    expect(camera.position.z).toBe(0);
+    expect(scene.children.length).toBe(4);
   });
 
   it('updates cube rotation and renders', () => {
@@ -246,7 +246,7 @@ describe('createApp', () => {
     const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
     const scene = app.state.scene as FakeScene;
 
-    expect(scene.children.length).toBe(3);
+    expect(scene.children.length).toBe(4);
     app.recordInput({
       type: 'InputCmd',
       inputSeq: 1,
@@ -264,7 +264,7 @@ describe('createApp', () => {
       grapple: false, shield: false, shockwave: false
     });
 
-    expect(scene.children.length).toBe(4);
+    expect(scene.children.length).toBe(5);
     expect(app.getWeaponCooldown(1)).toBeCloseTo(1);
     app.recordInput({
       type: 'InputCmd',
@@ -282,13 +282,13 @@ describe('createApp', () => {
       dash: false,
       grapple: false, shield: false, shockwave: false
     });
-    expect(scene.children.length).toBe(4);
+    expect(scene.children.length).toBe(5);
 
     app.renderFrame(0.5, 1000);
-    expect(scene.children.length).toBe(4);
+    expect(scene.children.length).toBe(5);
     expect(app.getWeaponCooldown(1)).toBeCloseTo(0.5);
     app.renderFrame(2, 1500);
-    expect(scene.children.length).toBe(3);
+    expect(scene.children.length).toBe(4);
     expect(app.getWeaponCooldown(1)).toBe(0);
     app.renderFrame(0.1, 1700);
   });
@@ -299,7 +299,7 @@ describe('createApp', () => {
     const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
     const scene = app.state.scene as FakeScene;
 
-    expect(scene.children.length).toBe(3);
+    expect(scene.children.length).toBe(4);
     app.spawnProjectileVfx({
       origin: { x: 1, y: 2, z: 3 },
       velocity: { x: 4, y: 0, z: -2 },
@@ -307,11 +307,11 @@ describe('createApp', () => {
       projectileId: 12
     });
 
-    expect(scene.children.length).toBe(4);
+    expect(scene.children.length).toBe(5);
     app.removeProjectileVfx(12);
-    expect(scene.children.length).toBe(3);
+    expect(scene.children.length).toBe(4);
     app.renderFrame(0.6, 1000);
-    expect(scene.children.length).toBe(3);
+    expect(scene.children.length).toBe(4);
   });
 
   it('exposes ability cooldowns from prediction sim', () => {
@@ -361,7 +361,7 @@ describe('createApp', () => {
       velocity: { x: 1, y: 0, z: 0 }
     });
 
-    expect(scene.children.length).toBe(3);
+    expect(scene.children.length).toBe(4);
     app.removeProjectileVfx(-1);
     app.removeProjectileVfx(999);
   });
@@ -378,7 +378,7 @@ describe('createApp', () => {
       projectileId: -2
     });
 
-    expect(scene.children.length).toBe(3);
+    expect(scene.children.length).toBe(4);
   });
 
   it('replaces server projectile VFX with the same id', () => {
@@ -392,8 +392,8 @@ describe('createApp', () => {
       velocity: { x: 1, y: 0, z: 0 },
       projectileId: 5
     });
-    const firstProjectile = scene.children[3];
-    expect(scene.children.length).toBe(4);
+    const firstProjectile = scene.children[scene.children.length - 1];
+    expect(scene.children.length).toBe(5);
 
     app.spawnProjectileVfx({
       origin: { x: 2, y: 2, z: 2 },
@@ -401,7 +401,7 @@ describe('createApp', () => {
       projectileId: 5
     });
 
-    expect(scene.children.length).toBe(4);
+    expect(scene.children.length).toBe(5);
     expect(scene.children.includes(firstProjectile)).toBe(false);
   });
 
@@ -428,9 +428,9 @@ describe('createApp', () => {
       grapple: false, shield: false, shockwave: false
     });
 
-    expect(scene.children.length).toBe(4);
+    expect(scene.children.length).toBe(5);
     app.renderFrame(0.1, 1000);
-    expect(scene.children.length).toBe(3);
+    expect(scene.children.length).toBe(4);
   });
 
   it('skips projectile VFX when projectile speed is invalid', () => {
@@ -456,7 +456,7 @@ describe('createApp', () => {
       grapple: false, shield: false, shockwave: false
     });
 
-    expect(scene.children.length).toBe(3);
+    expect(scene.children.length).toBe(4);
     app.renderFrame(0.1, 1000);
   });
 
@@ -483,7 +483,7 @@ describe('createApp', () => {
       grapple: false, shield: false, shockwave: false
     });
 
-    expect(scene.children.length).toBe(3);
+    expect(scene.children.length).toBe(4);
   });
 
   it('skips VFX when no weapons are configured', () => {
@@ -510,7 +510,7 @@ describe('createApp', () => {
       grapple: false, shield: false, shockwave: false
     });
 
-    expect(scene.children.length).toBe(3);
+    expect(scene.children.length).toBe(4);
     WEAPON_DEFS.push(...saved);
   });
 
@@ -630,7 +630,7 @@ describe('createApp', () => {
     app.applyLookDelta(100, -50);
 
     expect(camera.rotation.y).toBeCloseTo(-1);
-    expect(camera.rotation.x).toBeCloseTo(0.5);
+    expect(camera.rotation.x).toBeCloseTo(-0.5);
 
     const beforePitch = camera.rotation.x;
     app.applyLookDelta(Number.NaN, Number.POSITIVE_INFINITY);
@@ -755,7 +755,7 @@ describe('createApp', () => {
     expect(app.state.cube.position.x).toBeCloseTo(0);
     expect(app.state.cube.position.y).toBeCloseTo(0.5);
     expect(app.state.cube.position.z).toBeCloseTo(0);
-    expect(app.state.camera.position.z).toBeCloseTo(3);
+    expect(app.state.camera.position.z).toBeCloseTo(0);
   });
 
   it('loads environment when enabled', () => {

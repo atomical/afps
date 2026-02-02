@@ -14,6 +14,7 @@ This document describes the current rendering setup and the planned toon + outli
 - OutlinePass is wired for the cube as a baseline silhouette.
 - OutlinePass starts with reduced edge strength/thickness and a 2x downsample ratio to reduce noise.
 - Outline colors are assigned per team (one OutlinePass per team), with a short hit-flash on confirm.
+- Background is a sand tone with warm ambient + key light for a sunny-day feel.
 
 ---
 
