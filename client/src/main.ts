@@ -63,7 +63,7 @@ const createLocalAvatarDebug = (doc: Document) => {
   panel.id = 'local-avatar-debug';
   panel.style.position = 'fixed';
   panel.style.right = '12px';
-  panel.style.bottom = '12px';
+  panel.style.top = '12px';
   panel.style.padding = '10px 12px';
   panel.style.background = 'rgba(10, 14, 20, 0.75)';
   panel.style.border = '1px solid rgba(255, 255, 255, 0.15)';
