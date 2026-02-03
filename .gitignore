@@ -4,10 +4,12 @@
 client/node_modules
 client/dist
 client/public/wasm
+client/coverage/**
 
 # Server
 server/build
 server/certs/*.pem
+server/coverage
 
 # WASM
 shared/wasm/dist
