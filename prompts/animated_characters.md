@@ -146,33 +146,33 @@ QUALITY BAR / ACCEPTANCE CRITERIA
 - If bone not found: weapon attaches to a sensible fallback and logs a clear warning (not a crash).
 
 IMPLEMENTATION STEPS (DO THESE IN ORDER)
-1) Repo reconnaissance:
+- [x] 1) Repo reconnaissance:
    - Identify engine/runtime, UI system, networking stack, asset loading pipeline, and where join/spawn occurs.
    - Briefly summarize your findings in comments in the PR description (or in a `docs/prejoin.md`).
 
-2) Add/extend Player Profile data model:
+- [x] 2) Add/extend Player Profile data model:
    - PlayerProfile: { nickname, characterId, weaponId? }
    - Ensure server authoritative validation and replication.
 
-3) Implement PreJoin UI:
+- [x] 3) Implement PreJoin UI:
    - Add new UI component/screen.
    - Add CharacterSelector component with preview.
    - Add local persistence.
 
-4) CharacterCatalog:
+- [x] 4) CharacterCatalog:
    - Implement discovery/loading of skin options.
    - Add manifest/config for offsets.
 
-5) Avatar system:
+- [x] 5) Avatar system:
    - Ensure per-player model instantiation is properly cloned (skinned meshes must not share skeleton state between instances).
    - Apply skin/material.
    - Setup animation per instance.
 
-6) Weapon attachment:
+- [x] 6) Weapon attachment:
    - Implement bone lookup + attach + offsets.
    - Ensure remote avatars always attach on spawn and on character changes.
 
-7) Testing:
+- [ ] 7) Testing (manual test plan still needed):
    - Add at least minimal automated tests for nickname validation + characterId validation if the repo has a test harness.
    - Provide a “Manual Test Plan” section in docs or PR notes with exact steps.
 
