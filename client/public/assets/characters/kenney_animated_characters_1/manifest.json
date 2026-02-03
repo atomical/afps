@@ -17,7 +17,7 @@
           1.57,
           0.0
         ],
-        "scale": 1.0
+        "scale": 0.6
       },
       "modelUrl": "/assets/characters/kenney_animated_characters_1/models/characterMedium.glb",
       "previewUrl": "/assets/characters/kenney_animated_characters_1/skins/survivorFemaleA.png"
@@ -38,7 +38,7 @@
           1.57,
           0.0
         ],
-        "scale": 1.0
+        "scale": 0.6
       },
       "modelUrl": "/assets/characters/kenney_animated_characters_1/models/characterMedium.glb",
       "previewUrl": "/assets/characters/kenney_animated_characters_1/skins/survivorMaleB.png"
@@ -59,7 +59,7 @@
           1.57,
           0.0
         ],
-        "scale": 1.0
+        "scale": 0.6
       },
       "modelUrl": "/assets/characters/kenney_animated_characters_1/models/characterMedium.glb",
       "previewUrl": "/assets/characters/kenney_animated_characters_1/skins/zombieA.png"
@@ -80,7 +80,7 @@
           1.57,
           0.0
         ],
-        "scale": 1.0
+        "scale": 0.6
       },
       "modelUrl": "/assets/characters/kenney_animated_characters_1/models/characterMedium.glb",
       "previewUrl": "/assets/characters/kenney_animated_characters_1/skins/zombieC.png"
