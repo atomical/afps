@@ -36,11 +36,13 @@ TEST_CASE("RtcEchoPeer performs a loopback message exchange") {
         std::scoped_lock lock(mutex);
         echoed = (label == "echo" && message == "ping");
         cv.notify_all();
-      }});
+      },
+      nullptr});
 
   answerer.SetCallbacks({
       [&](const rtc::Description &description) { offerer.SetRemoteDescription(description); },
       [&](const rtc::Candidate &candidate) { offerer.AddRemoteCandidate(candidate); },
+      nullptr,
       nullptr,
       nullptr,
       nullptr});

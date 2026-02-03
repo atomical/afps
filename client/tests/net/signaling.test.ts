@@ -82,6 +82,19 @@ describe('signaling client', () => {
     expect(parsed.iceServers[0].urls).toBe('stun:stun.example.com:3478');
   });
 
+  it('parses ice server credentials', () => {
+    const parsed = __test.parseConnectResponse({
+      connectionId: 'id',
+      offer: { type: 'offer', sdp: 'v=0' },
+      iceServers: [{ urls: 'turn:turn.example.com:3478', username: 'user', credential: 'pass' }],
+      expiresAt: 'soon'
+    });
+
+    expect(parsed.iceServers[0].urls).toBe('turn:turn.example.com:3478');
+    expect(parsed.iceServers[0].username).toBe('user');
+    expect(parsed.iceServers[0].credential).toBe('pass');
+  });
+
   it('rejects invalid responses', async () => {
     const fetcher = createFetch([
       new FakeResponse(false, 500, { error: 'bad' }, 'boom')
@@ -171,6 +184,24 @@ describe('signaling client', () => {
         expiresAt: 'soon'
       })
     ).toThrow('Invalid field: iceServers[0].urls');
+
+    expect(() =>
+      __test.parseConnectResponse({
+        connectionId: 'id',
+        offer: { type: 'offer', sdp: 'v=0' },
+        iceServers: [{ urls: ['stun:example.com'], username: 123 }],
+        expiresAt: 'soon'
+      })
+    ).toThrow('Invalid field: iceServers[0].username');
+
+    expect(() =>
+      __test.parseConnectResponse({
+        connectionId: 'id',
+        offer: { type: 'offer', sdp: 'v=0' },
+        iceServers: [{ urls: ['stun:example.com'], credential: 123 }],
+        expiresAt: 'soon'
+      })
+    ).toThrow('Invalid field: iceServers[0].credential');
   });
 
   it('fails requestOk on non-200', async () => {

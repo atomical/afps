@@ -1,4 +1,4 @@
-import type { GameEvent, PlayerProfile, Pong, StateSnapshot } from './protocol';
+import type { GameEvent, PlayerProfile, PongMessage, StateSnapshot } from './protocol';
 import type { Logger, PeerConnectionFactory, SignalingClient, TimerLike, WebRtcSession } from './types';
 import { createSignalingClient } from './signaling';
 import { createWebRtcConnector, defaultPeerConnectionFactory } from './webrtc';
@@ -9,9 +9,16 @@ export interface NetworkRuntimeConfig {
   pollIntervalMs?: number;
   connectTimeoutMs?: number;
   logger?: Logger;
-  buildClientHello?: (sessionToken: string, connectionId: string) => string;
+  buildClientHello?: (
+    sessionToken: string,
+    connectionId: string,
+    build?: string,
+    profile?: { nickname?: string; characterId?: string },
+    msgSeq?: number,
+    serverSeqAck?: number
+  ) => Uint8Array;
   onSnapshot?: (snapshot: StateSnapshot) => void;
-  onPong?: (pong: Pong) => void;
+  onPong?: (pong: PongMessage) => void;
   onGameEvent?: (event: GameEvent) => void;
   onPlayerProfile?: (profile: PlayerProfile) => void;
 }
@@ -29,9 +36,16 @@ interface RuntimeDependencies {
     pollIntervalMs?: number;
     connectTimeoutMs?: number;
     timers?: TimerLike;
-    buildClientHello?: (sessionToken: string, connectionId: string) => string;
+    buildClientHello?: (
+      sessionToken: string,
+      connectionId: string,
+      build?: string,
+      profile?: { nickname?: string; characterId?: string },
+      msgSeq?: number,
+      serverSeqAck?: number
+    ) => Uint8Array;
     onSnapshot?: (snapshot: StateSnapshot) => void;
-    onPong?: (pong: Pong) => void;
+    onPong?: (pong: PongMessage) => void;
     onGameEvent?: (event: GameEvent) => void;
     onPlayerProfile?: (profile: PlayerProfile) => void;
   }) => { connect: () => Promise<WebRtcSession> };

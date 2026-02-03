@@ -1,162 +1,188 @@
 #include "protocol.h"
 
+#include <algorithm>
 #include <cmath>
-#include <nlohmann/json.hpp>
+#include <cstring>
+#include <limits>
+
+#include <flatbuffers/flatbuffers.h>
+
+#include "afps_protocol_generated.h"
 
 namespace {
-using nlohmann::json;
+constexpr size_t kMagicOffset = 0;
+constexpr size_t kProtocolOffset = 4;
+constexpr size_t kTypeOffset = 6;
+constexpr size_t kPayloadSizeOffset = 8;
+constexpr size_t kMsgSeqOffset = 12;
+constexpr size_t kAckOffset = 16;
 
-bool ParseJsonObject(const std::string &message, json &out, std::string &error) {
-  try {
-    out = json::parse(message);
-  } catch (const json::exception &ex) {
-    error = std::string("invalid_json: ") + ex.what();
+bool IsFinite(double value) {
+  return std::isfinite(value);
+}
+
+uint16_t ReadU16(const uint8_t *data) {
+  return static_cast<uint16_t>(data[0] | (static_cast<uint16_t>(data[1]) << 8));
+}
+
+uint32_t ReadU32(const uint8_t *data) {
+  return static_cast<uint32_t>(data[0] | (static_cast<uint32_t>(data[1]) << 8) |
+                               (static_cast<uint32_t>(data[2]) << 16) |
+                               (static_cast<uint32_t>(data[3]) << 24));
+}
+
+void WriteU16(uint8_t *data, uint16_t value) {
+  data[0] = static_cast<uint8_t>(value & 0xFF);
+  data[1] = static_cast<uint8_t>((value >> 8) & 0xFF);
+}
+
+void WriteU32(uint8_t *data, uint32_t value) {
+  data[0] = static_cast<uint8_t>(value & 0xFF);
+  data[1] = static_cast<uint8_t>((value >> 8) & 0xFF);
+  data[2] = static_cast<uint8_t>((value >> 16) & 0xFF);
+  data[3] = static_cast<uint8_t>((value >> 24) & 0xFF);
+}
+
+bool IsValidMessageType(uint16_t value) {
+  return value >= static_cast<uint16_t>(MessageType::ClientHello) &&
+         value <= static_cast<uint16_t>(MessageType::Disconnect);
+}
+
+template <typename T>
+const T *VerifyPayload(const std::vector<uint8_t> &payload, std::string &error) {
+  if (payload.empty()) {
+    error = "empty_payload";
+    return nullptr;
+  }
+  flatbuffers::Verifier verifier(payload.data(), payload.size());
+  const T *root = flatbuffers::GetRoot<T>(payload.data());
+  if (!root || !root->Verify(verifier)) {
+    error = "invalid_flatbuffer";
+    return nullptr;
+  }
+  return root;
+}
+
+afps::protocol::GameEventType ToGameEventType(const std::string &event) {
+  if (event == "ProjectileSpawn") {
+    return afps::protocol::GameEventType::ProjectileSpawn;
+  }
+  if (event == "ProjectileRemove") {
+    return afps::protocol::GameEventType::ProjectileRemove;
+  }
+  return afps::protocol::GameEventType::HitConfirmed;
+}
+}  // namespace
+
+bool DecodeEnvelope(const std::vector<uint8_t> &message, DecodedEnvelope &out, std::string &error) {
+  if (message.size() < kProtocolHeaderBytes) {
+    error = "message_too_small";
     return false;
   }
-  if (!out.is_object()) {
-    error = "invalid_json_object";
+  if (message.size() > kMaxClientMessageBytes) {
+    error = "message_too_large";
     return false;
+  }
+  if (std::memcmp(message.data() + kMagicOffset, kProtocolMagic, sizeof(kProtocolMagic)) != 0) {
+    error = "invalid_magic";
+    return false;
+  }
+
+  const uint16_t protocol_version = ReadU16(message.data() + kProtocolOffset);
+  const uint16_t msg_type_value = ReadU16(message.data() + kTypeOffset);
+  const uint32_t payload_bytes = ReadU32(message.data() + kPayloadSizeOffset);
+  const uint32_t msg_seq = ReadU32(message.data() + kMsgSeqOffset);
+  const uint32_t server_seq_ack = ReadU32(message.data() + kAckOffset);
+
+  if (!IsValidMessageType(msg_type_value)) {
+    error = "invalid_msg_type";
+    return false;
+  }
+  if (payload_bytes + kProtocolHeaderBytes != message.size()) {
+    error = "payload_size_mismatch";
+    return false;
+  }
+
+  out.header.protocol_version = protocol_version;
+  out.header.msg_type = static_cast<MessageType>(msg_type_value);
+  out.header.payload_bytes = payload_bytes;
+  out.header.msg_seq = msg_seq;
+  out.header.server_seq_ack = server_seq_ack;
+  out.payload.assign(message.begin() + static_cast<long>(kProtocolHeaderBytes), message.end());
+  return true;
+}
+
+std::vector<uint8_t> EncodeEnvelope(MessageType type, const uint8_t *payload, size_t payload_size,
+                                    uint32_t msg_seq, uint32_t server_seq_ack,
+                                    uint16_t protocol_version) {
+  if (payload_size > std::numeric_limits<uint32_t>::max()) {
+    return {};
+  }
+  const size_t total_size = kProtocolHeaderBytes + payload_size;
+  std::vector<uint8_t> message(total_size);
+  std::memcpy(message.data() + kMagicOffset, kProtocolMagic, sizeof(kProtocolMagic));
+  WriteU16(message.data() + kProtocolOffset, protocol_version);
+  WriteU16(message.data() + kTypeOffset, static_cast<uint16_t>(type));
+  WriteU32(message.data() + kPayloadSizeOffset, static_cast<uint32_t>(payload_size));
+  WriteU32(message.data() + kMsgSeqOffset, msg_seq);
+  WriteU32(message.data() + kAckOffset, server_seq_ack);
+  if (payload_size > 0) {
+    std::memcpy(message.data() + kProtocolHeaderBytes, payload, payload_size);
+  }
+  return message;
+}
+
+bool ParseClientHelloPayload(const std::vector<uint8_t> &payload, ClientHello &out, std::string &error) {
+  const auto *hello = VerifyPayload<afps::protocol::ClientHello>(payload, error);
+  if (!hello) {
+    return false;
+  }
+  if (hello->protocol_version() == 0) {
+    error = "invalid_field: protocol_version";
+    return false;
+  }
+  const auto *session_token = hello->session_token();
+  if (!session_token || session_token->size() == 0) {
+    error = "missing_field: sessionToken";
+    return false;
+  }
+  const auto *connection_id = hello->connection_id();
+  if (!connection_id || connection_id->size() == 0) {
+    error = "missing_field: connectionId";
+    return false;
+  }
+
+  out.protocol_version = hello->protocol_version();
+  out.session_token = session_token->str();
+  out.connection_id = connection_id->str();
+  if (const auto *build = hello->build()) {
+    out.build = build->str();
+  }
+  if (const auto *nickname = hello->nickname()) {
+    out.nickname = nickname->str();
+  }
+  if (const auto *character_id = hello->character_id()) {
+    out.character_id = character_id->str();
   }
   return true;
 }
 
-bool ReadString(const json &payload, const char *key, std::string &out, std::string &error) {
-  if (!payload.contains(key)) {
-    error = std::string("missing_field: ") + key;
-    return false;
-  }
-  if (!payload.at(key).is_string()) {
-    error = std::string("invalid_field: ") + key;
-    return false;
-  }
-  out = payload.at(key).get<std::string>();
-  if (out.empty()) {
-    error = std::string("empty_field: ") + key;
-    return false;
-  }
-  return true;
-}
-
-bool ReadInt(const json &payload, const char *key, int &out, std::string &error) {
-  if (!payload.contains(key)) {
-    error = std::string("missing_field: ") + key;
-    return false;
-  }
-  if (!payload.at(key).is_number_integer()) {
-    error = std::string("invalid_field: ") + key;
-    return false;
-  }
-  out = payload.at(key).get<int>();
-  return true;
-}
-
-bool ReadNumber(const json &payload, const char *key, double &out, std::string &error) {
-  if (!payload.contains(key)) {
-    error = std::string("missing_field: ") + key;
-    return false;
-  }
-  if (!payload.at(key).is_number()) {
-    error = std::string("invalid_field: ") + key;
-    return false;
-  }
-  out = payload.at(key).get<double>();
-  if (!std::isfinite(out)) {
-    error = std::string("invalid_field: ") + key;
-    return false;
-  }
-  return true;
-}
-
-bool ReadBool(const json &payload, const char *key, bool &out, std::string &error) {
-  if (!payload.contains(key)) {
-    error = std::string("missing_field: ") + key;
-    return false;
-  }
-  if (!payload.at(key).is_boolean()) {
-    error = std::string("invalid_field: ") + key;
-    return false;
-  }
-  out = payload.at(key).get<bool>();
-  return true;
-}
-}
-
-bool ParseClientHello(const std::string &message, ClientHello &out, std::string &error) {
-  json payload;
-  if (!ParseJsonObject(message, payload, error)) {
+bool ParseInputCmdPayload(const std::vector<uint8_t> &payload, InputCmd &out, std::string &error) {
+  const auto *cmd = VerifyPayload<afps::protocol::InputCmd>(payload, error);
+  if (!cmd) {
     return false;
   }
 
-  if (payload.contains("type")) {
-    if (!payload.at("type").is_string()) {
-      error = "invalid_field: type";
-      return false;
-    }
-    if (payload.at("type").get<std::string>() != "ClientHello") {
-      error = "invalid_type";
-      return false;
-    }
-  }
-
-  if (!ReadInt(payload, "protocolVersion", out.protocol_version, error)) {
-    return false;
-  }
-  if (!ReadString(payload, "sessionToken", out.session_token, error)) {
-    return false;
-  }
-  if (!ReadString(payload, "connectionId", out.connection_id, error)) {
-    return false;
-  }
-
-  if (payload.contains("build")) {
-    if (!payload.at("build").is_string()) {
-      error = "invalid_field: build";
-      return false;
-    }
-    out.build = payload.at("build").get<std::string>();
-  }
-  if (payload.contains("nickname")) {
-    if (!payload.at("nickname").is_string()) {
-      error = "invalid_field: nickname";
-      return false;
-    }
-    out.nickname = payload.at("nickname").get<std::string>();
-  }
-  if (payload.contains("characterId")) {
-    if (!payload.at("characterId").is_string()) {
-      error = "invalid_field: characterId";
-      return false;
-    }
-    out.character_id = payload.at("characterId").get<std::string>();
-  }
-
-  return true;
-}
-
-bool ParseInputCmd(const std::string &message, InputCmd &out, std::string &error) {
-  json payload;
-  if (!ParseJsonObject(message, payload, error)) {
-    return false;
-  }
-
-  if (!payload.contains("type") || !payload.at("type").is_string() ||
-      payload.at("type").get<std::string>() != "InputCmd") {
-    error = "invalid_type";
-    return false;
-  }
-
-  if (!ReadInt(payload, "inputSeq", out.input_seq, error)) {
-    return false;
-  }
+  out.input_seq = cmd->input_seq();
   if (out.input_seq < 0) {
     error = "invalid_field: inputSeq";
     return false;
   }
 
-  if (!ReadNumber(payload, "moveX", out.move_x, error)) {
-    return false;
-  }
-  if (!ReadNumber(payload, "moveY", out.move_y, error)) {
+  out.move_x = cmd->move_x();
+  out.move_y = cmd->move_y();
+  if (!IsFinite(out.move_x) || !IsFinite(out.move_y)) {
+    error = "invalid_field: move";
     return false;
   }
   if (out.move_x < -1.0 || out.move_x > 1.0) {
@@ -168,250 +194,169 @@ bool ParseInputCmd(const std::string &message, InputCmd &out, std::string &error
     return false;
   }
 
-  if (!ReadNumber(payload, "lookDeltaX", out.look_delta_x, error)) {
+  out.look_delta_x = cmd->look_delta_x();
+  out.look_delta_y = cmd->look_delta_y();
+  if (!IsFinite(out.look_delta_x) || !IsFinite(out.look_delta_y)) {
+    error = "invalid_field: lookDelta";
     return false;
-  }
-  if (!ReadNumber(payload, "lookDeltaY", out.look_delta_y, error)) {
-    return false;
-  }
-  if (payload.contains("viewYaw")) {
-    if (!ReadNumber(payload, "viewYaw", out.view_yaw, error)) {
-      return false;
-    }
-  } else {
-    out.view_yaw = 0.0;
-  }
-  if (payload.contains("viewPitch")) {
-    if (!ReadNumber(payload, "viewPitch", out.view_pitch, error)) {
-      return false;
-    }
-  } else {
-    out.view_pitch = 0.0;
-  }
-  if (payload.contains("weaponSlot")) {
-    if (!ReadInt(payload, "weaponSlot", out.weapon_slot, error)) {
-      return false;
-    }
-    if (out.weapon_slot < 0) {
-      error = "invalid_field: weaponSlot";
-      return false;
-    }
-  } else {
-    out.weapon_slot = 0;
-  }
-  if (!ReadBool(payload, "jump", out.jump, error)) {
-    return false;
-  }
-  if (!ReadBool(payload, "fire", out.fire, error)) {
-    return false;
-  }
-  if (!ReadBool(payload, "sprint", out.sprint, error)) {
-    return false;
-  }
-  if (payload.contains("dash")) {
-    if (!ReadBool(payload, "dash", out.dash, error)) {
-      return false;
-    }
-  } else {
-    out.dash = false;
-  }
-  if (payload.contains("grapple")) {
-    if (!ReadBool(payload, "grapple", out.grapple, error)) {
-      return false;
-    }
-  } else {
-    out.grapple = false;
-  }
-  if (payload.contains("shield")) {
-    if (!ReadBool(payload, "shield", out.shield, error)) {
-      return false;
-    }
-  } else {
-    out.shield = false;
-  }
-  if (payload.contains("shockwave")) {
-    if (!ReadBool(payload, "shockwave", out.shockwave, error)) {
-      return false;
-    }
-  } else {
-    out.shockwave = false;
   }
 
+  out.view_yaw = cmd->view_yaw();
+  out.view_pitch = cmd->view_pitch();
+  if (!IsFinite(out.view_yaw) || !IsFinite(out.view_pitch)) {
+    error = "invalid_field: view";
+    return false;
+  }
+
+  out.weapon_slot = cmd->weapon_slot();
+  if (out.weapon_slot < 0) {
+    error = "invalid_field: weaponSlot";
+    return false;
+  }
+
+  out.jump = cmd->jump();
+  out.fire = cmd->fire();
+  out.sprint = cmd->sprint();
+  out.dash = cmd->dash();
+  out.grapple = cmd->grapple();
+  out.shield = cmd->shield();
+  out.shockwave = cmd->shockwave();
   return true;
 }
 
-bool ParsePing(const std::string &message, Ping &out, std::string &error) {
-  json payload;
-  if (!ParseJsonObject(message, payload, error)) {
+bool ParsePingPayload(const std::vector<uint8_t> &payload, Ping &out, std::string &error) {
+  const auto *ping = VerifyPayload<afps::protocol::Ping>(payload, error);
+  if (!ping) {
     return false;
   }
-
-  if (!payload.contains("type") || !payload.at("type").is_string() ||
-      payload.at("type").get<std::string>() != "Ping") {
-    error = "invalid_type";
-    return false;
-  }
-
-  if (!ReadNumber(payload, "clientTimeMs", out.client_time_ms, error)) {
-    return false;
-  }
-  if (out.client_time_ms < 0.0) {
+  out.client_time_ms = ping->client_time_ms();
+  if (!IsFinite(out.client_time_ms)) {
     error = "invalid_field: clientTimeMs";
     return false;
   }
-
   return true;
 }
 
-std::string BuildServerHello(const ServerHello &hello) {
-  json payload;
-  payload["type"] = "ServerHello";
-  payload["protocolVersion"] = hello.protocol_version;
-  payload["connectionId"] = hello.connection_id;
-  if (!hello.client_id.empty()) {
-    payload["clientId"] = hello.client_id;
-  }
-  payload["serverTickRate"] = hello.server_tick_rate;
-  payload["snapshotRate"] = hello.snapshot_rate;
-  payload["snapshotKeyframeInterval"] = hello.snapshot_keyframe_interval;
-  if (!hello.motd.empty()) {
-    payload["motd"] = hello.motd;
-  }
-  if (!hello.connection_nonce.empty()) {
-    payload["connectionNonce"] = hello.connection_nonce;
-  }
-  return payload.dump();
+std::vector<uint8_t> BuildServerHello(const ServerHello &hello, uint32_t msg_seq, uint32_t server_seq_ack) {
+  flatbuffers::FlatBufferBuilder builder(256);
+  const auto connection_id = builder.CreateString(hello.connection_id);
+  const auto client_id = builder.CreateString(hello.client_id);
+  const auto motd = hello.motd.empty() ? 0 : builder.CreateString(hello.motd);
+  const auto nonce = hello.connection_nonce.empty() ? 0 : builder.CreateString(hello.connection_nonce);
+  const auto offset = afps::protocol::CreateServerHello(
+      builder,
+      static_cast<uint16_t>(hello.protocol_version),
+      connection_id,
+      client_id,
+      static_cast<uint16_t>(hello.server_tick_rate),
+      static_cast<uint16_t>(hello.snapshot_rate),
+      static_cast<uint16_t>(hello.snapshot_keyframe_interval),
+      motd,
+      nonce);
+  builder.Finish(offset);
+  return EncodeEnvelope(MessageType::ServerHello, builder.GetBufferPointer(), builder.GetSize(), msg_seq,
+                        server_seq_ack);
 }
 
-std::string BuildProtocolError(const std::string &code, const std::string &message) {
-  json payload;
-  payload["type"] = "Error";
-  payload["code"] = code;
-  payload["message"] = message;
-  return payload.dump();
+std::vector<uint8_t> BuildProtocolError(const std::string &code, const std::string &message,
+                                        uint32_t msg_seq, uint32_t server_seq_ack) {
+  flatbuffers::FlatBufferBuilder builder(128);
+  const auto code_offset = builder.CreateString(code);
+  const auto message_offset = builder.CreateString(message);
+  const auto offset = afps::protocol::CreateError(builder, code_offset, message_offset);
+  builder.Finish(offset);
+  return EncodeEnvelope(MessageType::Error, builder.GetBufferPointer(), builder.GetSize(), msg_seq, server_seq_ack);
 }
 
-std::string BuildPong(const Pong &pong) {
-  json payload;
-  payload["type"] = "Pong";
-  payload["clientTimeMs"] = pong.client_time_ms;
-  return payload.dump();
+std::vector<uint8_t> BuildPong(const Pong &pong, uint32_t msg_seq, uint32_t server_seq_ack) {
+  flatbuffers::FlatBufferBuilder builder(64);
+  const auto offset = afps::protocol::CreatePong(builder, pong.client_time_ms);
+  builder.Finish(offset);
+  return EncodeEnvelope(MessageType::Pong, builder.GetBufferPointer(), builder.GetSize(), msg_seq, server_seq_ack);
 }
 
-std::string BuildGameEvent(const GameEvent &event) {
-  json payload;
-  payload["type"] = "GameEvent";
-  payload["event"] = event.event;
-  if (event.event == "ProjectileSpawn") {
-    if (!event.owner_id.empty()) {
-      payload["ownerId"] = event.owner_id;
-    }
-    if (event.projectile_id >= 0) {
-      payload["projectileId"] = event.projectile_id;
-    }
-    payload["posX"] = event.pos_x;
-    payload["posY"] = event.pos_y;
-    payload["posZ"] = event.pos_z;
-    payload["velX"] = event.vel_x;
-    payload["velY"] = event.vel_y;
-    payload["velZ"] = event.vel_z;
-    payload["ttl"] = event.ttl;
-    return payload.dump();
-  }
-  if (event.event == "ProjectileRemove") {
-    if (!event.owner_id.empty()) {
-      payload["ownerId"] = event.owner_id;
-    }
-    if (event.projectile_id >= 0) {
-      payload["projectileId"] = event.projectile_id;
-    }
-    return payload.dump();
-  }
-  if (!event.target_id.empty()) {
-    payload["targetId"] = event.target_id;
-  }
-  if (std::isfinite(event.damage) && event.damage >= 0.0) {
-    payload["damage"] = event.damage;
-  }
-  if (event.killed) {
-    payload["killed"] = true;
-  }
-  return payload.dump();
+std::vector<uint8_t> BuildGameEvent(const GameEvent &event, uint32_t msg_seq, uint32_t server_seq_ack) {
+  flatbuffers::FlatBufferBuilder builder(192);
+  const auto target_id = event.target_id.empty() ? 0 : builder.CreateString(event.target_id);
+  const auto owner_id = event.owner_id.empty() ? 0 : builder.CreateString(event.owner_id);
+  const auto offset = afps::protocol::CreateGameEvent(
+      builder,
+      ToGameEventType(event.event),
+      target_id,
+      owner_id,
+      event.projectile_id,
+      event.damage,
+      event.killed,
+      event.pos_x,
+      event.pos_y,
+      event.pos_z,
+      event.vel_x,
+      event.vel_y,
+      event.vel_z,
+      event.ttl);
+  builder.Finish(offset);
+  return EncodeEnvelope(MessageType::GameEvent, builder.GetBufferPointer(), builder.GetSize(), msg_seq, server_seq_ack);
 }
 
-std::string BuildStateSnapshot(const StateSnapshot &snapshot) {
-  json payload;
-  payload["type"] = "StateSnapshot";
-  payload["serverTick"] = snapshot.server_tick;
-  payload["lastProcessedInputSeq"] = snapshot.last_processed_input_seq;
-  if (!snapshot.client_id.empty()) {
-    payload["clientId"] = snapshot.client_id;
-  }
-  payload["posX"] = snapshot.pos_x;
-  payload["posY"] = snapshot.pos_y;
-  payload["posZ"] = snapshot.pos_z;
-  payload["velX"] = snapshot.vel_x;
-  payload["velY"] = snapshot.vel_y;
-  payload["velZ"] = snapshot.vel_z;
-  payload["weaponSlot"] = snapshot.weapon_slot;
-  payload["dashCooldown"] = snapshot.dash_cooldown;
-  payload["health"] = snapshot.health;
-  payload["kills"] = snapshot.kills;
-  payload["deaths"] = snapshot.deaths;
-  return payload.dump();
+std::vector<uint8_t> BuildStateSnapshot(const StateSnapshot &snapshot, uint32_t msg_seq,
+                                        uint32_t server_seq_ack) {
+  flatbuffers::FlatBufferBuilder builder(256);
+  const auto client_id = builder.CreateString(snapshot.client_id);
+  const auto offset = afps::protocol::CreateStateSnapshot(
+      builder,
+      snapshot.server_tick,
+      snapshot.last_processed_input_seq,
+      client_id,
+      snapshot.pos_x,
+      snapshot.pos_y,
+      snapshot.pos_z,
+      snapshot.vel_x,
+      snapshot.vel_y,
+      snapshot.vel_z,
+      snapshot.weapon_slot,
+      snapshot.dash_cooldown,
+      snapshot.health,
+      snapshot.kills,
+      snapshot.deaths);
+  builder.Finish(offset);
+  return EncodeEnvelope(MessageType::StateSnapshot, builder.GetBufferPointer(), builder.GetSize(), msg_seq,
+                        server_seq_ack);
 }
 
-std::string BuildStateSnapshotDelta(const StateSnapshotDelta &delta) {
-  json payload;
-  payload["type"] = "StateSnapshotDelta";
-  payload["serverTick"] = delta.server_tick;
-  payload["baseTick"] = delta.base_tick;
-  payload["lastProcessedInputSeq"] = delta.last_processed_input_seq;
-  payload["mask"] = delta.mask;
-  if (!delta.client_id.empty()) {
-    payload["clientId"] = delta.client_id;
-  }
-  if (delta.mask & kSnapshotMaskPosX) {
-    payload["posX"] = delta.pos_x;
-  }
-  if (delta.mask & kSnapshotMaskPosY) {
-    payload["posY"] = delta.pos_y;
-  }
-  if (delta.mask & kSnapshotMaskPosZ) {
-    payload["posZ"] = delta.pos_z;
-  }
-  if (delta.mask & kSnapshotMaskVelX) {
-    payload["velX"] = delta.vel_x;
-  }
-  if (delta.mask & kSnapshotMaskVelY) {
-    payload["velY"] = delta.vel_y;
-  }
-  if (delta.mask & kSnapshotMaskVelZ) {
-    payload["velZ"] = delta.vel_z;
-  }
-  if (delta.mask & kSnapshotMaskWeaponSlot) {
-    payload["weaponSlot"] = delta.weapon_slot;
-  }
-  if (delta.mask & kSnapshotMaskDashCooldown) {
-    payload["dashCooldown"] = delta.dash_cooldown;
-  }
-  if (delta.mask & kSnapshotMaskHealth) {
-    payload["health"] = delta.health;
-  }
-  if (delta.mask & kSnapshotMaskKills) {
-    payload["kills"] = delta.kills;
-  }
-  if (delta.mask & kSnapshotMaskDeaths) {
-    payload["deaths"] = delta.deaths;
-  }
-  return payload.dump();
+std::vector<uint8_t> BuildStateSnapshotDelta(const StateSnapshotDelta &delta, uint32_t msg_seq,
+                                             uint32_t server_seq_ack) {
+  flatbuffers::FlatBufferBuilder builder(256);
+  const auto client_id = builder.CreateString(delta.client_id);
+  const auto offset = afps::protocol::CreateStateSnapshotDelta(
+      builder,
+      delta.server_tick,
+      delta.base_tick,
+      delta.last_processed_input_seq,
+      delta.mask,
+      client_id,
+      delta.pos_x,
+      delta.pos_y,
+      delta.pos_z,
+      delta.vel_x,
+      delta.vel_y,
+      delta.vel_z,
+      delta.weapon_slot,
+      delta.dash_cooldown,
+      delta.health,
+      delta.kills,
+      delta.deaths);
+  builder.Finish(offset);
+  return EncodeEnvelope(MessageType::StateSnapshotDelta, builder.GetBufferPointer(), builder.GetSize(), msg_seq,
+                        server_seq_ack);
 }
 
-std::string BuildPlayerProfile(const PlayerProfile &profile) {
-  json payload;
-  payload["type"] = "PlayerProfile";
-  payload["clientId"] = profile.client_id;
-  payload["nickname"] = profile.nickname;
-  payload["characterId"] = profile.character_id;
-  return payload.dump();
+std::vector<uint8_t> BuildPlayerProfile(const PlayerProfile &profile, uint32_t msg_seq, uint32_t server_seq_ack) {
+  flatbuffers::FlatBufferBuilder builder(128);
+  const auto client_id = builder.CreateString(profile.client_id);
+  const auto nickname = builder.CreateString(profile.nickname);
+  const auto character_id = builder.CreateString(profile.character_id);
+  const auto offset = afps::protocol::CreatePlayerProfile(builder, client_id, nickname, character_id);
+  builder.Finish(offset);
+  return EncodeEnvelope(MessageType::PlayerProfile, builder.GetBufferPointer(), builder.GetSize(), msg_seq,
+                        server_seq_ack);
 }

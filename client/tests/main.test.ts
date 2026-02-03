@@ -74,6 +74,7 @@ const settingsMock = {
   setSensitivity: vi.fn(),
   setLookInversion: vi.fn(),
   setMetricsVisible: vi.fn(),
+  setAudioSettings: vi.fn(),
   dispose: vi.fn()
 };
 const defaultBindings = {
@@ -180,6 +181,8 @@ let settingsOptions:
       onInvertLookYChange?: (value: boolean) => void;
       onShowMetricsChange?: (visible: boolean) => void;
       initialShowMetrics?: boolean;
+      initialAudioSettings?: Record<string, number | boolean>;
+      onAudioSettingsChange?: (settings: Record<string, number | boolean>) => void;
     }
   | undefined;
 vi.mock('../src/ui/settings', () => ({
@@ -187,6 +190,38 @@ vi.mock('../src/ui/settings', () => ({
     settingsOptions = options;
     return settingsMock;
   }
+}));
+
+const audioManagerMock = {
+  state: {
+    supported: true,
+    status: 'suspended',
+    settings: { master: 0.5, sfx: 0.5, ui: 0.5, music: 0.5, muted: false }
+  },
+  resume: vi.fn(),
+  setMuted: vi.fn(),
+  setVolume: vi.fn(),
+  getSettings: vi.fn().mockReturnValue({ master: 0.5, sfx: 0.5, ui: 0.5, music: 0.5, muted: false }),
+  load: vi.fn(),
+  preload: vi.fn(),
+  play: vi.fn().mockReturnValue(true),
+  playPositional: vi.fn().mockReturnValue(true),
+  setListenerPosition: vi.fn(),
+  dispose: vi.fn()
+};
+
+const audioSettingsMock = {
+  loadAudioSettings: vi.fn().mockReturnValue({ master: 0.5, sfx: 0.5, ui: 0.5, music: 0.5, muted: false }),
+  saveAudioSettings: vi.fn()
+};
+
+vi.mock('../src/audio/manager', () => ({
+  createAudioManager: () => audioManagerMock
+}));
+
+vi.mock('../src/audio/settings', () => ({
+  loadAudioSettings: (...args: unknown[]) => audioSettingsMock.loadAudioSettings(...args),
+  saveAudioSettings: (...args: unknown[]) => audioSettingsMock.saveAudioSettings(...args)
 }));
 
 vi.mock('../src/input/sampler', () => ({
@@ -352,10 +387,18 @@ describe('main entry', () => {
     expect(lookInversionMock.loadInvertX).toHaveBeenCalledWith(window.localStorage);
     expect(lookInversionMock.loadInvertY).toHaveBeenCalledWith(window.localStorage);
     expect(metricsSettingsMock.loadMetricsVisibility).toHaveBeenCalledWith(window.localStorage);
+    expect(audioSettingsMock.loadAudioSettings).toHaveBeenCalledWith(window.localStorage);
     expect(settingsOptions?.initialBindings).toEqual(defaultBindings);
     expect(settingsOptions?.initialShowMetrics).toBe(true);
     expect(settingsOptions?.initialInvertLookX).toBe(false);
     expect(settingsOptions?.initialInvertLookY).toBe(false);
+    expect(settingsOptions?.initialAudioSettings).toEqual({
+      master: 0.5,
+      sfx: 0.5,
+      ui: 0.5,
+      music: 0.5,
+      muted: false
+    });
     expect(connectMock).not.toHaveBeenCalled();
     expect(statusMock.setState).toHaveBeenCalledWith('disabled', 'Set VITE_SIGNALING_URL');
     expect(statusMock.setMetricsVisible).toHaveBeenCalledWith(true);
@@ -467,7 +510,9 @@ describe('main entry', () => {
     connectMock.mockResolvedValue({
       connectionId: '',
       serverHello: { serverTickRate: 60, snapshotRate: 20 },
-      unreliableChannel: { label: 'afps_unreliable', readyState: 'connecting', send: sendPing }
+      unreliableChannel: { label: 'afps_unreliable', readyState: 'connecting', send: sendPing },
+      nextClientMessageSeq: () => 1,
+      getServerSeqAck: () => 0
     });
     envMock.getSignalingUrl.mockReturnValue('https://example.test');
     envMock.getSignalingAuthToken.mockReturnValue('token');
@@ -548,7 +593,9 @@ describe('main entry', () => {
       return {
         connectionId: 'conn',
         serverHello: { serverTickRate: 60, snapshotRate: 20, snapshotKeyframeInterval: 5 },
-        unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: sendPing }
+        unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: sendPing },
+        nextClientMessageSeq: () => 1,
+        getServerSeqAck: () => 0
       };
     });
     envMock.getSignalingUrl.mockReturnValue('https://example.test');
@@ -643,7 +690,9 @@ describe('main entry', () => {
     connectMock.mockResolvedValue({
       connectionId: 'conn',
       serverHello: { serverTickRate: 60, snapshotRate: 20, snapshotKeyframeInterval: 7 },
-      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: vi.fn() }
+      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: vi.fn() },
+      nextClientMessageSeq: () => 1,
+      getServerSeqAck: () => 0
     });
     envMock.getSignalingUrl.mockReturnValue('https://example.test');
     envMock.getSignalingAuthToken.mockReturnValue('token');
@@ -694,11 +743,35 @@ describe('main entry', () => {
     expect(metricsSettingsMock.saveMetricsVisibility).toHaveBeenCalledWith(false, window.localStorage);
   });
 
+  it('updates audio settings from settings overlay', async () => {
+    envMock.getSignalingUrl.mockReturnValue(undefined);
+    envMock.getSignalingAuthToken.mockReturnValue(undefined);
+
+    await import('../src/main');
+
+    expect(settingsOptions?.onAudioSettingsChange).toBeTypeOf('function');
+    settingsOptions?.onAudioSettingsChange?.({
+      master: 0.4,
+      sfx: 0.3,
+      ui: 0.2,
+      music: 0.1,
+      muted: true
+    });
+    expect(audioManagerMock.setMuted).toHaveBeenCalledWith(true);
+    expect(audioManagerMock.setVolume).toHaveBeenCalledWith('master', 0.4);
+    expect(audioManagerMock.setVolume).toHaveBeenCalledWith('sfx', 0.3);
+    expect(audioManagerMock.setVolume).toHaveBeenCalledWith('ui', 0.2);
+    expect(audioManagerMock.setVolume).toHaveBeenCalledWith('music', 0.1);
+    expect(audioSettingsMock.saveAudioSettings).toHaveBeenCalled();
+  });
+
   it('persists bindings updates and refreshes sampler', async () => {
     connectMock.mockResolvedValue({
       connectionId: 'conn',
       serverHello: { serverTickRate: 60, snapshotRate: 20 },
-      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: vi.fn() }
+      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: vi.fn() },
+      nextClientMessageSeq: () => 1,
+      getServerSeqAck: () => 0
     });
     envMock.getSignalingUrl.mockReturnValue('https://example.test');
     envMock.getSignalingAuthToken.mockReturnValue('token');

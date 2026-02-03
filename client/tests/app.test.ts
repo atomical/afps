@@ -100,7 +100,7 @@ describe('createApp', () => {
     expect(renderer.renderCalls).toBe(1);
   });
 
-  it('falls back to renderer when post-processing is unavailable', () => {
+  it('falls back to renderer when post-processing is unavailable', async () => {
     const baseThree = createFakeThree();
     const three = {
       ...baseThree,
@@ -110,7 +110,8 @@ describe('createApp', () => {
       Vector2: undefined
     };
     const canvas = document.createElement('canvas');
-    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1, loadEnvironment: true });
+    await Promise.resolve();
 
     const renderer = app.state.renderer as FakeRenderer;
 
@@ -181,6 +182,30 @@ describe('createApp', () => {
     app.setLocalProxyVisible(true);
     expect((app.state.cube as unknown as { visible: boolean }).visible).toBe(true);
     expect(outlinePasses[0].selectedObjects.length).toBe(1);
+  });
+
+  it('assigns a stronger outline to the viewmodel', async () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const viewmodel = {
+      position: { x: 0, y: 0, z: 0, set: vi.fn() },
+      rotation: { x: 0, y: 0, z: 0 },
+      scale: { set: vi.fn() }
+    };
+    loadWeaponViewmodelMock.mockResolvedValue(viewmodel);
+    attachWeaponViewmodelMock.mockReturnValue({ remove: vi.fn() });
+
+    createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1, loadEnvironment: true });
+
+    await Promise.resolve();
+
+    const composer = FakeEffectComposer.instances[0];
+    const outlinePasses = composer.passes.filter(
+      (pass): pass is FakeOutlinePass => pass instanceof FakeOutlinePass
+    );
+    const viewmodelPass = outlinePasses[outlinePasses.length - 1];
+    expect(viewmodelPass.selectedObjects).toContain(viewmodel);
+    expect(viewmodelPass.edgeThickness).toBeGreaterThan(outlinePasses[0].edgeThickness ?? 0);
   });
 
   it('invokes beforeRender hooks', () => {

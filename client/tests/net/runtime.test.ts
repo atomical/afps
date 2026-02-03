@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
+import * as flatbuffers from 'flatbuffers';
 import { connectIfConfigured } from '../../src/net/runtime';
 import type { PeerConnectionFactory, ResponseLike, SignalingClient, WebRtcSession } from '../../src/net/types';
 import { FakeDataChannel, FakePeerConnection, FakePeerConnectionFactory } from './fakes';
+import { encodeEnvelope, MessageType, PROTOCOL_VERSION } from '../../src/net/protocol';
+import { ServerHello } from '../../src/net/fbs/afps/protocol/server-hello';
 
 const createDeps = () => {
   const signaling: SignalingClient = {
@@ -30,7 +33,7 @@ const createDeps = () => {
     connectionId: 'conn',
     serverHello: {
       type: 'ServerHello',
-      protocolVersion: 3,
+      protocolVersion: 4,
       connectionId: 'conn',
       serverTickRate: 60,
       snapshotRate: 20
@@ -61,6 +64,8 @@ const createDeps = () => {
       send: () => {},
       close: () => {}
     },
+    nextClientMessageSeq: () => 1,
+    getServerSeqAck: () => 0,
     close: () => {}
   };
 
@@ -118,6 +123,25 @@ const createDeps = () => {
       return lastOptions;
     }
   };
+};
+
+const buildServerHello = (connectionId: string) => {
+  const builder = new flatbuffers.Builder(256);
+  const connectionOffset = builder.createString(connectionId);
+  const clientOffset = builder.createString(connectionId);
+  const offset = ServerHello.createServerHello(
+    builder,
+    PROTOCOL_VERSION,
+    connectionOffset,
+    clientOffset,
+    60,
+    20,
+    5,
+    0,
+    0
+  );
+  builder.finish(offset);
+  return encodeEnvelope(MessageType.ServerHello, builder.asUint8Array(), 1, 0);
 };
 
 class FakeResponse implements ResponseLike {
@@ -249,15 +273,7 @@ describe('connectIfConfigured', () => {
     pc.emitDataChannel(unreliable);
     reliable.open();
     unreliable.open();
-    reliable.emitMessage(
-      JSON.stringify({
-        type: 'ServerHello',
-        protocolVersion: 3,
-        connectionId: 'conn',
-        serverTickRate: 60,
-        snapshotRate: 20
-      })
-    );
+    reliable.emitMessage(buildServerHello('conn'));
 
     const session = await connectPromise;
     expect(session?.connectionId).toBe('conn');
@@ -326,15 +342,7 @@ describe('connectIfConfigured', () => {
     GlobalPeerConnection.last.emitDataChannel(unreliable);
     reliable.open();
     unreliable.open();
-    reliable.emitMessage(
-      JSON.stringify({
-        type: 'ServerHello',
-        protocolVersion: 3,
-        connectionId: 'conn',
-        serverTickRate: 60,
-        snapshotRate: 20
-      })
-    );
+    reliable.emitMessage(buildServerHello('conn'));
 
     const session = await connectPromise;
     expect(session?.connectionId).toBe('conn');

@@ -168,6 +168,27 @@ void TickLoop::Step() {
   };
   std::vector<ShockwaveEvent> shockwave_events;
 
+  auto resolve_view = [&](const std::string &connection_id) {
+    auto input_iter = last_inputs_.find(connection_id);
+    if (input_iter == last_inputs_.end()) {
+      return afps::combat::SanitizeViewAngles(0.0, 0.0);
+    }
+    return afps::combat::SanitizeViewAngles(input_iter->second.view_yaw, input_iter->second.view_pitch);
+  };
+
+  auto resolve_shield_facing = [&](const std::string &target_id,
+                                   const afps::combat::Vec3 &source_pos) {
+    auto state_iter = players_.find(target_id);
+    if (state_iter == players_.end()) {
+      return false;
+    }
+    const auto view = resolve_view(target_id);
+    const afps::combat::Vec3 target_pos{state_iter->second.x,
+                                        state_iter->second.y,
+                                        state_iter->second.z + (afps::combat::kPlayerHeight * 0.5)};
+    return afps::combat::IsShieldFacing(target_pos, view, source_pos);
+  };
+
   for (const auto &connection_id : active_ids) {
     if (combat_states_.find(connection_id) == combat_states_.end()) {
       combat_states_[connection_id] = afps::combat::CreateCombatState();
@@ -271,9 +292,9 @@ void TickLoop::Step() {
       }
     }
     for (const auto &event : shockwave_events) {
-      const auto hits = afps::combat::ComputeShockwaveHits(
-          event.origin, sim_config_.shockwave_radius, sim_config_.shockwave_impulse,
-          sim_config_.shockwave_damage, alive_players, event.connection_id);
+        const auto hits = afps::combat::ComputeShockwaveHits(
+            event.origin, sim_config_.shockwave_radius, sim_config_.shockwave_impulse,
+            sim_config_.shockwave_damage, sim_config_, alive_players, event.connection_id);
       auto attacker_iter = combat_states_.find(event.connection_id);
       afps::combat::CombatState *attacker =
           attacker_iter == combat_states_.end() ? nullptr : &attacker_iter->second;
@@ -298,14 +319,21 @@ void TickLoop::Step() {
         bool killed = false;
         if (hit.damage > 0.0) {
           const bool shield_active = target_state_iter->second.shield_active;
+          const bool shield_facing =
+              shield_active ? resolve_shield_facing(hit.target_id, event.origin) : true;
           killed = afps::combat::ApplyDamageWithShield(target_combat_iter->second, attacker, hit.damage,
-                                                       shield_active, sim_config_.shield_damage_multiplier);
+                                                       shield_active && shield_facing,
+                                                       sim_config_.shield_damage_multiplier);
           GameEvent hit_event;
           hit_event.event = "HitConfirmed";
           hit_event.target_id = hit.target_id;
           hit_event.damage = hit.damage;
           hit_event.killed = killed;
-          store_.SendUnreliable(event.connection_id, BuildGameEvent(hit_event));
+          store_.SendUnreliable(
+              event.connection_id,
+              BuildGameEvent(hit_event,
+                             store_.NextServerMessageSeq(event.connection_id),
+                             store_.LastClientMessageSeq(event.connection_id)));
         }
         if (killed) {
           target_state_iter->second.vel_x = 0.0;
@@ -368,12 +396,23 @@ void TickLoop::Step() {
         bool killed = false;
         if (target_iter != combat_states_.end()) {
           bool shield_active = false;
+          bool shield_facing = true;
           auto state_iter = players_.find(result.target_id);
           if (state_iter != players_.end()) {
             shield_active = state_iter->second.shield_active;
           }
+          if (shield_active) {
+            auto shooter_state_iter = players_.find(event.connection_id);
+            if (shooter_state_iter != players_.end()) {
+              const afps::combat::Vec3 source{shooter_state_iter->second.x,
+                                              shooter_state_iter->second.y,
+                                              shooter_state_iter->second.z + afps::combat::kPlayerEyeHeight};
+              shield_facing = resolve_shield_facing(result.target_id, source);
+            }
+          }
           killed = afps::combat::ApplyDamageWithShield(target_iter->second, &shooter_iter->second, weapon.damage,
-                                                       shield_active, sim_config_.shield_damage_multiplier);
+                                                       shield_active && shield_facing,
+                                                       sim_config_.shield_damage_multiplier);
           if (killed) {
             auto &target_state = players_[result.target_id];
             target_state.vel_x = 0.0;
@@ -387,7 +426,11 @@ void TickLoop::Step() {
         hit_event.target_id = result.target_id;
         hit_event.damage = weapon.damage;
         hit_event.killed = killed;
-        store_.SendUnreliable(event.connection_id, BuildGameEvent(hit_event));
+        store_.SendUnreliable(
+            event.connection_id,
+            BuildGameEvent(hit_event,
+                           store_.NextServerMessageSeq(event.connection_id),
+                           store_.LastClientMessageSeq(event.connection_id)));
         std::cout << "[shot] shooter=" << event.connection_id << " target=" << result.target_id
                   << " dist=" << result.distance << " tick=" << estimated_tick << "\n";
       }
@@ -425,7 +468,11 @@ void TickLoop::Step() {
           spawn_event.vel_z = projectile.velocity.z;
           spawn_event.ttl = projectile.ttl;
           for (const auto &connection_id : active_ids) {
-            store_.SendUnreliable(connection_id, BuildGameEvent(spawn_event));
+            store_.SendUnreliable(
+                connection_id,
+                BuildGameEvent(spawn_event,
+                               store_.NextServerMessageSeq(connection_id),
+                               store_.LastClientMessageSeq(connection_id)));
           }
         }
       }
@@ -458,7 +505,7 @@ void TickLoop::Step() {
       const auto impact = afps::combat::ResolveProjectileImpact(
           projectile, delta, sim_config_, alive_players, projectile.owner_id);
       if (impact.hit) {
-      const auto hits = afps::combat::ComputeExplosionDamage(
+        const auto hits = afps::combat::ComputeExplosionDamage(
             impact.position, projectile.explosion_radius, projectile.damage, alive_players, "");
         for (const auto &hit : hits) {
           auto target_iter = combat_states_.find(hit.target_id);
@@ -469,18 +516,27 @@ void TickLoop::Step() {
           afps::combat::CombatState *attacker =
               attacker_iter == combat_states_.end() ? nullptr : &attacker_iter->second;
           bool shield_active = false;
+          bool shield_facing = true;
           auto state_iter = players_.find(hit.target_id);
           if (state_iter != players_.end()) {
             shield_active = state_iter->second.shield_active;
           }
+          if (shield_active) {
+            shield_facing = resolve_shield_facing(hit.target_id, impact.position);
+          }
           const bool killed = afps::combat::ApplyDamageWithShield(target_iter->second, attacker, hit.damage,
-                                                                  shield_active, sim_config_.shield_damage_multiplier);
+                                                                  shield_active && shield_facing,
+                                                                  sim_config_.shield_damage_multiplier);
           GameEvent hit_event;
           hit_event.event = "HitConfirmed";
           hit_event.target_id = hit.target_id;
           hit_event.damage = hit.damage;
           hit_event.killed = killed;
-          store_.SendUnreliable(projectile.owner_id, BuildGameEvent(hit_event));
+          store_.SendUnreliable(
+              projectile.owner_id,
+              BuildGameEvent(hit_event,
+                             store_.NextServerMessageSeq(projectile.owner_id),
+                             store_.LastClientMessageSeq(projectile.owner_id)));
           if (killed) {
             auto &target_state = players_[hit.target_id];
             target_state.vel_x = 0.0;
@@ -495,7 +551,11 @@ void TickLoop::Step() {
         remove_event.owner_id = projectile.owner_id;
         remove_event.projectile_id = projectile.id;
         for (const auto &connection_id : active_ids) {
-          store_.SendUnreliable(connection_id, BuildGameEvent(remove_event));
+          store_.SendUnreliable(
+              connection_id,
+              BuildGameEvent(remove_event,
+                             store_.NextServerMessageSeq(connection_id),
+                             store_.LastClientMessageSeq(connection_id)));
         }
         std::cout << "[projectile] owner=" << projectile.owner_id << " hits=" << hits.size() << "\n";
         continue;
@@ -545,8 +605,11 @@ void TickLoop::Step() {
                               (sequence % snapshot_keyframe_interval_ == 0);
 
       if (needs_full) {
-        const std::string payload = BuildStateSnapshot(snapshot);
         for (const auto &recipient_id : active_ids) {
+          const auto payload =
+              BuildStateSnapshot(snapshot,
+                                 store_.NextServerMessageSeq(recipient_id),
+                                 store_.LastClientMessageSeq(recipient_id));
           if (store_.SendUnreliable(recipient_id, payload)) {
             snapshot_count_ += 1;
           }
@@ -608,8 +671,11 @@ void TickLoop::Step() {
         delta.deaths = snapshot.deaths;
       }
 
-      const std::string payload = BuildStateSnapshotDelta(delta);
       for (const auto &recipient_id : active_ids) {
+        const auto payload =
+            BuildStateSnapshotDelta(delta,
+                                    store_.NextServerMessageSeq(recipient_id),
+                                    store_.LastClientMessageSeq(recipient_id));
         if (store_.SendUnreliable(recipient_id, payload)) {
           snapshot_count_ += 1;
         }

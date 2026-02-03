@@ -13,7 +13,7 @@ import {
   getWasmSimUrl
 } from './net/env';
 import { buildClientHello, buildPing } from './net/protocol';
-import type { GameEvent, PlayerProfile as NetPlayerProfile, Pong, StateSnapshot } from './net/protocol';
+import type { GameEvent, PlayerProfile as NetPlayerProfile, PongMessage, StateSnapshot } from './net/protocol';
 import { createStatusOverlay } from './ui/status';
 import { createInputSampler } from './input/sampler';
 import { loadBindings, saveBindings } from './input/bindings';
@@ -22,8 +22,11 @@ import { loadInvertX, loadInvertY, saveInvertX, saveInvertY } from './input/look
 import { createInputSender } from './net/input_sender';
 import { createPointerLockController } from './input/pointer_lock';
 import { createHudOverlay } from './ui/hud';
+import { createHudStore } from './ui/hud_state';
 import { createSettingsOverlay } from './ui/settings';
 import { loadMetricsVisibility, saveMetricsVisibility } from './ui/metrics_settings';
+import { createAudioManager } from './audio/manager';
+import { loadAudioSettings, saveAudioSettings } from './audio/settings';
 import { loadWasmSimFromUrl } from './sim/wasm';
 import { createWasmPredictionSim } from './sim/wasm_adapter';
 import { runWasmParityCheck } from './sim/parity';
@@ -42,6 +45,16 @@ const three = {
   Vector2: THREE.Vector2
 };
 
+const BASE_URL = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
+const NORMALIZED_BASE = BASE_URL.endsWith('/') ? BASE_URL : `${BASE_URL}/`;
+const AUDIO_ROOT = `${NORMALIZED_BASE}assets/audio/`;
+const AUDIO_ASSETS = {
+  weaponFire: `${AUDIO_ROOT}weapon_fire.wav`,
+  impact: `${AUDIO_ROOT}impact.wav`,
+  footstep: `${AUDIO_ROOT}footstep.wav`,
+  uiClick: `${AUDIO_ROOT}ui_click.wav`
+};
+
 const savedSensitivity = loadSensitivity(window.localStorage);
 const lookSensitivity = savedSensitivity ?? getLookSensitivity();
 const savedInvertX = loadInvertX(window.localStorage);
@@ -51,7 +64,30 @@ let invertLookY = savedInvertY ?? false;
 const savedMetricsVisible = loadMetricsVisibility(window.localStorage);
 let metricsVisible = savedMetricsVisible;
 let currentBindings = loadBindings(window.localStorage);
+const savedAudioSettings = loadAudioSettings(window.localStorage);
+const audio = createAudioManager({ settings: savedAudioSettings });
+void audio.preload({
+  weaponFire: AUDIO_ASSETS.weaponFire,
+  impact: AUDIO_ASSETS.impact,
+  footstep: AUDIO_ASSETS.footstep,
+  uiClick: AUDIO_ASSETS.uiClick
+});
 const { app, canvas } = startApp({ three, document, window, lookSensitivity, loadEnvironment: true });
+const debugAudio = (import.meta.env?.VITE_DEBUG_AUDIO ?? '') === 'true';
+if (debugAudio) {
+  (window as unknown as { __afpsAudio?: unknown }).__afpsAudio = {
+    play: (key: keyof typeof AUDIO_ASSETS) => audio.play(key, { group: 'sfx' }),
+    preload: () =>
+      audio.preload({
+        weaponFire: AUDIO_ASSETS.weaponFire,
+        impact: AUDIO_ASSETS.impact,
+        footstep: AUDIO_ASSETS.footstep,
+        uiClick: AUDIO_ASSETS.uiClick
+      }),
+    state: () => audio.state,
+    settings: () => audio.getSettings()
+  };
+}
 const remoteAvatars = createRemoteAvatarManager({ three, scene: app.state.scene });
 let remotePruneInterval: number | null = null;
 let localConnectionId: string | null = null;
@@ -195,10 +231,47 @@ const updateLocalAvatar = (nowMs: number) => {
 app.setBeforeRender((deltaSeconds, nowMs) => {
   updateLocalAvatar(nowMs);
   remoteAvatars.update(deltaSeconds);
+  const cameraPos = app.state.camera?.position;
+  if (cameraPos) {
+    const angles = app.getLookAngles();
+    const cosPitch = Math.cos(angles.pitch);
+    const forward = {
+      x: Math.sin(angles.yaw) * cosPitch,
+      y: Math.sin(angles.pitch),
+      z: -Math.cos(angles.yaw) * cosPitch
+    };
+    audio.setListenerPosition({ x: cameraPos.x, y: cameraPos.y, z: cameraPos.z }, forward);
+  }
+  const pose = app.getPlayerPose();
+  const horizontalSpeed = Math.hypot(pose.velX, pose.velY);
+  if (pose.posZ <= 0.05 && horizontalSpeed > 0.2) {
+    if (lastFootstepPos) {
+      const dx = pose.posX - lastFootstepPos.x;
+      const dy = pose.posY - lastFootstepPos.y;
+      footstepDistance += Math.hypot(dx, dy);
+    }
+    if (footstepDistance >= 1.6 && nowMs - lastFootstepAt > 180) {
+      audio.play('footstep', { group: 'sfx', volume: 0.6 });
+      footstepDistance = 0;
+      lastFootstepAt = nowMs;
+    }
+    lastFootstepPos = { x: pose.posX, y: pose.posY };
+  } else {
+    lastFootstepPos = null;
+    footstepDistance = 0;
+  }
 });
 const status = createStatusOverlay(document);
 status.setMetricsVisible(metricsVisible);
 const hud = createHudOverlay(document);
+const hudStore = createHudStore(hud);
+const debugHud = (import.meta.env?.VITE_DEBUG_HUD ?? '') === 'true';
+if (debugHud) {
+  (window as unknown as { __afpsHud?: unknown }).__afpsHud = {
+    dispatch: hudStore.dispatch,
+    getState: hudStore.getState
+  };
+}
 const resolveWeaponSlot = (slot: number) => {
   const maxSlot = Math.max(0, WEAPON_DEFS.length - 1);
   if (!Number.isFinite(slot)) {
@@ -219,15 +292,20 @@ const resolveTeamIndex = (connectionId: string | null) => {
 };
 let currentWeaponSlot = 0;
 let sampler: ReturnType<typeof createInputSampler> | null = null;
+let lastFire = false;
+let footstepDistance = 0;
+let lastFootstepAt = 0;
+let lastFootstepPos: { x: number; y: number } | null = null;
 const settings = createSettingsOverlay(document, {
   initialSensitivity: lookSensitivity,
   initialBindings: currentBindings,
   initialShowMetrics: metricsVisible,
   initialInvertLookX: invertLookX,
   initialInvertLookY: invertLookY,
+  initialAudioSettings: savedAudioSettings,
   onSensitivityChange: (value) => {
     app.setLookSensitivity(value);
-    hud.setSensitivity(value);
+    hudStore.dispatch({ type: 'sensitivity', value });
     saveSensitivity(value, window.localStorage);
   },
   onInvertLookXChange: (value) => {
@@ -247,15 +325,30 @@ const settings = createSettingsOverlay(document, {
     metricsVisible = visible;
     status.setMetricsVisible(visible);
     saveMetricsVisibility(visible, window.localStorage);
+  },
+  onAudioSettingsChange: (next) => {
+    audio.setMuted(next.muted);
+    audio.setVolume('master', next.master);
+    audio.setVolume('sfx', next.sfx);
+    audio.setVolume('ui', next.ui);
+    audio.setVolume('music', next.music);
+    saveAudioSettings(next, window.localStorage);
   }
 });
 settings.setLookInversion(invertLookX, invertLookY);
+settings.setAudioSettings(savedAudioSettings);
 const pointerLock = createPointerLockController({
   document,
   element: canvas,
   onChange: (locked) => {
-    hud.setLockState(locked ? 'locked' : 'unlocked');
+    hudStore.dispatch({ type: 'lock', state: locked ? 'locked' : 'unlocked' });
+    if (locked) {
+      void audio.resume();
+    }
   }
+});
+canvas.addEventListener('click', () => {
+  void audio.resume();
 });
 const signalingUrl = getSignalingUrl();
 const signalingAuthToken = getSignalingAuthToken();
@@ -316,20 +409,21 @@ if (wasmSimUrl) {
     });
 }
 
-hud.setSensitivity(lookSensitivity);
-hud.setVitals({ ammo: Infinity });
-hud.setWeapon(currentWeaponSlot, resolveWeaponLabel(currentWeaponSlot));
-hud.setWeaponCooldown(app.getWeaponCooldown(currentWeaponSlot));
-hud.setAbilityCooldowns(app.getAbilityCooldowns());
+hudStore.dispatch({ type: 'sensitivity', value: lookSensitivity });
+hudStore.dispatch({ type: 'vitals', value: { ammo: Infinity } });
+hudStore.dispatch({ type: 'weapon', slot: currentWeaponSlot, name: resolveWeaponLabel(currentWeaponSlot) });
+hudStore.dispatch({ type: 'weaponCooldown', value: app.getWeaponCooldown(currentWeaponSlot) });
+hudStore.dispatch({ type: 'abilityCooldowns', value: app.getAbilityCooldowns() });
 if (pointerLock.supported) {
-  hud.setLockState(pointerLock.isLocked() ? 'locked' : 'unlocked');
+  hudStore.dispatch({ type: 'lock', state: pointerLock.isLocked() ? 'locked' : 'unlocked' });
 } else {
-  hud.setLockState('unsupported');
+  hudStore.dispatch({ type: 'lock', state: 'unsupported' });
 }
 
 window.addEventListener('keydown', (event) => {
   if (event.code === 'KeyO') {
     settings.toggle();
+    audio.play('uiClick', { group: 'ui', volume: 0.7 });
   }
 });
 
@@ -379,20 +473,26 @@ if (!signalingUrl) {
       lastSnapshotAt = now;
       lastPredictionError = app.ingestSnapshot(snapshot, now);
       updateMetrics();
-      hud.setVitals({ health: snapshot.health, ammo: Infinity });
-      hud.setScore({ kills: snapshot.kills, deaths: snapshot.deaths });
+      hudStore.dispatch({ type: 'vitals', value: { health: snapshot.health, ammo: Infinity } });
+      hudStore.dispatch({ type: 'score', value: { kills: snapshot.kills, deaths: snapshot.deaths } });
     };
 
     const onGameEvent = (event: GameEvent) => {
       if (event.event === 'HitConfirmed') {
-        hud.triggerHitmarker(event.killed);
+        hudStore.dispatch({ type: 'hitmarker', killed: event.killed });
         app.triggerOutlineFlash({ killed: event.killed });
+        audio.play('impact', { group: 'sfx', volume: 0.8 });
         return;
       }
       if (event.event === 'ProjectileSpawn') {
         if (localConnectionId && event.ownerId === localConnectionId) {
           return;
         }
+        audio.playPositional('weaponFire', {
+          x: event.posX,
+          y: event.posZ,
+          z: event.posY
+        });
         app.spawnProjectileVfx({
           origin: { x: event.posX, y: event.posY, z: event.posZ },
           velocity: { x: event.velX, y: event.velY, z: event.velZ },
@@ -406,7 +506,7 @@ if (!signalingUrl) {
       }
     };
 
-    const onPong = (pong: Pong) => {
+    const onPong = (pong: PongMessage) => {
       const now = window.performance.now();
       if (Number.isFinite(pong.clientTimeMs)) {
         lastRttMs = Math.max(0, now - pong.clientTimeMs);
@@ -418,11 +518,18 @@ if (!signalingUrl) {
       signalingUrl,
       signalingAuthToken,
       logger,
-      buildClientHello: (sessionToken, connectionId) =>
-        buildClientHello(sessionToken, connectionId, 'dev', {
-          nickname: profile.nickname,
-          characterId: profile.characterId
-        }),
+      buildClientHello: (sessionToken, connectionId, build, overrideProfile, msgSeq, serverSeqAck) =>
+        buildClientHello(
+          sessionToken,
+          connectionId,
+          build ?? 'dev',
+          {
+            nickname: overrideProfile?.nickname ?? profile.nickname,
+            characterId: overrideProfile?.characterId ?? profile.characterId
+          },
+          msgSeq,
+          serverSeqAck
+        ),
       onSnapshot,
       onPong,
       onGameEvent,
@@ -453,13 +560,15 @@ if (!signalingUrl) {
         app.setTickRate(session.serverHello.serverTickRate);
         snapshotKeyframeInterval = session.serverHello.snapshotKeyframeInterval ?? null;
         updateMetrics();
-        hud.setWeaponCooldown(app.getWeaponCooldown(currentWeaponSlot));
-        hud.setAbilityCooldowns(app.getAbilityCooldowns());
+        hudStore.dispatch({ type: 'weaponCooldown', value: app.getWeaponCooldown(currentWeaponSlot) });
+        hudStore.dispatch({ type: 'abilityCooldowns', value: app.getAbilityCooldowns() });
 
         sampler = createInputSampler({ target: window, bindings: currentBindings });
         const sender = createInputSender({
           channel: session.unreliableChannel,
           sampler,
+          nextMessageSeq: session.nextClientMessageSeq,
+          getServerSeqAck: session.getServerSeqAck,
           tickRate: session.serverHello.serverTickRate,
           logger,
           onSend: (cmd) => {
@@ -474,16 +583,25 @@ if (!signalingUrl) {
             cmd.viewYaw = angles.yaw;
             cmd.viewPitch = angles.pitch;
             applyMovementYaw(cmd, cmd.viewYaw);
+            const firePressed = cmd.fire && !lastFire;
+            lastFire = cmd.fire;
             const nextSlot = resolveWeaponSlot(cmd.weaponSlot);
             cmd.weaponSlot = nextSlot;
             if (nextSlot !== currentWeaponSlot) {
               currentWeaponSlot = nextSlot;
-              hud.setWeapon(currentWeaponSlot, resolveWeaponLabel(currentWeaponSlot));
+              hudStore.dispatch({
+                type: 'weapon',
+                slot: currentWeaponSlot,
+                name: resolveWeaponLabel(currentWeaponSlot)
+              });
               app.setWeaponViewmodel(WEAPON_DEFS[currentWeaponSlot]?.id);
             }
-            hud.setWeaponCooldown(app.getWeaponCooldown(currentWeaponSlot));
+            if (firePressed) {
+              audio.play('weaponFire', { group: 'sfx', volume: 0.9 });
+            }
+            hudStore.dispatch({ type: 'weaponCooldown', value: app.getWeaponCooldown(currentWeaponSlot) });
             app.recordInput(cmd);
-            hud.setAbilityCooldowns(app.getAbilityCooldowns());
+            hudStore.dispatch({ type: 'abilityCooldowns', value: app.getAbilityCooldowns() });
           }
         });
         sender.start();
@@ -493,7 +611,7 @@ if (!signalingUrl) {
             return;
           }
           const now = window.performance.now();
-          session.unreliableChannel.send(buildPing(now));
+          session.unreliableChannel.send(buildPing(now, session.nextClientMessageSeq(), session.getServerSeqAck()));
         };
         sendPing();
         const pingInterval = window.setInterval(sendPing, 1000);
@@ -545,3 +663,15 @@ if (!signalingUrl) {
     console.error('pre-join bootstrap failed', error);
   });
 }
+
+const markReady = () => {
+  const win = window as unknown as { __afpsReady?: number };
+  if (typeof win.__afpsReady === 'number') {
+    return;
+  }
+  const now = window.performance.now();
+  win.__afpsReady = now;
+  window.performance.mark?.('afps-ready');
+};
+
+markReady();

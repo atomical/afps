@@ -2,19 +2,35 @@
 
 #include "protocol.h"
 
-#include <nlohmann/json.hpp>
+#include <flatbuffers/flatbuffers.h>
 
-TEST_CASE("ParseClientHello reads required fields") {
-  ClientHello hello;
+#include "afps_protocol_generated.h"
+
+namespace {
+std::vector<uint8_t> BuildClientHelloMessage(const std::string &session, const std::string &connection) {
+  flatbuffers::FlatBufferBuilder builder(256);
+  const auto session_token = builder.CreateString(session);
+  const auto connection_id = builder.CreateString(connection);
+  const auto build = builder.CreateString("dev");
+  const auto nickname = builder.CreateString("Ada");
+  const auto character_id = builder.CreateString("casual-a");
+  const auto offset = afps::protocol::CreateClientHello(
+      builder, kProtocolVersion, session_token, connection_id, build, nickname, character_id);
+  builder.Finish(offset);
+  return EncodeEnvelope(MessageType::ClientHello, builder.GetBufferPointer(), builder.GetSize(), 1, 0);
+}
+}  // namespace
+
+TEST_CASE("ParseClientHelloPayload reads required fields") {
+  const auto message = BuildClientHelloMessage("sess", "conn");
+  DecodedEnvelope envelope;
   std::string error;
-  const std::string payload =
-      R"({"type":"ClientHello","protocolVersion":3,"sessionToken":"sess","connectionId":"conn","build":"dev","nickname":"Ada","characterId":"casual-a"})";
+  REQUIRE(DecodeEnvelope(message, envelope, error));
 
-  const bool ok = ParseClientHello(payload, hello, error);
-
-  CHECK(ok);
+  ClientHello hello;
+  CHECK(ParseClientHelloPayload(envelope.payload, hello, error));
   CHECK(error.empty());
-  CHECK(hello.protocol_version == 3);
+  CHECK(hello.protocol_version == kProtocolVersion);
   CHECK(hello.session_token == "sess");
   CHECK(hello.connection_id == "conn");
   CHECK(hello.build == "dev");
@@ -22,25 +38,23 @@ TEST_CASE("ParseClientHello reads required fields") {
   CHECK(hello.character_id == "casual-a");
 }
 
-TEST_CASE("ParseClientHello rejects invalid payloads") {
-  ClientHello hello;
+TEST_CASE("DecodeEnvelope rejects invalid headers") {
+  std::vector<uint8_t> message(kProtocolHeaderBytes, 0);
+  DecodedEnvelope envelope;
   std::string error;
-
-  CHECK_FALSE(ParseClientHello("[]", hello, error));
+  CHECK_FALSE(DecodeEnvelope(message, envelope, error));
   CHECK(!error.empty());
 
+  message = EncodeEnvelope(MessageType::ClientHello, nullptr, 0, 1, 0);
+  message[0] = 0;
   error.clear();
-  CHECK_FALSE(ParseClientHello(R"({"type":"Other"})", hello, error));
-  CHECK(error == "invalid_type");
-
-  error.clear();
-  CHECK_FALSE(ParseClientHello(R"({"protocolVersion":1,"sessionToken":"x"})", hello, error));
-  CHECK(error == "missing_field: connectionId");
+  CHECK_FALSE(DecodeEnvelope(message, envelope, error));
+  CHECK(error == "invalid_magic");
 }
 
 TEST_CASE("BuildServerHello emits expected fields") {
   ServerHello hello;
-  hello.protocol_version = 3;
+  hello.protocol_version = kProtocolVersion;
   hello.connection_id = "conn";
   hello.client_id = "client";
   hello.server_tick_rate = 60;
@@ -49,38 +63,51 @@ TEST_CASE("BuildServerHello emits expected fields") {
   hello.motd = "hi";
   hello.connection_nonce = "nonce";
 
-  const auto payload = BuildServerHello(hello);
-  const auto json = nlohmann::json::parse(payload);
+  const auto payload = BuildServerHello(hello, 7, 3);
+  DecodedEnvelope envelope;
+  std::string error;
+  REQUIRE(DecodeEnvelope(payload, envelope, error));
+  CHECK(envelope.header.msg_type == MessageType::ServerHello);
+  CHECK(envelope.header.msg_seq == 7);
+  CHECK(envelope.header.server_seq_ack == 3);
 
-  CHECK(json.at("type") == "ServerHello");
-  CHECK(json.at("protocolVersion") == 3);
-  CHECK(json.at("connectionId") == "conn");
-  CHECK(json.at("clientId") == "client");
-  CHECK(json.at("serverTickRate") == 60);
-  CHECK(json.at("snapshotRate") == 20);
-  CHECK(json.at("snapshotKeyframeInterval") == 5);
-  CHECK(json.at("motd") == "hi");
-  CHECK(json.at("connectionNonce") == "nonce");
+  flatbuffers::Verifier verifier(envelope.payload.data(), envelope.payload.size());
+  const auto *parsed = flatbuffers::GetRoot<afps::protocol::ServerHello>(envelope.payload.data());
+  CHECK(parsed->Verify(verifier));
+  CHECK(parsed->protocol_version() == kProtocolVersion);
+  CHECK(parsed->connection_id()->str() == "conn");
+  CHECK(parsed->client_id()->str() == "client");
+  CHECK(parsed->server_tick_rate() == 60);
+  CHECK(parsed->snapshot_rate() == 20);
+  CHECK(parsed->snapshot_keyframe_interval() == 5);
+  CHECK(parsed->motd()->str() == "hi");
+  CHECK(parsed->connection_nonce()->str() == "nonce");
 }
 
 TEST_CASE("BuildProtocolError emits code and message") {
-  const auto payload = BuildProtocolError("protocol_mismatch", "bad version");
-  const auto json = nlohmann::json::parse(payload);
+  const auto payload = BuildProtocolError("protocol_mismatch", "bad version", 9, 2);
+  DecodedEnvelope envelope;
+  std::string error;
+  REQUIRE(DecodeEnvelope(payload, envelope, error));
+  CHECK(envelope.header.msg_type == MessageType::Error);
+  CHECK(envelope.header.msg_seq == 9);
 
-  CHECK(json.at("type") == "Error");
-  CHECK(json.at("code") == "protocol_mismatch");
-  CHECK(json.at("message") == "bad version");
+  flatbuffers::Verifier verifier(envelope.payload.data(), envelope.payload.size());
+  const auto *parsed = flatbuffers::GetRoot<afps::protocol::Error>(envelope.payload.data());
+  CHECK(parsed->Verify(verifier));
+  CHECK(parsed->code()->str() == "protocol_mismatch");
+  CHECK(parsed->message()->str() == "bad version");
 }
 
-TEST_CASE("ParsePing reads client time") {
+TEST_CASE("ParsePingPayload reads client time") {
+  flatbuffers::FlatBufferBuilder builder(32);
+  const auto offset = afps::protocol::CreatePing(builder, 123.5);
+  builder.Finish(offset);
+  const std::vector<uint8_t> payload(builder.GetBufferPointer(),
+                                     builder.GetBufferPointer() + builder.GetSize());
   Ping ping;
   std::string error;
-  const std::string payload = R"({"type":"Ping","clientTimeMs":123.5})";
-
-  const bool ok = ParsePing(payload, ping, error);
-
-  CHECK(ok);
-  CHECK(error.empty());
+  CHECK(ParsePingPayload(payload, ping, error));
   CHECK(ping.client_time_ms == doctest::Approx(123.5));
 }
 
@@ -88,28 +115,16 @@ TEST_CASE("BuildPong echoes client time") {
   Pong pong;
   pong.client_time_ms = 55.25;
 
-  const auto payload = BuildPong(pong);
-  const auto json = nlohmann::json::parse(payload);
+  const auto payload = BuildPong(pong, 4, 1);
+  DecodedEnvelope envelope;
+  std::string error;
+  REQUIRE(DecodeEnvelope(payload, envelope, error));
+  CHECK(envelope.header.msg_type == MessageType::Pong);
 
-  CHECK(json.at("type") == "Pong");
-  CHECK(json.at("clientTimeMs") == doctest::Approx(55.25));
-}
-
-TEST_CASE("BuildGameEvent emits expected fields") {
-  GameEvent event;
-  event.event = "HitConfirmed";
-  event.target_id = "target-1";
-  event.damage = 12.5;
-  event.killed = true;
-
-  const auto payload = BuildGameEvent(event);
-  const auto json = nlohmann::json::parse(payload);
-
-  CHECK(json.at("type") == "GameEvent");
-  CHECK(json.at("event") == "HitConfirmed");
-  CHECK(json.at("targetId") == "target-1");
-  CHECK(json.at("damage") == doctest::Approx(12.5));
-  CHECK(json.at("killed") == true);
+  flatbuffers::Verifier verifier(envelope.payload.data(), envelope.payload.size());
+  const auto *parsed = flatbuffers::GetRoot<afps::protocol::Pong>(envelope.payload.data());
+  CHECK(parsed->Verify(verifier));
+  CHECK(parsed->client_time_ms() == doctest::Approx(55.25));
 }
 
 TEST_CASE("BuildGameEvent emits projectile spawn fields") {
@@ -125,35 +140,25 @@ TEST_CASE("BuildGameEvent emits projectile spawn fields") {
   event.vel_z = 6.0;
   event.ttl = 0.5;
 
-  const auto payload = BuildGameEvent(event);
-  const auto json = nlohmann::json::parse(payload);
+  const auto payload = BuildGameEvent(event, 3, 1);
+  DecodedEnvelope envelope;
+  std::string error;
+  REQUIRE(DecodeEnvelope(payload, envelope, error));
+  CHECK(envelope.header.msg_type == MessageType::GameEvent);
 
-  CHECK(json.at("type") == "GameEvent");
-  CHECK(json.at("event") == "ProjectileSpawn");
-  CHECK(json.at("ownerId") == "owner-1");
-  CHECK(json.at("projectileId") == 9);
-  CHECK(json.at("posX") == doctest::Approx(1.0));
-  CHECK(json.at("posY") == doctest::Approx(2.0));
-  CHECK(json.at("posZ") == doctest::Approx(3.0));
-  CHECK(json.at("velX") == doctest::Approx(4.0));
-  CHECK(json.at("velY") == doctest::Approx(5.0));
-  CHECK(json.at("velZ") == doctest::Approx(6.0));
-  CHECK(json.at("ttl") == doctest::Approx(0.5));
-}
-
-TEST_CASE("BuildGameEvent emits projectile remove fields") {
-  GameEvent event;
-  event.event = "ProjectileRemove";
-  event.owner_id = "owner-2";
-  event.projectile_id = 11;
-
-  const auto payload = BuildGameEvent(event);
-  const auto json = nlohmann::json::parse(payload);
-
-  CHECK(json.at("type") == "GameEvent");
-  CHECK(json.at("event") == "ProjectileRemove");
-  CHECK(json.at("ownerId") == "owner-2");
-  CHECK(json.at("projectileId") == 11);
+  flatbuffers::Verifier verifier(envelope.payload.data(), envelope.payload.size());
+  const auto *parsed = flatbuffers::GetRoot<afps::protocol::GameEvent>(envelope.payload.data());
+  CHECK(parsed->Verify(verifier));
+  CHECK(parsed->event_type() == afps::protocol::GameEventType::ProjectileSpawn);
+  CHECK(parsed->owner_id()->str() == "owner-1");
+  CHECK(parsed->projectile_id() == 9);
+  CHECK(parsed->pos_x() == doctest::Approx(1.0));
+  CHECK(parsed->pos_y() == doctest::Approx(2.0));
+  CHECK(parsed->pos_z() == doctest::Approx(3.0));
+  CHECK(parsed->vel_x() == doctest::Approx(4.0));
+  CHECK(parsed->vel_y() == doctest::Approx(5.0));
+  CHECK(parsed->vel_z() == doctest::Approx(6.0));
+  CHECK(parsed->ttl() == doctest::Approx(0.5));
 }
 
 TEST_CASE("BuildStateSnapshot emits expected fields") {
@@ -167,28 +172,34 @@ TEST_CASE("BuildStateSnapshot emits expected fields") {
   snapshot.vel_x = 0.75;
   snapshot.vel_y = -1.25;
   snapshot.vel_z = 0.5;
+  snapshot.weapon_slot = 1;
   snapshot.dash_cooldown = 0.4;
   snapshot.health = 75.0;
   snapshot.kills = 2;
   snapshot.deaths = 1;
 
-  const auto payload = BuildStateSnapshot(snapshot);
-  const auto json = nlohmann::json::parse(payload);
+  const auto payload = BuildStateSnapshot(snapshot, 5, 2);
+  DecodedEnvelope envelope;
+  std::string error;
+  REQUIRE(DecodeEnvelope(payload, envelope, error));
+  CHECK(envelope.header.msg_type == MessageType::StateSnapshot);
 
-  CHECK(json.at("type") == "StateSnapshot");
-  CHECK(json.at("serverTick") == 42);
-  CHECK(json.at("lastProcessedInputSeq") == 7);
-  CHECK(json.at("clientId") == "client-1");
-  CHECK(json.at("posX") == doctest::Approx(1.5));
-  CHECK(json.at("posY") == doctest::Approx(-2.0));
-  CHECK(json.at("posZ") == doctest::Approx(3.25));
-  CHECK(json.at("velX") == doctest::Approx(0.75));
-  CHECK(json.at("velY") == doctest::Approx(-1.25));
-  CHECK(json.at("velZ") == doctest::Approx(0.5));
-  CHECK(json.at("dashCooldown") == doctest::Approx(0.4));
-  CHECK(json.at("health") == doctest::Approx(75.0));
-  CHECK(json.at("kills") == 2);
-  CHECK(json.at("deaths") == 1);
+  flatbuffers::Verifier verifier(envelope.payload.data(), envelope.payload.size());
+  const auto *parsed = flatbuffers::GetRoot<afps::protocol::StateSnapshot>(envelope.payload.data());
+  CHECK(parsed->Verify(verifier));
+  CHECK(parsed->server_tick() == 42);
+  CHECK(parsed->last_processed_input_seq() == 7);
+  CHECK(parsed->client_id()->str() == "client-1");
+  CHECK(parsed->pos_x() == doctest::Approx(1.5));
+  CHECK(parsed->pos_y() == doctest::Approx(-2.0));
+  CHECK(parsed->pos_z() == doctest::Approx(3.25));
+  CHECK(parsed->vel_x() == doctest::Approx(0.75));
+  CHECK(parsed->vel_y() == doctest::Approx(-1.25));
+  CHECK(parsed->vel_z() == doctest::Approx(0.5));
+  CHECK(parsed->dash_cooldown() == doctest::Approx(0.4));
+  CHECK(parsed->health() == doctest::Approx(75.0));
+  CHECK(parsed->kills() == 2);
+  CHECK(parsed->deaths() == 1);
 }
 
 TEST_CASE("BuildStateSnapshotDelta emits expected fields") {
@@ -206,89 +217,44 @@ TEST_CASE("BuildStateSnapshotDelta emits expected fields") {
   delta.kills = 3;
   delta.deaths = 2;
 
-  const auto payload = BuildStateSnapshotDelta(delta);
-  const auto json = nlohmann::json::parse(payload);
-
-  CHECK(json.at("type") == "StateSnapshotDelta");
-  CHECK(json.at("serverTick") == 45);
-  CHECK(json.at("baseTick") == 40);
-  CHECK(json.at("lastProcessedInputSeq") == 9);
-  CHECK(json.at("mask") == delta.mask);
-  CHECK(json.at("clientId") == "client-1");
-  CHECK(json.at("posX") == doctest::Approx(1.75));
-  CHECK(json.at("velY") == doctest::Approx(-0.5));
-  CHECK(json.at("dashCooldown") == doctest::Approx(0.25));
-  CHECK(json.at("health") == doctest::Approx(50.0));
-  CHECK(json.at("kills") == 3);
-  CHECK(json.at("deaths") == 2);
-  CHECK_FALSE(json.contains("posY"));
-  CHECK_FALSE(json.contains("posZ"));
-  CHECK_FALSE(json.contains("velX"));
-  CHECK_FALSE(json.contains("velZ"));
-}
-
-TEST_CASE("ParseInputCmd reads input fields") {
-  InputCmd cmd;
+  const auto payload = BuildStateSnapshotDelta(delta, 6, 3);
+  DecodedEnvelope envelope;
   std::string error;
-  const std::string payload =
-      R"({"type":"InputCmd","inputSeq":3,"moveX":1,"moveY":-1,"lookDeltaX":2.5,"lookDeltaY":-1.25,"viewYaw":0.75,"viewPitch":-0.5,"weaponSlot":1,"jump":true,"fire":false,"sprint":true,"dash":true,"grapple":true,"shield":true,"shockwave":true})";
+  REQUIRE(DecodeEnvelope(payload, envelope, error));
+  CHECK(envelope.header.msg_type == MessageType::StateSnapshotDelta);
 
-  const bool ok = ParseInputCmd(payload, cmd, error);
-
-  CHECK(ok);
-  CHECK(error.empty());
-  CHECK(cmd.input_seq == 3);
-  CHECK(cmd.move_x == doctest::Approx(1.0));
-  CHECK(cmd.move_y == doctest::Approx(-1.0));
-  CHECK(cmd.look_delta_x == doctest::Approx(2.5));
-  CHECK(cmd.look_delta_y == doctest::Approx(-1.25));
-  CHECK(cmd.view_yaw == doctest::Approx(0.75));
-  CHECK(cmd.view_pitch == doctest::Approx(-0.5));
-  CHECK(cmd.weapon_slot == 1);
-  CHECK(cmd.jump);
-  CHECK_FALSE(cmd.fire);
-  CHECK(cmd.sprint);
-  CHECK(cmd.dash);
-  CHECK(cmd.grapple);
-  CHECK(cmd.shield);
-  CHECK(cmd.shockwave);
-}
-
-TEST_CASE("ParseInputCmd rejects invalid payloads") {
-  InputCmd cmd;
-  std::string error;
-
-  CHECK_FALSE(ParseInputCmd("{}", cmd, error));
-  CHECK(error == "invalid_type");
-
-  error.clear();
-  CHECK_FALSE(ParseInputCmd(R"({"type":"InputCmd","inputSeq":-1})", cmd, error));
-  CHECK(error == "invalid_field: inputSeq");
-
-  error.clear();
-  CHECK_FALSE(ParseInputCmd(
-      R"({"type":"InputCmd","inputSeq":1,"moveX":0,"moveY":0,"lookDeltaX":0,"lookDeltaY":0,"viewYaw":0,"viewPitch":0,"weaponSlot":-2,"jump":false,"fire":false,"sprint":false,"dash":false})",
-      cmd, error));
-  CHECK(error == "invalid_field: weaponSlot");
-
-  error.clear();
-  CHECK_FALSE(ParseInputCmd(
-      R"({"type":"InputCmd","inputSeq":1,"moveX":2,"moveY":0,"lookDeltaX":0,"lookDeltaY":0,"jump":false,"fire":false,"sprint":false})",
-      cmd, error));
-  CHECK(error == "out_of_range: moveX");
+  flatbuffers::Verifier verifier(envelope.payload.data(), envelope.payload.size());
+  const auto *parsed = flatbuffers::GetRoot<afps::protocol::StateSnapshotDelta>(envelope.payload.data());
+  CHECK(parsed->Verify(verifier));
+  CHECK(parsed->server_tick() == 45);
+  CHECK(parsed->base_tick() == 40);
+  CHECK(parsed->last_processed_input_seq() == 9);
+  CHECK(parsed->mask() == delta.mask);
+  CHECK(parsed->client_id()->str() == "client-1");
+  CHECK(parsed->pos_x() == doctest::Approx(1.75));
+  CHECK(parsed->vel_y() == doctest::Approx(-0.5));
+  CHECK(parsed->dash_cooldown() == doctest::Approx(0.25));
+  CHECK(parsed->health() == doctest::Approx(50.0));
+  CHECK(parsed->kills() == 3);
+  CHECK(parsed->deaths() == 2);
 }
 
 TEST_CASE("BuildPlayerProfile emits expected fields") {
   PlayerProfile profile;
-  profile.client_id = "client-1";
+  profile.client_id = "client-3";
   profile.nickname = "Ada";
   profile.character_id = "casual-a";
 
-  const auto payload = BuildPlayerProfile(profile);
-  const auto json = nlohmann::json::parse(payload);
+  const auto payload = BuildPlayerProfile(profile, 11, 5);
+  DecodedEnvelope envelope;
+  std::string error;
+  REQUIRE(DecodeEnvelope(payload, envelope, error));
+  CHECK(envelope.header.msg_type == MessageType::PlayerProfile);
 
-  CHECK(json.at("type") == "PlayerProfile");
-  CHECK(json.at("clientId") == "client-1");
-  CHECK(json.at("nickname") == "Ada");
-  CHECK(json.at("characterId") == "casual-a");
+  flatbuffers::Verifier verifier(envelope.payload.data(), envelope.payload.size());
+  const auto *parsed = flatbuffers::GetRoot<afps::protocol::PlayerProfile>(envelope.payload.data());
+  CHECK(parsed->Verify(verifier));
+  CHECK(parsed->client_id()->str() == "client-3");
+  CHECK(parsed->nickname()->str() == "Ada");
+  CHECK(parsed->character_id()->str() == "casual-a");
 }

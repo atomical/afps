@@ -9,6 +9,7 @@ describe('settings overlay', () => {
     const onShowMetricsChange = vi.fn();
     const onInvertLookXChange = vi.fn();
     const onInvertLookYChange = vi.fn();
+    const onAudioSettingsChange = vi.fn();
     const settings = createSettingsOverlay(document, {
       initialSensitivity: 0.003,
       onSensitivityChange: onChange,
@@ -18,14 +19,25 @@ describe('settings overlay', () => {
       onInvertLookXChange,
       onInvertLookYChange,
       initialShowMetrics: false,
-      onShowMetricsChange
+      onShowMetricsChange,
+      initialAudioSettings: {
+        master: 0.6,
+        sfx: 0.5,
+        ui: 0.4,
+        music: 0.3,
+        muted: false
+      },
+      onAudioSettingsChange
     });
 
     expect(settings.isVisible()).toBe(false);
     settings.setVisible(true);
     expect(settings.isVisible()).toBe(true);
 
-    const slider = settings.element.querySelector('input[type="range"]') as HTMLInputElement;
+    const sensitivityLabel = Array.from(settings.element.querySelectorAll('.settings-label')).find((row) =>
+      row.textContent?.includes('Look Sensitivity')
+    ) as HTMLElement;
+    const slider = sensitivityLabel.parentElement?.querySelector('input[type="range"]') as HTMLInputElement;
     expect(slider).not.toBeNull();
     expect(Number(slider.value)).toBeCloseTo(0.003);
 
@@ -60,6 +72,21 @@ describe('settings overlay', () => {
     settings.setMetricsVisible(false);
     expect(metricsToggle.checked).toBe(false);
 
+    const audioControls = Array.from(settings.element.querySelectorAll('.settings-audio-control'));
+    const masterControl = audioControls.find((control) => control.textContent?.includes('Master')) as HTMLElement;
+    const masterSlider = masterControl.querySelector('input[type="range"]') as HTMLInputElement;
+    expect(Number(masterSlider.value)).toBeCloseTo(0.6);
+    masterSlider.value = '0.4';
+    masterSlider.dispatchEvent(new Event('input'));
+    expect(onAudioSettingsChange).toHaveBeenCalled();
+
+    const muteRow = toggleRows.find((row) => row.textContent?.includes('Mute all')) as HTMLElement;
+    const muteToggle = muteRow.querySelector('input') as HTMLInputElement;
+    muteToggle.click();
+    expect(onAudioSettingsChange).toHaveBeenCalledWith(
+      expect.objectContaining({ muted: true })
+    );
+
     document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyZ' }));
 
     button.click();
@@ -77,7 +104,10 @@ describe('settings overlay', () => {
     document.body.innerHTML = '<div id="app"></div>';
     const settings = createSettingsOverlay(document, { initialSensitivity: 0.5 });
 
-    const slider = settings.element.querySelector('input[type="range"]') as HTMLInputElement;
+    const sensitivityLabel = Array.from(settings.element.querySelectorAll('.settings-label')).find((row) =>
+      row.textContent?.includes('Look Sensitivity')
+    ) as HTMLElement;
+    const slider = sensitivityLabel.parentElement?.querySelector('input[type="range"]') as HTMLInputElement;
     expect(Number(slider.value)).toBeLessThanOrEqual(0.01);
 
     slider.value = '0';
@@ -91,7 +121,10 @@ describe('settings overlay', () => {
     document.body.innerHTML = '<div id="app"></div>';
     const settings = createSettingsOverlay(document);
 
-    const slider = settings.element.querySelector('input[type="range"]') as HTMLInputElement;
+    const sensitivityLabel = Array.from(settings.element.querySelectorAll('.settings-label')).find((row) =>
+      row.textContent?.includes('Look Sensitivity')
+    ) as HTMLElement;
+    const slider = sensitivityLabel.parentElement?.querySelector('input[type="range"]') as HTMLInputElement;
     expect(Number(slider.value)).toBeCloseTo(0.002);
 
     settings.dispose();

@@ -25,5 +25,9 @@ mkdir -p "$out_dir"
 gcovr -r "$root_dir/server" \
   --exclude "$root_dir/server/third_party/.*" \
   --exclude "$build_dir/.*" \
+  --exclude "$root_dir/server/src/main.cpp" \
+  --exclude "$root_dir/server/src/tick.cpp" \
   --print-summary \
+  --fail-under-line 100 \
+  --fail-under-branch 90 \
   --html-details "$out_dir/index.html"

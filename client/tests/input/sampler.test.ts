@@ -89,6 +89,20 @@ describe('input sampler', () => {
     sampler.dispose();
   });
 
+  it('ignores non-primary mouse buttons for fire', () => {
+    const sampler = createInputSampler({ target: window });
+
+    window.dispatchEvent(new MouseEvent('mousedown', { button: 1 }));
+    let sample = sampler.sample();
+    expect(sample.fire).toBe(false);
+
+    window.dispatchEvent(new MouseEvent('mouseup', { button: 1 }));
+    sample = sampler.sample();
+    expect(sample.fire).toBe(false);
+
+    sampler.dispose();
+  });
+
   it('clears state on blur and dispose', () => {
     const sampler = createInputSampler({ target: window });
 
@@ -106,6 +120,17 @@ describe('input sampler', () => {
     sampler.dispose();
     dispatchKey('keydown', 'KeyW');
     expect(sampler.sample().moveY).toBe(0);
+  });
+
+  it('supports primary weapon slot selection', () => {
+    const sampler = createInputSampler({ target: window });
+
+    dispatchKey('keydown', 'Digit1');
+    const sample = sampler.sample();
+
+    expect(sample.weaponSlot).toBe(0);
+
+    sampler.dispose();
   });
 
   it('ignores non-finite mouse deltas', () => {

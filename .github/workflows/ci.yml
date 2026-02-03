@@ -5,6 +5,16 @@ on:
   pull_request:
 
 jobs:
+  codegen:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y flatbuffers-compiler
+      - name: Check FlatBuffers bindings
+        run: ./tools/check_flatbuffers.sh
+
   client:
     runs-on: ubuntu-latest
     steps:
@@ -19,9 +29,23 @@ jobs:
       - name: Install
         working-directory: client
         run: npm ci
+      - name: Install Playwright
+        working-directory: client
+        run: npx playwright install --with-deps
       - name: Test
         working-directory: client
         run: npm test
+      - name: UI tests
+        working-directory: client
+        env:
+          VITE_SIGNALING_URL: http://localhost:8443
+          VITE_SIGNALING_AUTH_TOKEN: devtoken
+          VITE_DEBUG_AUDIO: true
+          VITE_DEBUG_HUD: true
+          VITE_DEBUG_MAP_STATS: true
+        run: npm run test:ui
+      - name: Perf budgets
+        run: ./tools/perf_check.sh
       - name: Build
         working-directory: client
         run: npm run build
@@ -39,3 +63,7 @@ jobs:
         run: cmake --build server/build
       - name: Test
         run: ctest --test-dir server/build
+      - name: Sanitizers
+        run: ./tools/build_server_sanitizers.sh && ./tools/run_server_sanitizers.sh
+      - name: Coverage
+        run: python3 -m pip install --user gcovr && export PATH="$HOME/.local/bin:$PATH" && ./tools/coverage_server.sh

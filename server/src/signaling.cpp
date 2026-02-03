@@ -4,8 +4,15 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstddef>
 #include <iomanip>
+#include <iostream>
 #include <sstream>
+
+#ifdef AFPS_ENABLE_OPENSSL
+#include <openssl/evp.h>
+#include <openssl/hmac.h>
+#endif
 
 namespace {
 constexpr int kMaxClientHelloAttempts = 3;
@@ -47,6 +54,142 @@ std::string NormalizeNickname(const std::string &value, const std::string &seed)
     }
   }
   return trimmed;
+}
+
+std::string EscapeJson(const std::string &value) {
+  std::string out;
+  out.reserve(value.size() + 8);
+  for (char ch : value) {
+    switch (ch) {
+      case '\\':
+        out += "\\\\";
+        break;
+      case '"':
+        out += "\\\"";
+        break;
+      case '\n':
+        out += "\\n";
+        break;
+      case '\r':
+        out += "\\r";
+        break;
+      case '\t':
+        out += "\\t";
+        break;
+      default:
+        if (static_cast<unsigned char>(ch) < 0x20) {
+          out += '?';
+        } else {
+          out += ch;
+        }
+        break;
+    }
+  }
+  return out;
+}
+
+std::string RedactToken(const std::string &token) {
+  if (token.empty()) {
+    return "";
+  }
+  const size_t keep = std::min<size_t>(8, token.size());
+  return token.substr(0, keep);
+}
+
+struct TurnCredentials {
+  std::string username;
+  std::string credential;
+};
+
+bool IsTurnUrl(const std::string &url) {
+  return url.rfind("turn:", 0) == 0 || url.rfind("turns:", 0) == 0;
+}
+
+rtc::binary ToRtcBinary(const std::vector<uint8_t> &message) {
+  rtc::binary out;
+  out.reserve(message.size());
+  for (uint8_t byte : message) {
+    out.push_back(static_cast<std::byte>(byte));
+  }
+  return out;
+}
+
+std::vector<uint8_t> ToByteVector(const rtc::binary &message) {
+  std::vector<uint8_t> out;
+  out.reserve(message.size());
+  for (std::byte byte : message) {
+    out.push_back(static_cast<uint8_t>(byte));
+  }
+  return out;
+}
+
+#ifdef AFPS_ENABLE_OPENSSL
+std::string Base64Encode(const unsigned char *data, size_t length) {
+  if (!data || length == 0) {
+    return "";
+  }
+  const int output_length = 4 * static_cast<int>((length + 2) / 3);
+  std::string output(static_cast<size_t>(output_length), '\0');
+  const int written = EVP_EncodeBlock(reinterpret_cast<unsigned char *>(&output[0]), data,
+                                      static_cast<int>(length));
+  if (written <= 0) {
+    return "";
+  }
+  output.resize(static_cast<size_t>(written));
+  return output;
+}
+
+std::optional<TurnCredentials> BuildTurnCredentials(const SignalingConfig &config,
+                                                    std::chrono::system_clock::time_point now) {
+  if (config.turn_secret.empty() || config.turn_ttl_seconds <= 0) {
+    return std::nullopt;
+  }
+  const auto now_seconds = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
+  const auto expiry = now_seconds + static_cast<long long>(config.turn_ttl_seconds);
+  std::string username = std::to_string(expiry);
+  const std::string suffix = TrimWhitespace(config.turn_user);
+  if (!suffix.empty()) {
+    username += ":" + suffix;
+  }
+  unsigned char digest[EVP_MAX_MD_SIZE];
+  unsigned int digest_len = 0;
+  const auto *secret_bytes = reinterpret_cast<const unsigned char *>(config.turn_secret.data());
+  const auto *user_bytes = reinterpret_cast<const unsigned char *>(username.data());
+  if (!HMAC(EVP_sha1(), secret_bytes, static_cast<int>(config.turn_secret.size()),
+            user_bytes, static_cast<int>(username.size()),
+            digest, &digest_len)) {
+    return std::nullopt;
+  }
+  const std::string credential = Base64Encode(digest, digest_len);
+  if (credential.empty()) {
+    return std::nullopt;
+  }
+  return TurnCredentials{username, credential};
+}
+#else
+std::optional<TurnCredentials> BuildTurnCredentials(const SignalingConfig &,
+                                                    std::chrono::system_clock::time_point) {
+  return std::nullopt;
+}
+#endif
+
+void LogAudit(const std::string &timestamp,
+              const std::string &event,
+              const std::string &connection_id,
+              const std::string &session,
+              const std::string &detail) {
+  std::cout << "{\"ts\":\"" << EscapeJson(timestamp)
+            << "\",\"event\":\"" << EscapeJson(event) << "\"";
+  if (!connection_id.empty()) {
+    std::cout << ",\"connection_id\":\"" << EscapeJson(connection_id) << "\"";
+  }
+  if (!session.empty()) {
+    std::cout << ",\"session\":\"" << EscapeJson(RedactToken(session)) << "\"";
+  }
+  if (!detail.empty()) {
+    std::cout << ",\"detail\":\"" << EscapeJson(detail) << "\"";
+  }
+  std::cout << "}\n";
 }
 
 bool IsCharacterIdChar(char ch) {
@@ -121,6 +264,7 @@ SessionInfo SignalingStore::CreateSession() {
   info.token = session.token;
   info.expires_at_time = expires_at;
   info.expires_at = FormatUtc(expires_at);
+  LogAudit(FormatUtc(now), "session_created", "", session.token, info.expires_at);
   return info;
 }
 
@@ -147,8 +291,12 @@ SignalingResult<ConnectionOffer> SignalingStore::CreateConnection(const std::str
 
   connection->connection_nonce = GenerateToken(8);
 
-  auto rtc_config = BuildRtcConfig();
+  const auto now = std::chrono::system_clock::now();
+  auto ice_servers = BuildIceServers(now);
+  auto rtc_config = BuildRtcConfig(ice_servers);
   connection->peer = std::make_shared<RtcEchoPeer>(rtc_config, false);
+  LogAudit(FormatUtc(std::chrono::system_clock::now()), "connection_created",
+           connection->id, session_token, "");
   connection->peer->SetCallbacks({
       [connection](const rtc::Description &description) {
         std::scoped_lock lock(connection->mutex);
@@ -172,7 +320,8 @@ SignalingResult<ConnectionOffer> SignalingStore::CreateConnection(const std::str
         std::scoped_lock lock(connection->mutex);
         connection->closed = true;
       },
-      [this, connection](const std::string &label, const std::string &message) {
+      nullptr,
+      [this, connection](const std::string &label, const rtc::binary &message) {
         HandleClientMessage(connection, label, message);
       }});
 
@@ -197,7 +346,7 @@ SignalingResult<ConnectionOffer> SignalingStore::CreateConnection(const std::str
     description = connection->local_description;
   }
 
-  ConnectionOffer offer{connection->id, *description, config_.ice_servers, FormatUtc(expires_at)};
+  ConnectionOffer offer{connection->id, *description, std::move(ice_servers), FormatUtc(expires_at)};
   return {true, offer, SignalingError::None};
 }
 
@@ -357,7 +506,7 @@ std::vector<std::string> SignalingStore::ReadyConnectionIds() {
   return ready;
 }
 
-bool SignalingStore::SendUnreliable(const std::string &connection_id, const std::string &message) {
+bool SignalingStore::SendUnreliable(const std::string &connection_id, const std::vector<uint8_t> &message) {
   std::shared_ptr<ConnectionState> connection;
   {
     std::scoped_lock lock(mutex_);
@@ -375,7 +524,36 @@ bool SignalingStore::SendUnreliable(const std::string &connection_id, const std:
     }
   }
 
-  return connection->peer->SendOn(kUnreliableChannelLabel, message);
+  return connection->peer->SendOn(kUnreliableChannelLabel, ToRtcBinary(message));
+}
+
+uint32_t SignalingStore::NextServerMessageSeq(const std::string &connection_id) {
+  std::shared_ptr<ConnectionState> connection;
+  {
+    std::scoped_lock lock(mutex_);
+    auto iter = connections_.find(connection_id);
+    if (iter == connections_.end()) {
+      return 0;
+    }
+    connection = iter->second;
+  }
+  std::scoped_lock lock(connection->mutex);
+  connection->next_server_msg_seq += 1;
+  return connection->next_server_msg_seq;
+}
+
+uint32_t SignalingStore::LastClientMessageSeq(const std::string &connection_id) {
+  std::shared_ptr<ConnectionState> connection;
+  {
+    std::scoped_lock lock(mutex_);
+    auto iter = connections_.find(connection_id);
+    if (iter == connections_.end()) {
+      return 0;
+    }
+    connection = iter->second;
+  }
+  std::scoped_lock lock(connection->mutex);
+  return connection->last_client_msg_seq;
 }
 
 size_t SignalingStore::SessionCount() const {
@@ -482,18 +660,48 @@ std::string SignalingStore::FormatUtc(std::chrono::system_clock::time_point time
   return out.str();
 }
 
-rtc::Configuration SignalingStore::BuildRtcConfig() const {
+rtc::Configuration SignalingStore::BuildRtcConfig(const std::vector<IceServerConfig> &ice_servers) const {
   rtc::Configuration config;
   config.iceServers.clear();
-  for (const auto &url : config_.ice_servers) {
-    config.iceServers.emplace_back(url);
+  for (const auto &entry : ice_servers) {
+    rtc::IceServer server(entry.url);
+    if (!entry.username.empty() || !entry.credential.empty()) {
+      server.username = entry.username;
+      server.password = entry.credential;
+    }
+    config.iceServers.emplace_back(std::move(server));
   }
   return config;
 }
 
+std::vector<IceServerConfig> SignalingStore::BuildIceServers(
+    std::chrono::system_clock::time_point now) const {
+  std::vector<IceServerConfig> ice_servers;
+  ice_servers.reserve(config_.ice_servers.size());
+  const auto turn_credentials = BuildTurnCredentials(config_, now);
+  for (const auto &url : config_.ice_servers) {
+    IceServerConfig entry{url, {}, {}};
+    if (turn_credentials.has_value() && IsTurnUrl(url)) {
+      entry.username = turn_credentials->username;
+      entry.credential = turn_credentials->credential;
+    }
+    ice_servers.push_back(std::move(entry));
+  }
+  return ice_servers;
+}
+
 void SignalingStore::HandleClientMessage(const std::shared_ptr<ConnectionState> &connection,
-                                         const std::string &label, const std::string &message) {
-  auto close_connection = [&connection, this]() {
+                                         const std::string &label, const rtc::binary &message) {
+  const auto message_bytes = ToByteVector(message);
+  auto log_event = [&connection, this](const std::string &event, const std::string &detail) {
+    LogAudit(FormatUtc(std::chrono::system_clock::now()),
+             event,
+             connection->id,
+             connection->session,
+             detail);
+  };
+
+  auto close_connection = [&connection, &log_event, this](const std::string &reason) {
     bool do_close = false;
     {
       std::scoped_lock lock(connection->mutex);
@@ -503,13 +711,14 @@ void SignalingStore::HandleClientMessage(const std::shared_ptr<ConnectionState> 
       }
     }
     if (do_close) {
+      log_event("connection_closed", reason);
       connection->peer->Close();
       std::scoped_lock lock(mutex_);
       connections_.erase(connection->id);
     }
   };
 
-  auto record_invalid = [&connection, &close_connection, this]() {
+  auto record_invalid = [&connection, &close_connection, &log_event, this](const std::string &reason) {
     bool should_close = false;
     {
       std::scoped_lock lock(connection->mutex);
@@ -518,12 +727,13 @@ void SignalingStore::HandleClientMessage(const std::shared_ptr<ConnectionState> 
         should_close = true;
       }
     }
+    log_event("invalid_message", reason);
     if (should_close) {
-      close_connection();
+      close_connection("invalid_message_limit");
     }
   };
 
-  auto record_rate_limit = [&connection, &close_connection, this]() {
+  auto record_rate_limit = [&connection, &close_connection, &log_event, this](const std::string &reason) {
     bool should_close = false;
     {
       std::scoped_lock lock(connection->mutex);
@@ -532,8 +742,9 @@ void SignalingStore::HandleClientMessage(const std::shared_ptr<ConnectionState> 
         should_close = true;
       }
     }
+    log_event("rate_limited", reason);
     if (should_close) {
-      close_connection();
+      close_connection("rate_limit_exceeded");
     }
   };
 
@@ -551,34 +762,110 @@ void SignalingStore::HandleClientMessage(const std::shared_ptr<ConnectionState> 
     };
 
     if (!register_attempt()) {
+      log_event("handshake_rejected", "attempts_exceeded");
       return;
     }
 
-    if (message.size() > kMaxClientMessageBytes) {
-      connection->peer->Send(
-          BuildProtocolError("message_too_large", "client message exceeds size limit"));
+    if (message_bytes.size() > kMaxClientMessageBytes) {
+      log_event("handshake_error", "message_too_large");
+      const auto seq = NextServerMessageSeq(connection->id);
+      const auto ack = LastClientMessageSeq(connection->id);
+      connection->peer->Send(ToRtcBinary(BuildProtocolError("message_too_large",
+                                                            "client message exceeds size limit",
+                                                            seq, ack)));
+      return;
+    }
+
+    DecodedEnvelope envelope;
+    std::string envelope_error;
+    if (!DecodeEnvelope(message_bytes, envelope, envelope_error)) {
+      log_event("handshake_error", "invalid_envelope");
+      const auto seq = NextServerMessageSeq(connection->id);
+      const auto ack = LastClientMessageSeq(connection->id);
+      connection->peer->Send(ToRtcBinary(BuildProtocolError("invalid_envelope",
+                                                            envelope_error,
+                                                            seq, ack)));
+      return;
+    }
+
+    bool valid_seq = false;
+    {
+      std::scoped_lock lock(connection->mutex);
+      if (envelope.header.msg_seq > connection->last_client_msg_seq) {
+        connection->last_client_msg_seq = envelope.header.msg_seq;
+        connection->last_client_seq_ack = envelope.header.server_seq_ack;
+        valid_seq = true;
+      }
+    }
+    if (!valid_seq) {
+      log_event("handshake_error", "invalid_sequence");
+      const auto seq = NextServerMessageSeq(connection->id);
+      const auto ack = LastClientMessageSeq(connection->id);
+      connection->peer->Send(ToRtcBinary(BuildProtocolError("invalid_sequence",
+                                                            "non-monotonic msgSeq",
+                                                            seq, ack)));
+      return;
+    }
+
+    if (envelope.header.msg_type != MessageType::ClientHello) {
+      log_event("handshake_error", "invalid_type");
+      const auto seq = NextServerMessageSeq(connection->id);
+      const auto ack = LastClientMessageSeq(connection->id);
+      connection->peer->Send(ToRtcBinary(BuildProtocolError("invalid_type",
+                                                            "expected ClientHello",
+                                                            seq, ack)));
+      return;
+    }
+
+    if (envelope.header.protocol_version != kProtocolVersion) {
+      log_event("handshake_error", "protocol_mismatch");
+      const auto seq = NextServerMessageSeq(connection->id);
+      const auto ack = LastClientMessageSeq(connection->id);
+      connection->peer->Send(ToRtcBinary(BuildProtocolError("protocol_mismatch",
+                                                            "unsupported protocol",
+                                                            seq, ack)));
       return;
     }
 
     ClientHello hello;
     std::string error;
-    if (!ParseClientHello(message, hello, error)) {
-      connection->peer->Send(BuildProtocolError("invalid_client_hello", error));
+    if (!ParseClientHelloPayload(envelope.payload, hello, error)) {
+      log_event("handshake_error", "invalid_client_hello");
+      const auto seq = NextServerMessageSeq(connection->id);
+      const auto ack = LastClientMessageSeq(connection->id);
+      connection->peer->Send(ToRtcBinary(BuildProtocolError("invalid_client_hello",
+                                                            error,
+                                                            seq, ack)));
       return;
     }
 
     if (hello.protocol_version != kProtocolVersion) {
-      connection->peer->Send(BuildProtocolError("protocol_mismatch", "unsupported protocol"));
+      log_event("handshake_error", "protocol_mismatch");
+      const auto seq = NextServerMessageSeq(connection->id);
+      const auto ack = LastClientMessageSeq(connection->id);
+      connection->peer->Send(ToRtcBinary(BuildProtocolError("protocol_mismatch",
+                                                            "unsupported protocol",
+                                                            seq, ack)));
       return;
     }
 
     if (hello.session_token != connection->session) {
-      connection->peer->Send(BuildProtocolError("invalid_session", "session token mismatch"));
+      log_event("handshake_error", "session_mismatch");
+      const auto seq = NextServerMessageSeq(connection->id);
+      const auto ack = LastClientMessageSeq(connection->id);
+      connection->peer->Send(ToRtcBinary(BuildProtocolError("invalid_session",
+                                                            "session token mismatch",
+                                                            seq, ack)));
       return;
     }
 
     if (hello.connection_id != connection->id) {
-      connection->peer->Send(BuildProtocolError("invalid_connection", "connection id mismatch"));
+      log_event("handshake_error", "connection_mismatch");
+      const auto seq = NextServerMessageSeq(connection->id);
+      const auto ack = LastClientMessageSeq(connection->id);
+      connection->peer->Send(ToRtcBinary(BuildProtocolError("invalid_connection",
+                                                            "connection id mismatch",
+                                                            seq, ack)));
       return;
     }
 
@@ -596,6 +883,7 @@ void SignalingStore::HandleClientMessage(const std::shared_ptr<ConnectionState> 
       connection->nickname = nickname;
       connection->character_id = character_id;
     }
+    log_event("handshake_complete", hello.build);
 
     ServerHello response;
     response.protocol_version = kProtocolVersion;
@@ -605,7 +893,11 @@ void SignalingStore::HandleClientMessage(const std::shared_ptr<ConnectionState> 
     response.snapshot_rate = kSnapshotRate;
     response.snapshot_keyframe_interval = config_.snapshot_keyframe_interval;
     response.connection_nonce = connection->connection_nonce;
-    connection->peer->Send(BuildServerHello(response));
+    {
+      const auto seq = NextServerMessageSeq(connection->id);
+      const auto ack = LastClientMessageSeq(connection->id);
+      connection->peer->Send(ToRtcBinary(BuildServerHello(response, seq, ack)));
+    }
 
     PlayerProfile self_profile;
     self_profile.client_id = connection->id;
@@ -639,20 +931,31 @@ void SignalingStore::HandleClientMessage(const std::shared_ptr<ConnectionState> 
       }
     }
 
-    const std::string self_payload = BuildPlayerProfile(self_profile);
     for (const auto &entry : profiles) {
       if (entry.profile.client_id == connection->id) {
         continue;
       }
-      connection->peer->SendOn(kReliableChannelLabel, BuildPlayerProfile(entry.profile));
+      connection->peer->SendOn(
+          kReliableChannelLabel,
+          ToRtcBinary(BuildPlayerProfile(entry.profile,
+                                         NextServerMessageSeq(connection->id),
+                                         LastClientMessageSeq(connection->id))));
     }
     for (const auto &entry : profiles) {
       if (entry.profile.client_id == connection->id) {
         continue;
       }
-      entry.connection->peer->SendOn(kReliableChannelLabel, self_payload);
+      entry.connection->peer->SendOn(
+          kReliableChannelLabel,
+          ToRtcBinary(BuildPlayerProfile(self_profile,
+                                         NextServerMessageSeq(entry.connection->id),
+                                         LastClientMessageSeq(entry.connection->id))));
     }
-    connection->peer->SendOn(kReliableChannelLabel, self_payload);
+    connection->peer->SendOn(
+        kReliableChannelLabel,
+        ToRtcBinary(BuildPlayerProfile(self_profile,
+                                       NextServerMessageSeq(connection->id),
+                                       LastClientMessageSeq(connection->id))));
     return;
   }
 
@@ -669,36 +972,73 @@ void SignalingStore::HandleClientMessage(const std::shared_ptr<ConnectionState> 
   }
 
   if (!handshake_complete) {
-    record_invalid();
+    record_invalid("unreliable_before_handshake");
     return;
   }
   if (closed) {
     return;
   }
 
-  if (message.size() > kMaxClientMessageBytes) {
-    record_invalid();
+  if (message_bytes.size() > kMaxClientMessageBytes) {
+    record_invalid("message_too_large");
+    return;
+  }
+
+  DecodedEnvelope envelope;
+  std::string envelope_error;
+  if (!DecodeEnvelope(message_bytes, envelope, envelope_error)) {
+    record_invalid("invalid_envelope");
+    return;
+  }
+
+  bool valid_seq = false;
+  {
+    std::scoped_lock lock(connection->mutex);
+    if (envelope.header.msg_seq > connection->last_client_msg_seq) {
+      connection->last_client_msg_seq = envelope.header.msg_seq;
+      connection->last_client_seq_ack = envelope.header.server_seq_ack;
+      valid_seq = true;
+    }
+  }
+  if (!valid_seq) {
+    record_invalid("invalid_sequence");
+    return;
+  }
+
+  if (envelope.header.protocol_version != kProtocolVersion) {
+    record_invalid("protocol_mismatch");
     return;
   }
 
   if (!input_limiter_.AllowNow(connection->id)) {
-    record_rate_limit();
+    record_rate_limit("input_rate_limit");
     return;
   }
 
-  Ping ping;
-  std::string ping_error;
-  if (ParsePing(message, ping, ping_error)) {
+  if (envelope.header.msg_type == MessageType::Ping) {
+    Ping ping;
+    std::string ping_error;
+    if (!ParsePingPayload(envelope.payload, ping, ping_error)) {
+      record_invalid("invalid_ping_payload");
+      return;
+    }
     Pong pong;
     pong.client_time_ms = ping.client_time_ms;
-    connection->peer->SendOn(kUnreliableChannelLabel, BuildPong(pong));
+    const auto seq = NextServerMessageSeq(connection->id);
+    const auto ack = LastClientMessageSeq(connection->id);
+    connection->peer->SendOn(kUnreliableChannelLabel, ToRtcBinary(BuildPong(pong, seq, ack)));
+    return;
+  }
+
+  if (envelope.header.msg_type != MessageType::InputCmd) {
+    record_invalid("unexpected_type");
     return;
   }
 
   InputCmd cmd;
   std::string error;
-  if (!ParseInputCmd(message, cmd, error)) {
-    record_invalid();
+  if (!ParseInputCmdPayload(envelope.payload, cmd, error)) {
+    record_invalid("invalid_input_cmd");
     return;
   }
 
@@ -717,6 +1057,6 @@ void SignalingStore::HandleClientMessage(const std::shared_ptr<ConnectionState> 
   }
 
   if (invalid_seq) {
-    record_invalid();
+    record_invalid("non_monotonic_input_seq");
   }
 }

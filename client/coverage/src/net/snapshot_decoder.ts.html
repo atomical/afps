@@ -30,9 +30,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">49.2% </span>
+                <span class="strong">96.82% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>31/63</span>
+                <span class='fraction'>61/63</span>
             </div>
         
             
@@ -147,37 +147,37 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">21x</span>
-<span class="cline-any cline-yes">21x</span>
+<span class="cline-any cline-yes">28x</span>
+<span class="cline-any cline-yes">28x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">11x</span>
-<span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">17x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">6x</span>
-<span class="cline-any cline-yes">11x</span>
-<span class="cline-any cline-yes">11x</span>
-<span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">17x</span>
+<span class="cline-any cline-yes">17x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">9x</span>
 <span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">6x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -248,18 +248,18 @@ export class SnapshotDecoder {
       type: 'StateSnapshot',
       serverTick: message.serverTick,
       lastProcessedInputSeq: message.lastProcessedInputSeq,
-      posX: mask &amp; SNAPSHOT_MASK_POS_X ? (message.posX ?? <span class="branch-1 cbranch-no" title="branch not covered" >base.posX) : <span class="branch-1 cbranch-no" title="branch not covered" >b</span>ase.posX,</span>
-      posY: mask &amp; SNAPSHOT_MASK_POS_Y ? (<span class="branch-0 cbranch-no" title="branch not covered" >message.posY ?? base.posY) : b</span>ase.posY,
-      posZ: mask &amp; SNAPSHOT_MASK_POS_Z ? (<span class="branch-0 cbranch-no" title="branch not covered" >message.posZ ?? base.posZ) : b</span>ase.posZ,
-      velX: mask &amp; SNAPSHOT_MASK_VEL_X ? (<span class="branch-0 cbranch-no" title="branch not covered" >message.velX ?? base.velX) : b</span>ase.velX,
-      velY: mask &amp; SNAPSHOT_MASK_VEL_Y ? (message.velY ?? <span class="branch-1 cbranch-no" title="branch not covered" >base.velY) : <span class="branch-1 cbranch-no" title="branch not covered" >b</span>ase.velY,</span>
-      velZ: mask &amp; SNAPSHOT_MASK_VEL_Z ? (<span class="branch-0 cbranch-no" title="branch not covered" >message.velZ ?? base.velZ) : b</span>ase.velZ,
+      posX: mask &amp; SNAPSHOT_MASK_POS_X ? (message.posX ?? base.posX) : <span class="branch-1 cbranch-no" title="branch not covered" >base.posX,</span>
+      posY: mask &amp; SNAPSHOT_MASK_POS_Y ? (message.posY ?? base.posY) : base.posY,
+      posZ: mask &amp; SNAPSHOT_MASK_POS_Z ? (message.posZ ?? base.posZ) : base.posZ,
+      velX: mask &amp; SNAPSHOT_MASK_VEL_X ? (message.velX ?? base.velX) : base.velX,
+      velY: mask &amp; SNAPSHOT_MASK_VEL_Y ? (message.velY ?? base.velY) : base.velY,
+      velZ: mask &amp; SNAPSHOT_MASK_VEL_Z ? (message.velZ ?? base.velZ) : base.velZ,
       weaponSlot:
-        mask &amp; SNAPSHOT_MASK_WEAPON_SLOT ? (<span class="branch-0 cbranch-no" title="branch not covered" >message.weaponSlot ?? base.weaponSlot) : b</span>ase.weaponSlot,
-      dashCooldown: mask &amp; SNAPSHOT_MASK_DASH_COOLDOWN ? (<span class="branch-0 cbranch-no" title="branch not covered" >message.dashCooldown ?? base.dashCooldown) : b</span>ase.dashCooldown,
-      health: mask &amp; SNAPSHOT_MASK_HEALTH ? (<span class="branch-0 cbranch-no" title="branch not covered" >message.health ?? base.health) : b</span>ase.health,
-      kills: mask &amp; SNAPSHOT_MASK_KILLS ? (<span class="branch-0 cbranch-no" title="branch not covered" >message.kills ?? base.kills) : b</span>ase.kills,
-      deaths: mask &amp; SNAPSHOT_MASK_DEATHS ? (<span class="branch-0 cbranch-no" title="branch not covered" >message.deaths ?? base.deaths) : b</span>ase.deaths,
+        mask &amp; SNAPSHOT_MASK_WEAPON_SLOT ? (message.weaponSlot ?? base.weaponSlot) : base.weaponSlot,
+      dashCooldown: mask &amp; SNAPSHOT_MASK_DASH_COOLDOWN ? (message.dashCooldown ?? base.dashCooldown) : base.dashCooldown,
+      health: mask &amp; SNAPSHOT_MASK_HEALTH ? (message.health ?? base.health) : base.health,
+      kills: mask &amp; SNAPSHOT_MASK_KILLS ? (message.kills ?? base.kills) : base.kills,
+      deaths: mask &amp; SNAPSHOT_MASK_DEATHS ? (message.deaths ?? base.deaths) : base.deaths,
       clientId: message.clientId ?? base.clientId
     };
   }
@@ -271,7 +271,7 @@ export class SnapshotDecoder {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-02-03T18:24:39.706Z
+                at 2026-02-03T22:32:21.078Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

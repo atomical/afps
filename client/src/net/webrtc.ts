@@ -1,14 +1,17 @@
 import {
   buildClientHello as buildClientHelloMessage,
-  parseGameEvent,
-  parsePlayerProfile,
-  parsePong,
-  parseServerHello,
-  parseSnapshotMessage,
+  decodeEnvelope,
+  parseGameEventPayload,
+  parsePlayerProfilePayload,
+  parsePongPayload,
+  parseServerHelloPayload,
+  parseStateSnapshotDeltaPayload,
+  parseStateSnapshotPayload,
+  MessageType,
   PROTOCOL_VERSION,
   type GameEvent,
   type PlayerProfile,
-  type Pong,
+  type PongMessage,
   type StateSnapshot
 } from './protocol';
 import { SnapshotDecoder } from './snapshot_decoder';
@@ -30,9 +33,16 @@ interface WebRtcConnectOptions {
   pollIntervalMs?: number;
   connectTimeoutMs?: number;
   timers?: TimerLike;
-  buildClientHello?: (sessionToken: string, connectionId: string) => string;
+  buildClientHello?: (
+    sessionToken: string,
+    connectionId: string,
+    build?: string,
+    profile?: { nickname?: string; characterId?: string },
+    msgSeq?: number,
+    serverSeqAck?: number
+  ) => Uint8Array;
   onSnapshot?: (snapshot: StateSnapshot) => void;
-  onPong?: (pong: Pong) => void;
+  onPong?: (pong: PongMessage) => void;
   onGameEvent?: (event: GameEvent) => void;
   onPlayerProfile?: (profile: PlayerProfile) => void;
 }
@@ -171,45 +181,85 @@ export const createWebRtcConnector = ({
       resolveServerHello = resolve;
     });
     const snapshotDecoder = new SnapshotDecoder();
-
-    const handleMessage = (message: { data: string | ArrayBuffer }) => {
-      if (typeof message.data !== 'string') {
-        return;
-      }
-      const serverHello = parseServerHello(message.data);
-      if (serverHello) {
-        resolveServerHello?.(serverHello);
-        resolveServerHello = null;
-        return;
-      }
-      const profile = parsePlayerProfile(message.data);
-      if (profile) {
-        onPlayerProfile?.(profile);
-        return;
-      }
-      logger.info(`dc: ${message.data}`);
+    let clientMsgSeq = 0;
+    let serverSeqAck = 0;
+    const nextClientSeq = () => {
+      clientMsgSeq += 1;
+      return clientMsgSeq;
     };
+    const noteServerSeq = (seq: number) => {
+      if (seq > serverSeqAck) {
+        serverSeqAck = seq;
+      }
+    };
+    const getServerSeqAck = () => serverSeqAck;
 
-    const handleSnapshot = (message: { data: string | ArrayBuffer }) => {
-      if (typeof message.data !== 'string') {
+    const handleMessage = (message: { data: string | ArrayBuffer | Uint8Array }) => {
+      if (typeof message.data === 'string') {
         return;
       }
-      const snapshotMessage = parseSnapshotMessage(message.data);
-      if (snapshotMessage) {
-        const snapshot = snapshotDecoder.apply(snapshotMessage);
-        if (snapshot) {
-          onSnapshot?.(snapshot);
+      const envelope = decodeEnvelope(message.data);
+      if (!envelope) {
+        return;
+      }
+      noteServerSeq(envelope.header.msgSeq);
+      if (envelope.header.msgType === MessageType.ServerHello) {
+        const serverHello = parseServerHelloPayload(envelope.payload);
+        if (serverHello) {
+          resolveServerHello?.(serverHello);
+          resolveServerHello = null;
         }
         return;
       }
-      const gameEvent = parseGameEvent(message.data);
-      if (gameEvent) {
-        onGameEvent?.(gameEvent);
+      if (envelope.header.msgType === MessageType.PlayerProfile) {
+        const profile = parsePlayerProfilePayload(envelope.payload);
+        if (profile) {
+          onPlayerProfile?.(profile);
+        }
+      }
+    };
+
+    const handleSnapshot = (message: { data: string | ArrayBuffer | Uint8Array }) => {
+      if (typeof message.data === 'string') {
         return;
       }
-      const pong = parsePong(message.data);
-      if (pong) {
-        onPong?.(pong);
+      const envelope = decodeEnvelope(message.data);
+      if (!envelope) {
+        return;
+      }
+      noteServerSeq(envelope.header.msgSeq);
+      if (envelope.header.msgType === MessageType.StateSnapshot) {
+        const snapshotMessage = parseStateSnapshotPayload(envelope.payload);
+        if (snapshotMessage) {
+          const snapshot = snapshotDecoder.apply(snapshotMessage);
+          if (snapshot) {
+            onSnapshot?.(snapshot);
+          }
+        }
+        return;
+      }
+      if (envelope.header.msgType === MessageType.StateSnapshotDelta) {
+        const snapshotMessage = parseStateSnapshotDeltaPayload(envelope.payload);
+        if (snapshotMessage) {
+          const snapshot = snapshotDecoder.apply(snapshotMessage);
+          if (snapshot) {
+            onSnapshot?.(snapshot);
+          }
+        }
+        return;
+      }
+      if (envelope.header.msgType === MessageType.GameEvent) {
+        const gameEvent = parseGameEventPayload(envelope.payload);
+        if (gameEvent) {
+          onGameEvent?.(gameEvent);
+        }
+        return;
+      }
+      if (envelope.header.msgType === MessageType.Pong) {
+        const pong = parsePongPayload(envelope.payload);
+        if (pong) {
+          onPong?.(pong);
+        }
       }
     };
 
@@ -265,6 +315,9 @@ export const createWebRtcConnector = ({
 
     peerConnection.ondatachannel = (event) => {
       const channel = event.channel;
+      if ('binaryType' in channel) {
+        (channel as RTCDataChannel).binaryType = 'arraybuffer';
+      }
       if (channel.label === RELIABLE_LABEL) {
         reliableChannel = channel;
         channel.onmessage = handleMessage;
@@ -297,10 +350,16 @@ export const createWebRtcConnector = ({
       reliableChannel = channel;
 
       await waitForDataChannelOpen(channel, timers, connectTimeoutMs);
-      const clientHello = buildClientHello(session.sessionToken, connection.connectionId);
-      if (clientHello) {
-        channel.send(clientHello);
-      }
+      channel.send(
+        buildClientHello(
+          session.sessionToken,
+          connection.connectionId,
+          'dev',
+          undefined,
+          nextClientSeq(),
+          getServerSeqAck()
+        )
+      );
 
       const serverHello = await waitForServerHello(serverHelloPromise, timers, connectTimeoutMs);
       if (serverHello.protocolVersion !== PROTOCOL_VERSION) {
@@ -321,6 +380,8 @@ export const createWebRtcConnector = ({
         peerConnection,
         reliableChannel: channel,
         unreliableChannel: unreliable,
+        nextClientMessageSeq: nextClientSeq,
+        getServerSeqAck,
         close
       };
     } catch (error) {

@@ -47,5 +47,3 @@ export const buildInputCmd = (inputSeq: number, sample: InputSample): InputCmd =
   shield: Boolean(sample.shield),
   shockwave: Boolean(sample.shockwave)
 });
-
-export const serializeInputCmd = (cmd: InputCmd) => JSON.stringify(cmd);

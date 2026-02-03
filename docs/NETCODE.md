@@ -1,6 +1,6 @@
 # Netcode Overview
 
-This document explains the current M0 netcode flow: signaling, handshake, input, prediction, snapshots, and metrics.
+This document explains the current netcode flow: signaling, handshake, input, prediction, snapshots, and metrics.
 
 ---
 
@@ -17,12 +17,23 @@ This document explains the current M0 netcode flow: signaling, handshake, input,
    - Client waits for both channels to open.
 
 3. **Handshake**
-   - Client sends `ClientHello` on **reliable**.
+   - Client sends `ClientHello` (FlatBuffers payload) on **reliable**.
    - Server validates the hello and responds with `ServerHello` on **reliable**.
 
 4. **Gameplay**
    - Client sends `InputCmd` and `Ping` on **unreliable**.
    - Server sends `StateSnapshot` keyframes, `StateSnapshotDelta` updates, `GameEvent`, and `Pong` on **unreliable**.
+
+---
+
+## Envelope sequencing
+
+Every DataChannel message includes a binary header:
+
+- `msgSeq`: monotonically increasing client sequence.
+- `serverSeqAck`: last seen server `msgSeq`.
+
+The server rejects non-monotonic sequences and logs abuse events.
 
 ---
 
@@ -33,6 +44,8 @@ This document explains the current M0 netcode flow: signaling, handshake, input,
 - Client prediction uses the server tick rate after `ServerHello`.
 - Clients can read `snapshotKeyframeInterval` from `ServerHello` for diagnostics.
 
+---
+
 ## Snapshots
 
 - The server sends a full `StateSnapshot` every 5 snapshots by default (keyframe interval, configurable on the server).
@@ -40,22 +53,12 @@ This document explains the current M0 netcode flow: signaling, handshake, input,
 - The client applies deltas to the last keyframe; if the keyframe is missing, the delta is ignored.
   - Deltas with `mask: 0` are valid and indicate no field changes for that tick.
 
-Example (keyframe interval = 5):
-```json
-{ "type": "StateSnapshot", "serverTick": 100, "lastProcessedInputSeq": 40, "posX": 1, "posY": 2, "posZ": 0.5, "velX": 0, "velY": 0, "velZ": 0, "health": 100, "kills": 0, "deaths": 0 }
-{ "type": "StateSnapshotDelta", "serverTick": 101, "baseTick": 100, "lastProcessedInputSeq": 41, "mask": 1, "posX": 1.2 }
-{ "type": "StateSnapshotDelta", "serverTick": 102, "baseTick": 100, "lastProcessedInputSeq": 42, "mask": 17, "posX": 1.3, "velY": -0.2 }
-{ "type": "StateSnapshotDelta", "serverTick": 103, "baseTick": 100, "lastProcessedInputSeq": 43, "mask": 0 }
-{ "type": "StateSnapshotDelta", "serverTick": 104, "baseTick": 100, "lastProcessedInputSeq": 44, "mask": 8, "velX": 0.1 }
-{ "type": "StateSnapshot", "serverTick": 105, "lastProcessedInputSeq": 45, "posX": 1.4, "posY": 2, "posZ": 0.5, "velX": 0.1, "velY": -0.2, "velZ": 0, "health": 100, "kills": 0, "deaths": 0 }
-```
-
 ---
 
 ## Input sampling & sending
 
 - The client samples input every frame and emits an `InputCmd` per simulation tick.
-- Input commands are serialized to JSON and sent over the **unreliable** channel.
+- Input commands are serialized via FlatBuffers and sent over the **unreliable** channel.
 - `inputSeq` is strictly monotonic per connection and used for reconciliation.
 
 ---
@@ -97,11 +100,10 @@ Example (keyframe interval = 5):
   - `VITE_WASM_SIM_URL=/wasm/afps_sim.js`
 - Optional parity check on startup:
   - `VITE_WASM_SIM_PARITY=1`
+- Deterministic replay fixtures live in `shared/sim/replays/`.
 
 ---
 
-## Known gaps (M0)
+## Known gaps
 
-- No server-side rewind or lag compensation yet.
-- Snapshots include `posX/posY/posZ` + `velX/velY/velZ`, but still only for the local player.
-- Dash, grapple, shield, and shockwave are implemented in the shared sim; grapple uses anchor-based pull but has no snapshot/rope state yet, and shield damage reduction is applied server-side.
+- Grapple rope state is not replicated yet (client predicts rope locally).

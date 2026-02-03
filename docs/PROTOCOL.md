@@ -1,12 +1,12 @@
 # AFPS Protocol (HTTP + WebRTC DataChannels)
 
-This document describes the current signaling and gameplay protocol in M0. All payloads are JSON.
+This document describes the current signaling and gameplay protocol. Signaling is JSON over HTTPS; gameplay messages are FlatBuffers in a binary envelope over DataChannels.
 
 ---
 
 ## Versioning & constants
 
-- Protocol version: `2`
+- Protocol version: `4`
 - DataChannel labels:
   - Reliable: `afps_reliable`
   - Unreliable: `afps_unreliable`
@@ -15,13 +15,36 @@ This document describes the current signaling and gameplay protocol in M0. All p
 - Snapshot keyframe interval: `5` snapshots (configurable via `--snapshot-keyframe-interval`)
 - Max DataChannel message size: `4096` bytes
 - Max pending inputs per connection: `128`
-- ClientHello attempts: `3`
+- FlatBuffers schema: `shared/schema/afps_protocol.fbs`
 
 ---
 
-## Signaling HTTP API
+## DataChannel envelope (binary)
 
-Base URL = `VITE_SIGNALING_URL` (HTTPS). All requests and responses are JSON.
+All DataChannel messages use this header (little-endian), followed by a FlatBuffers payload:
+
+| Offset | Size | Field |
+| --- | --- | --- |
+| 0 | 4 | Magic `"AFPS"` |
+| 4 | 2 | `protocolVersion` (u16) |
+| 6 | 2 | `msgType` (u16) |
+| 8 | 4 | `payloadBytes` (u32) |
+| 12 | 4 | `msgSeq` (u32) |
+| 16 | 4 | `serverSeqAck` (u32) |
+
+`payloadBytes` is the length of the FlatBuffers root object that follows immediately after the header.
+
+### Sequencing
+
+- `msgSeq` must monotonically increase per client connection.
+- `serverSeqAck` echoes the last seen server `msgSeq`.
+- The server rejects non-monotonic client sequences and logs abuse events.
+
+---
+
+## Signaling HTTP API (JSON)
+
+Base URL = `VITE_SIGNALING_URL` (HTTPS by default). All requests and responses are JSON.
 
 ### POST /session
 
@@ -55,10 +78,15 @@ Response:
 {
   "connectionId": "<hex>",
   "offer": { "type": "offer", "sdp": "..." },
-  "iceServers": [ { "urls": ["stun:..."] } ],
+  "iceServers": [
+    { "urls": ["stun:..."] },
+    { "urls": ["turn:turn.example.com:3478"], "username": "<turn-user>", "credential": "<turn-pass>" }
+  ],
   "expiresAt": "2026-01-31T12:34:56Z"
 }
 ```
+TURN entries include `username` + `credential` (short-lived TURN REST password). `credentialType` may be supplied
+as `"password"` by the server.
 
 ### POST /webrtc/answer
 
@@ -120,210 +148,81 @@ Response:
 
 ---
 
-## DataChannel handshake (reliable)
+## DataChannel handshake (FlatBuffers payloads)
 
-### ClientHello (client -> server)
+### ClientHello (client → server, reliable)
 
-```json
-{
-  "type": "ClientHello",
-  "protocolVersion": 2,
-  "sessionToken": "<token>",
-  "connectionId": "<id>",
-  "build": "dev"
-}
-```
+Fields (see schema):
+- `protocolVersion`
+- `sessionToken`
+- `connectionId`
+- `build`
 
 Validation rules:
-- `protocolVersion` must equal 2.
-- `sessionToken` and `connectionId` must match the signaling session.
+- `protocolVersion` must match server expectations.
+- `sessionToken` and `connectionId` must match signaling session.
 - `build` is optional but if present must be non-empty.
 
-### ServerHello (server -> client)
+### ServerHello (server → client, reliable)
 
-```json
-{
-  "type": "ServerHello",
-  "protocolVersion": 2,
-  "connectionId": "<id>",
-  "clientId": "<id>",
-  "serverTickRate": 60,
-  "snapshotRate": 20,
-  "snapshotKeyframeInterval": 5,
-  "motd": "...",
-  "connectionNonce": "<hex>"
-}
-```
+Fields (see schema):
+- `protocolVersion`
+- `connectionId`
+- `clientId`
+- `serverTickRate`
+- `snapshotRate`
+- `snapshotKeyframeInterval`
+- `motd` (optional)
+- `connectionNonce` (optional)
 
-`clientId`, `motd`, `connectionNonce`, and `snapshotKeyframeInterval` may be omitted.
-If present, `snapshotKeyframeInterval` must be a non-negative integer.
+### Error (server → client, reliable)
 
-### Protocol error
-
-On invalid handshake, the server may send:
-```json
-{ "type": "Error", "code": "<code>", "message": "<detail>" }
-```
+Fields:
+- `code`
+- `message`
 
 ---
 
-## Gameplay messages (unreliable)
+## Gameplay messages (FlatBuffers payloads)
 
-### InputCmd (client -> server)
+### InputCmd (client → server, unreliable)
 
-```json
-{
-  "type": "InputCmd",
-  "inputSeq": 123,
-  "moveX": 0.0,
-  "moveY": 1.0,
-  "lookDeltaX": 0.0,
-  "lookDeltaY": 0.0,
-  "viewYaw": 0.0,
-  "viewPitch": 0.0,
-  "weaponSlot": 0,
-  "jump": false,
-  "fire": false,
-  "sprint": false,
-  "dash": false,
-  "grapple": false,
-  "shield": false,
-  "shockwave": false
-}
-```
+Fields include:
+- `inputSeq` (monotonic)
+- `moveX`, `moveY`
+- `lookDeltaX`, `lookDeltaY`
+- `viewYaw`, `viewPitch`
+- `weaponSlot`, `jump`, `fire`, `sprint`, `dash`, `grapple`, `shield`, `shockwave`
 
-Validation rules:
-- `inputSeq` must be an integer >= 0 and strictly increasing per connection.
-- `moveX`, `moveY` must be finite and in [-1, 1].
-- `lookDeltaX`, `lookDeltaY` must be finite numbers.
-- `viewYaw`, `viewPitch` must be finite numbers when present.
-- `weaponSlot` must be an integer >= 0 when present.
-- `jump`, `fire`, `sprint`, `dash`, `grapple`, `shield`, `shockwave` must be booleans.
+### StateSnapshot / StateSnapshotDelta (server → client, unreliable)
 
-### Ping (client -> server)
+Snapshots include:
+- `serverTick`, `lastProcessedInputSeq`
+- `posX/posY/posZ`, `velX/velY/velZ`
+- `weaponSlot`, `dashCooldown`, `health`, `kills`, `deaths`
 
-```json
-{ "type": "Ping", "clientTimeMs": 12345.0 }
-```
+Deltas include a `mask` describing which fields are present.
 
-`clientTimeMs` must be finite and >= 0.
+### GameEvent (server → client, unreliable)
 
-### Pong (server -> client)
+Examples:
+- `HitConfirmed`
+- `ProjectileSpawn`
+- `ProjectileRemove`
 
-```json
-{ "type": "Pong", "clientTimeMs": 12345.0 }
-```
+### Ping / Pong (client ↔ server, unreliable)
 
-### GameEvent (server -> client)
+- `Ping` carries `clientTimeMs`; `Pong` echoes it.
 
-Hit confirmation:
-```json
-{ "type": "GameEvent", "event": "HitConfirmed", "targetId": "<id>", "damage": 12.5, "killed": true }
-```
+### PlayerProfile (server → client, reliable)
 
-Projectile spawn:
-```json
-{
-  "type": "GameEvent",
-  "event": "ProjectileSpawn",
-  "ownerId": "<id>",
-  "projectileId": 7,
-  "posX": 1.0,
-  "posY": 2.0,
-  "posZ": 3.0,
-  "velX": 4.0,
-  "velY": 5.0,
-  "velZ": 6.0,
-  "ttl": 0.5
-}
-```
+- `clientId`, `displayName`, `characterId`, `team`
 
-Projectile remove:
-```json
-{ "type": "GameEvent", "event": "ProjectileRemove", "ownerId": "<id>", "projectileId": 7 }
-```
+---
 
-Validation rules:
-- `event` must be a known event name (`HitConfirmed`, `ProjectileSpawn`, `ProjectileRemove`).
-- For `HitConfirmed`:
-  - `targetId` is optional; if present it must be a non-empty string.
-  - `damage` is optional; if present it must be a finite number >= 0.
-  - `killed` is optional; if present it must be a boolean.
-- For `ProjectileSpawn`:
-  - `ownerId` must be a non-empty string.
-  - `projectileId` is optional; if present it must be an integer >= 0.
-  - `posX`, `posY`, `posZ`, `velX`, `velY`, `velZ` must be finite numbers.
-  - `ttl` must be a finite number >= 0.
-- For `ProjectileRemove`:
-  - `projectileId` must be an integer >= 0.
-  - `ownerId` is optional; if present it must be a non-empty string.
+## Validation
 
-### StateSnapshot (server -> client)
-
-```json
-{
-  "type": "StateSnapshot",
-  "serverTick": 900,
-  "lastProcessedInputSeq": 120,
-  "posX": 1.5,
-  "posY": -2.0,
-  "posZ": 0.75,
-  "velX": 0.25,
-  "velY": -0.75,
-  "velZ": 0.5,
-  "dashCooldown": 0.25,
-  "health": 100,
-  "kills": 0,
-  "deaths": 0,
-  "clientId": "<id>"
-}
-```
-
-Validation rules:
-- `serverTick` must be an integer >= 0.
-- `lastProcessedInputSeq` must be an integer >= -1.
-- `posX`, `posY`, `posZ` must be finite numbers.
-- `velX`, `velY`, `velZ` must be finite numbers.
-- `dashCooldown` must be a finite number >= 0.
-- `health` must be a finite number >= 0.
-- `kills`, `deaths` must be integers >= 0.
-- `clientId` is optional.
-
-The server sends full `StateSnapshot` keyframes every `5` snapshots. Deltas in between reference the
-last keyframe via `StateSnapshotDelta`.
-
-### StateSnapshotDelta (server -> client)
-
-```json
-{
-  "type": "StateSnapshotDelta",
-  "serverTick": 905,
-  "baseTick": 900,
-  "lastProcessedInputSeq": 121,
-  "mask": 17,
-  "posX": 1.75,
-  "velY": -0.5,
-  "clientId": "<id>"
-}
-```
-
-Mask bitfield (`mask`):
-- `1` (1 << 0): `posX`
-- `2` (1 << 1): `posY`
-- `4` (1 << 2): `posZ`
-- `8` (1 << 3): `velX`
-- `16` (1 << 4): `velY`
-- `32` (1 << 5): `velZ`
-- `64` (1 << 6): `dashCooldown`
-- `128` (1 << 7): `health`
-- `256` (1 << 8): `kills`
-- `512` (1 << 9): `deaths`
-
-Validation rules:
-- `serverTick` must be an integer >= 0.
-- `baseTick` must be an integer >= 0 and <= `serverTick`.
-- `lastProcessedInputSeq` must be an integer >= -1.
-- `mask` must be an integer containing only the known bits above.
-- Fields are present **iff** their bit is set in `mask`; when present they must be finite numbers.
-- `mask` may be `0` to indicate no field changes.
-- `clientId` is optional.
+- Envelope header must match magic, version, and payload length.
+- Payloads are verified with FlatBuffers verifiers before parsing.
+- Numerical inputs must be finite and within expected ranges.
+- Input sequences are monotonic and bounded by rate limits.

@@ -1,10 +1,33 @@
 namespace afps.protocol;
 
-// FlatBuffers schema draft mirroring the current JSON protocol payloads.
-// TODO: Add Envelope + root_type when we migrate off JSON framing.
+enum SchemaVersion:ushort {
+  V1 = 1
+}
+
+enum MessageType:ushort {
+  ClientHello = 1,
+  ServerHello = 2,
+  JoinRequest = 3,
+  JoinAccept = 4,
+  InputCmd = 5,
+  StateSnapshot = 6,
+  StateSnapshotDelta = 7,
+  GameEvent = 8,
+  Ping = 9,
+  Pong = 10,
+  PlayerProfile = 11,
+  Error = 12,
+  Disconnect = 13
+}
+
+enum GameEventType:byte {
+  HitConfirmed = 0,
+  ProjectileSpawn = 1,
+  ProjectileRemove = 2
+}
 
 table ClientHello {
-  protocol_version:int;
+  protocol_version:ushort;
   session_token:string;
   connection_id:string;
   build:string;
@@ -13,14 +36,23 @@ table ClientHello {
 }
 
 table ServerHello {
-  protocol_version:int;
+  protocol_version:ushort;
   connection_id:string;
   client_id:string;
-  server_tick_rate:int;
-  snapshot_rate:int;
-  snapshot_keyframe_interval:int;
+  server_tick_rate:ushort;
+  snapshot_rate:ushort;
+  snapshot_keyframe_interval:ushort;
   motd:string;
   connection_nonce:string;
+}
+
+table JoinRequest {
+  nickname:string;
+  character_id:string;
+}
+
+table JoinAccept {
+  client_id:string;
 }
 
 table InputCmd {
@@ -58,6 +90,25 @@ table StateSnapshot {
   deaths:int;
 }
 
+table StateSnapshotDelta {
+  server_tick:int;
+  base_tick:int;
+  last_processed_input_seq:int;
+  mask:int;
+  client_id:string;
+  pos_x:double;
+  pos_y:double;
+  pos_z:double;
+  vel_x:double;
+  vel_y:double;
+  vel_z:double;
+  weapon_slot:int;
+  dash_cooldown:double;
+  health:double;
+  kills:int;
+  deaths:int;
+}
+
 table PlayerProfile {
   client_id:string;
   nickname:string;
@@ -65,7 +116,7 @@ table PlayerProfile {
 }
 
 table GameEvent {
-  event:string;
+  event_type:GameEventType;
   target_id:string;
   owner_id:string;
   projectile_id:int;
@@ -89,6 +140,11 @@ table Pong {
 }
 
 table Error {
+  code:string;
+  message:string;
+}
+
+table Disconnect {
   code:string;
   message:string;
 }

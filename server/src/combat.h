@@ -94,6 +94,7 @@ constexpr double kMaxHealth = 100.0;
 constexpr double kRespawnDelaySeconds = 3.0;
 constexpr double kPlayerHeight = 1.7;
 constexpr double kPlayerEyeHeight = 1.6;
+constexpr double kShieldBlockDot = 0.0;
 
 CombatState CreateCombatState();
 bool ApplyDamage(CombatState &target, CombatState *attacker, double damage);
@@ -107,6 +108,10 @@ bool UpdateRespawn(CombatState &state, double dt);
 
 ViewAngles SanitizeViewAngles(double yaw, double pitch);
 Vec3 ViewDirection(const ViewAngles &angles);
+bool IsShieldFacing(const Vec3 &target_pos,
+                    const ViewAngles &target_view,
+                    const Vec3 &source_pos,
+                    double min_dot = kShieldBlockDot);
 
 HitResult ResolveHitscan(const std::string &shooter_id,
                          const std::unordered_map<std::string, PoseHistory> &histories,
@@ -133,6 +138,7 @@ std::vector<ShockwaveHit> ComputeShockwaveHits(
     double radius,
     double max_impulse,
     double max_damage,
+    const afps::sim::SimConfig &config,
     const std::unordered_map<std::string, afps::sim::PlayerState> &players,
     const std::string &ignore_id);
 

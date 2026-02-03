@@ -99,6 +99,20 @@ ParseResult ParseArgs(int argc, const char *const *argv) {
       if (!value.empty()) {
         result.config.ice_servers.push_back(value);
       }
+    } else if (arg == "--turn-secret") {
+      auto value = require_value("--turn-secret");
+      result.config.turn_secret = value;
+    } else if (arg == "--turn-user") {
+      auto value = require_value("--turn-user");
+      result.config.turn_user = value;
+    } else if (arg == "--turn-ttl") {
+      auto value = require_value("--turn-ttl");
+      if (!value.empty()) {
+        const int ttl = ParseNonNegativeInt(value, "turn ttl", result.errors);
+        if (ttl >= 0) {
+          result.config.turn_ttl_seconds = ttl;
+        }
+      }
     } else if (arg == "--snapshot-keyframe-interval") {
       auto value = require_value("--snapshot-keyframe-interval");
       if (!value.empty()) {
@@ -136,6 +150,9 @@ std::vector<std::string> ValidateConfig(const ServerConfig &config) {
   }
   if (config.snapshot_keyframe_interval < 0) {
     errors.push_back("Snapshot keyframe interval must be >= 0");
+  }
+  if (!config.turn_secret.empty() && config.turn_ttl_seconds <= 0) {
+    errors.push_back("TURN TTL must be > 0 when --turn-secret is set");
   }
   return errors;
 }

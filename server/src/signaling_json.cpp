@@ -34,11 +34,18 @@ bool ReadString(const json &payload, const char *key, std::string &out, std::str
   return true;
 }
 
-json IceServersJson(const std::vector<std::string> &servers) {
+json IceServersJson(const std::vector<IceServerConfig> &servers) {
   json ice_servers = json::array();
-  for (const auto &url : servers) {
+  for (const auto &server : servers) {
     json entry;
-    entry["urls"] = json::array({url});
+    entry["urls"] = json::array({server.url});
+    if (!server.username.empty()) {
+      entry["username"] = server.username;
+    }
+    if (!server.credential.empty()) {
+      entry["credential"] = server.credential;
+      entry["credentialType"] = "password";
+    }
     ice_servers.push_back(entry);
   }
   return ice_servers;

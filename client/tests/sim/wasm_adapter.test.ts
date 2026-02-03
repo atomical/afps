@@ -125,4 +125,35 @@ describe('createWasmPredictionSim', () => {
     adapter.reset();
     expect(sim.reset).toHaveBeenCalled();
   });
+
+  it('clamps non-finite shield timers', () => {
+    const sim = makeSim();
+    sim.getState = vi.fn(() => ({
+      x: 0,
+      y: 0,
+      z: 0,
+      velX: 0,
+      velY: 0,
+      velZ: 0,
+      dashCooldown: 0,
+      shieldCooldown: Number.POSITIVE_INFINITY,
+      shieldTimer: Number.NaN,
+      shockwaveCooldown: 0
+    }));
+
+    const adapter = createWasmPredictionSim(sim);
+    expect(adapter.getState()).toEqual({
+      x: 0,
+      y: 0,
+      z: 0,
+      velX: 0,
+      velY: 0,
+      velZ: 0,
+      dashCooldown: 0,
+      shockwaveCooldown: 0,
+      shieldTimer: 0,
+      shieldCooldown: 0,
+      shieldActive: false
+    });
+  });
 });

@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
+import * as flatbuffers from 'flatbuffers';
 import { __test, createInputSender } from '../../src/net/input_sender';
+import { decodeEnvelope, MessageType } from '../../src/net/protocol';
+import { InputCmd } from '../../src/net/fbs/afps/protocol/input-cmd';
 import { FakeDataChannel } from './fakes';
 import type { InputSampler } from '../../src/input/sampler';
 
@@ -28,17 +31,31 @@ describe('input sender', () => {
     channel.readyState = 'open';
     const sampler = createSampler({ moveX: 1 });
     const onSend = vi.fn();
+    let msgSeq = 0;
 
-    const sender = createInputSender({ channel, sampler, onSend });
+    const sender = createInputSender({
+      channel,
+      sampler,
+      onSend,
+      nextMessageSeq: () => {
+        msgSeq += 1;
+        return msgSeq;
+      },
+      getServerSeqAck: () => 0
+    });
     expect(sender.sendOnce()).toBe(true);
     expect(sender.sendOnce()).toBe(true);
 
-    const first = JSON.parse(channel.sent[0] as string) as Record<string, unknown>;
-    const second = JSON.parse(channel.sent[1] as string) as Record<string, unknown>;
+    const firstEnvelope = decodeEnvelope(channel.sent[0] as Uint8Array);
+    const secondEnvelope = decodeEnvelope(channel.sent[1] as Uint8Array);
+    expect(firstEnvelope?.header.msgType).toBe(MessageType.InputCmd);
+    expect(secondEnvelope?.header.msgType).toBe(MessageType.InputCmd);
+    const first = InputCmd.getRootAsInputCmd(new flatbuffers.ByteBuffer(firstEnvelope!.payload));
+    const second = InputCmd.getRootAsInputCmd(new flatbuffers.ByteBuffer(secondEnvelope!.payload));
 
-    expect(first.inputSeq).toBe(1);
-    expect(second.inputSeq).toBe(2);
-    expect(first.moveX).toBe(1);
+    expect(first.inputSeq()).toBe(1);
+    expect(second.inputSeq()).toBe(2);
+    expect(first.moveX()).toBe(1);
     expect(onSend).toHaveBeenCalledTimes(2);
     expect(onSend).toHaveBeenCalledWith(expect.objectContaining({ inputSeq: 1 }));
   });
@@ -53,6 +70,8 @@ describe('input sender', () => {
     const sender = createInputSender({
       channel,
       sampler,
+      nextMessageSeq: () => 1,
+      getServerSeqAck: () => 0,
       logger: { info: () => {}, warn, error: () => {} },
       onSend
     });
@@ -85,7 +104,14 @@ describe('input sender', () => {
       clearTimeout: () => {}
     };
 
-    const sender = createInputSender({ channel, sampler, tickRate: 0, timers });
+    const sender = createInputSender({
+      channel,
+      sampler,
+      tickRate: 0,
+      timers,
+      nextMessageSeq: () => 1,
+      getServerSeqAck: () => 0
+    });
     sender.start();
     sender.start();
 
@@ -107,6 +133,8 @@ describe('input sender', () => {
     const sender = createInputSender({
       channel,
       sampler,
+      nextMessageSeq: () => 1,
+      getServerSeqAck: () => 0,
       timers: { setInterval: () => 1, clearInterval, setTimeout: () => 0, clearTimeout: () => {} }
     });
 

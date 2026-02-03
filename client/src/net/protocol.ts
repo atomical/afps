@@ -1,4 +1,19 @@
-export const PROTOCOL_VERSION = 3;
+import * as flatbuffers from 'flatbuffers';
+import { ClientHello } from './fbs/afps/protocol/client-hello';
+import { Error as ProtocolError } from './fbs/afps/protocol/error';
+import { GameEvent as GameEventFbs } from './fbs/afps/protocol/game-event';
+import { GameEventType } from './fbs/afps/protocol/game-event-type';
+import { InputCmdT } from './fbs/afps/protocol/input-cmd';
+import { Ping } from './fbs/afps/protocol/ping';
+import { PlayerProfile as PlayerProfileFbs } from './fbs/afps/protocol/player-profile';
+import { Pong } from './fbs/afps/protocol/pong';
+import { ServerHello as ServerHelloFbs } from './fbs/afps/protocol/server-hello';
+import { StateSnapshot as StateSnapshotFbs } from './fbs/afps/protocol/state-snapshot';
+import { StateSnapshotDelta as StateSnapshotDeltaFbs } from './fbs/afps/protocol/state-snapshot-delta';
+import { MessageType } from './fbs/afps/protocol/message-type';
+import type { InputCmd } from './input_cmd';
+
+export const PROTOCOL_VERSION = 4;
 export const SNAPSHOT_MASK_POS_X = 1 << 0;
 export const SNAPSHOT_MASK_POS_Y = 1 << 1;
 export const SNAPSHOT_MASK_POS_Z = 1 << 2;
@@ -23,7 +38,23 @@ const SNAPSHOT_MASK_ALL =
   SNAPSHOT_MASK_DEATHS |
   SNAPSHOT_MASK_WEAPON_SLOT;
 
-export interface ClientHello {
+const MAGIC = new Uint8Array([0x41, 0x46, 0x50, 0x53]);
+const HEADER_BYTES = 20;
+
+export interface MessageHeader {
+  protocolVersion: number;
+  msgType: MessageType;
+  payloadBytes: number;
+  msgSeq: number;
+  serverSeqAck: number;
+}
+
+export interface DecodedEnvelope {
+  header: MessageHeader;
+  payload: Uint8Array;
+}
+
+export interface ClientHelloMessage {
   type: 'ClientHello';
   protocolVersion: number;
   sessionToken: string;
@@ -83,12 +114,12 @@ export interface StateSnapshotDelta {
   clientId?: string;
 }
 
-export interface Ping {
+export interface PingMessage {
   type: 'Ping';
   clientTimeMs: number;
 }
 
-export interface Pong {
+export interface PongMessage {
   type: 'Pong';
   clientTimeMs: number;
 }
@@ -98,6 +129,12 @@ export interface PlayerProfile {
   clientId: string;
   nickname: string;
   characterId: string;
+}
+
+export interface ProtocolErrorMessage {
+  type: 'Error';
+  code: string;
+  message: string;
 }
 
 export type GameEventName = 'HitConfirmed' | 'ProjectileSpawn' | 'ProjectileRemove';
@@ -135,124 +172,141 @@ export type GameEvent = HitConfirmedEvent | ProjectileSpawnEvent | ProjectileRem
 
 export type SnapshotMessage = StateSnapshot | StateSnapshotDelta;
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
+const isFiniteNumber = (value: number) => Number.isFinite(value);
 
-const readString = (value: unknown): string | null => (typeof value === 'string' && value.length > 0 ? value : null);
+const toUint8Array = (data: ArrayBuffer | Uint8Array) =>
+  data instanceof Uint8Array ? data : new Uint8Array(data);
 
-const readNumber = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+const isMessageType = (value: number): value is MessageType =>
+  value >= MessageType.ClientHello && value <= MessageType.Disconnect;
 
-const readInt = (value: unknown): number | null =>
-  typeof value === 'number' && Number.isInteger(value) ? value : null;
-
-const readBool = (value: unknown): boolean | null => (typeof value === 'boolean' ? value : null);
-
-const parseJsonPayload = (message: string): Record<string, unknown> | null => {
-  let payload: unknown;
-  try {
-    payload = JSON.parse(message);
-  } catch {
+export const decodeEnvelope = (data: ArrayBuffer | Uint8Array): DecodedEnvelope | null => {
+  const bytes = toUint8Array(data);
+  if (bytes.byteLength < HEADER_BYTES) {
     return null;
   }
-  return isRecord(payload) ? payload : null;
+  for (let i = 0; i < MAGIC.length; i += 1) {
+    if (bytes[i] !== MAGIC[i]) {
+      return null;
+    }
+  }
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const protocolVersion = view.getUint16(4, true);
+  const msgType = view.getUint16(6, true);
+  const payloadBytes = view.getUint32(8, true);
+  const msgSeq = view.getUint32(12, true);
+  const serverSeqAck = view.getUint32(16, true);
+  if (!isMessageType(msgType)) {
+    return null;
+  }
+  if (payloadBytes + HEADER_BYTES !== bytes.byteLength) {
+    return null;
+  }
+  return {
+    header: {
+      protocolVersion,
+      msgType,
+      payloadBytes,
+      msgSeq,
+      serverSeqAck
+    },
+    payload: bytes.slice(HEADER_BYTES)
+  };
 };
 
-const readMaskedNumber = (
-  payload: Record<string, unknown>,
-  key: string,
-  mask: number,
-  bit: number
-): { ok: boolean; value?: number } => {
-  if ((mask & bit) === 0) {
-    if (key in payload) {
-      return { ok: false };
-    }
-    return { ok: true };
+export const encodeEnvelope = (
+  msgType: MessageType,
+  payload: Uint8Array,
+  msgSeq: number,
+  serverSeqAck: number,
+  protocolVersion = PROTOCOL_VERSION
+) => {
+  const payloadBytes = payload.byteLength;
+  const buffer = new Uint8Array(HEADER_BYTES + payloadBytes);
+  buffer.set(MAGIC, 0);
+  const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  view.setUint16(4, protocolVersion, true);
+  view.setUint16(6, msgType, true);
+  view.setUint32(8, payloadBytes, true);
+  view.setUint32(12, msgSeq >>> 0, true);
+  view.setUint32(16, serverSeqAck >>> 0, true);
+  if (payloadBytes > 0) {
+    buffer.set(payload, HEADER_BYTES);
   }
-  const value = readNumber(payload[key]);
-  if (value === null) {
-    return { ok: false };
-  }
-  return { ok: true, value };
-};
-
-const readMaskedInt = (
-  payload: Record<string, unknown>,
-  key: string,
-  mask: number,
-  bit: number
-): { ok: boolean; value?: number } => {
-  if ((mask & bit) === 0) {
-    if (key in payload) {
-      return { ok: false };
-    }
-    return { ok: true };
-  }
-  const value = readInt(payload[key]);
-  if (value === null) {
-    return { ok: false };
-  }
-  return { ok: true, value };
+  return buffer;
 };
 
 export const buildClientHello = (
   sessionToken: string,
   connectionId: string,
   build = 'dev',
-  profile?: { nickname?: string; characterId?: string }
-) =>
-  JSON.stringify({
-    type: 'ClientHello',
-    protocolVersion: PROTOCOL_VERSION,
-    sessionToken,
-    connectionId,
-    build,
-    ...(profile?.nickname ? { nickname: profile.nickname } : {}),
-    ...(profile?.characterId ? { characterId: profile.characterId } : {})
-  } satisfies ClientHello);
+  profile?: { nickname?: string; characterId?: string },
+  msgSeq = 1,
+  serverSeqAck = 0
+) => {
+  const builder = new flatbuffers.Builder(256);
+  const sessionTokenOffset = builder.createString(sessionToken);
+  const connectionIdOffset = builder.createString(connectionId);
+  const buildOffset = builder.createString(build);
+  const nicknameOffset = profile?.nickname ? builder.createString(profile.nickname) : 0;
+  const characterIdOffset = profile?.characterId ? builder.createString(profile.characterId) : 0;
+  const payload = ClientHello.createClientHello(
+    builder,
+    PROTOCOL_VERSION,
+    sessionTokenOffset,
+    connectionIdOffset,
+    buildOffset,
+    nicknameOffset,
+    characterIdOffset
+  );
+  builder.finish(payload);
+  return encodeEnvelope(MessageType.ClientHello, builder.asUint8Array(), msgSeq, serverSeqAck);
+};
 
-export const buildPing = (clientTimeMs: number) =>
-  JSON.stringify({
-    type: 'Ping',
-    clientTimeMs: Number.isFinite(clientTimeMs) ? clientTimeMs : 0
-  } satisfies Ping);
+export const encodeInputCmd = (cmd: InputCmd, msgSeq = 1, serverSeqAck = 0) => {
+  const builder = new flatbuffers.Builder(256);
+  const payload = new InputCmdT(
+    cmd.inputSeq,
+    cmd.moveX,
+    cmd.moveY,
+    cmd.lookDeltaX,
+    cmd.lookDeltaY,
+    cmd.viewYaw,
+    cmd.viewPitch,
+    cmd.weaponSlot,
+    cmd.jump,
+    cmd.fire,
+    cmd.sprint,
+    cmd.dash,
+    cmd.grapple,
+    cmd.shield,
+    cmd.shockwave
+  ).pack(builder);
+  builder.finish(payload);
+  return encodeEnvelope(MessageType.InputCmd, builder.asUint8Array(), msgSeq, serverSeqAck);
+};
 
-export const parseServerHello = (message: string): ServerHello | null => {
-  let payload: unknown;
-  try {
-    payload = JSON.parse(message);
-  } catch {
-    return null;
-  }
-  if (!isRecord(payload)) {
-    return null;
-  }
-  if (payload.type !== 'ServerHello') {
-    return null;
-  }
+export const buildPing = (clientTimeMs: number, msgSeq = 1, serverSeqAck = 0) => {
+  const builder = new flatbuffers.Builder(64);
+  const payload = Ping.createPing(builder, Number.isFinite(clientTimeMs) ? clientTimeMs : 0);
+  builder.finish(payload);
+  return encodeEnvelope(MessageType.Ping, builder.asUint8Array(), msgSeq, serverSeqAck);
+};
 
-  const protocolVersion = readNumber(payload.protocolVersion);
-  const connectionId = readString(payload.connectionId);
-  const serverTickRate = readNumber(payload.serverTickRate);
-  const snapshotRate = readNumber(payload.snapshotRate);
-
+export const parseServerHelloPayload = (payload: Uint8Array): ServerHello | null => {
+  const bb = new flatbuffers.ByteBuffer(payload);
+  const message = ServerHelloFbs.getRootAsServerHello(bb);
+  const protocolVersion = message.protocolVersion();
+  const connectionId = message.connectionId();
+  const serverTickRate = message.serverTickRate();
+  const snapshotRate = message.snapshotRate();
   if (!protocolVersion || !connectionId || !serverTickRate || !snapshotRate) {
     return null;
   }
-
-  let snapshotKeyframeInterval: number | undefined;
-  if ('snapshotKeyframeInterval' in payload) {
-    const parsed = readInt(payload.snapshotKeyframeInterval);
-    if (parsed === null || parsed < 0) {
-      return null;
-    }
-    snapshotKeyframeInterval = parsed;
-  }
-
-  const motd = readString(payload.motd);
-  const clientId = readString(payload.clientId);
-  const connectionNonce = readString(payload.connectionNonce);
-
+  const snapshotKeyframeInterval = message.snapshotKeyframeInterval();
+  const motd = message.motd();
+  const clientId = message.clientId();
+  const connectionNonce = message.connectionNonce();
   return {
     type: 'ServerHello',
     protocolVersion,
@@ -266,14 +320,12 @@ export const parseServerHello = (message: string): ServerHello | null => {
   };
 };
 
-export const parsePlayerProfile = (message: string): PlayerProfile | null => {
-  const payload = parseJsonPayload(message);
-  if (!payload || payload.type !== 'PlayerProfile') {
-    return null;
-  }
-  const clientId = readString(payload.clientId);
-  const nickname = readString(payload.nickname);
-  const characterId = readString(payload.characterId);
+export const parsePlayerProfilePayload = (payload: Uint8Array): PlayerProfile | null => {
+  const bb = new flatbuffers.ByteBuffer(payload);
+  const message = PlayerProfileFbs.getRootAsPlayerProfile(bb);
+  const clientId = message.clientId();
+  const nickname = message.nickname();
+  const characterId = message.characterId();
   if (!clientId || !nickname || !characterId) {
     return null;
   }
@@ -285,195 +337,36 @@ export const parsePlayerProfile = (message: string): PlayerProfile | null => {
   };
 };
 
-export const parsePong = (message: string): Pong | null => {
-  const payload = parseJsonPayload(message);
-  if (!payload || payload.type !== 'Pong') {
+export const parsePongPayload = (payload: Uint8Array): PongMessage | null => {
+  const bb = new flatbuffers.ByteBuffer(payload);
+  const message = Pong.getRootAsPong(bb);
+  const clientTimeMs = message.clientTimeMs();
+  if (!isFiniteNumber(clientTimeMs)) {
     return null;
   }
-
-  const clientTimeMs = readNumber(payload.clientTimeMs);
-  if (clientTimeMs === null || clientTimeMs < 0) {
-    return null;
-  }
-
-  return {
-    type: 'Pong',
-    clientTimeMs
-  };
+  return { type: 'Pong', clientTimeMs };
 };
 
-export const parseGameEvent = (message: string): GameEvent | null => {
-  const payload = parseJsonPayload(message);
-  if (!payload || payload.type !== 'GameEvent') {
+export const parseStateSnapshotPayload = (payload: Uint8Array): StateSnapshot | null => {
+  const bb = new flatbuffers.ByteBuffer(payload);
+  const message = StateSnapshotFbs.getRootAsStateSnapshot(bb);
+  const serverTick = message.serverTick();
+  const lastProcessedInputSeq = message.lastProcessedInputSeq();
+  if (serverTick < 0 || lastProcessedInputSeq < -1) {
     return null;
   }
-
-  const eventName = readString(payload.event);
-  if (eventName === 'HitConfirmed') {
-    let targetId: string | undefined;
-    if ('targetId' in payload) {
-      const parsed = readString(payload.targetId);
-      if (!parsed) {
-        return null;
-      }
-      targetId = parsed;
-    }
-
-    let damage: number | undefined;
-    if ('damage' in payload) {
-      const parsed = readNumber(payload.damage);
-      if (parsed === null || parsed < 0) {
-        return null;
-      }
-      damage = parsed;
-    }
-
-    let killed: boolean | undefined;
-    if ('killed' in payload) {
-      const parsed = readBool(payload.killed);
-      if (parsed === null) {
-        return null;
-      }
-      killed = parsed;
-    }
-
-    return {
-      type: 'GameEvent',
-      event: eventName,
-      targetId,
-      damage,
-      killed
-    };
-  }
-
-  if (eventName === 'ProjectileSpawn') {
-    const ownerId = readString(payload.ownerId);
-    if (!ownerId) {
-      return null;
-    }
-    const posX = readNumber(payload.posX);
-    const posY = readNumber(payload.posY);
-    const posZ = readNumber(payload.posZ);
-    const velX = readNumber(payload.velX);
-    const velY = readNumber(payload.velY);
-    const velZ = readNumber(payload.velZ);
-    const ttl = readNumber(payload.ttl);
-    if (
-      posX === null ||
-      posY === null ||
-      posZ === null ||
-      velX === null ||
-      velY === null ||
-      velZ === null ||
-      ttl === null ||
-      ttl < 0
-    ) {
-      return null;
-    }
-
-    let projectileId: number | undefined;
-    if ('projectileId' in payload) {
-      const parsed = readInt(payload.projectileId);
-      if (parsed === null || parsed < 0) {
-        return null;
-      }
-      projectileId = parsed;
-    }
-
-    return {
-      type: 'GameEvent',
-      event: eventName,
-      ownerId,
-      projectileId,
-      posX,
-      posY,
-      posZ,
-      velX,
-      velY,
-      velZ,
-      ttl
-    };
-  }
-
-  if (eventName === 'ProjectileRemove') {
-    const projectileId = readInt(payload.projectileId);
-    if (projectileId === null || projectileId < 0) {
-      return null;
-    }
-    let ownerId: string | undefined;
-    if ('ownerId' in payload) {
-      const parsed = readString(payload.ownerId);
-      if (!parsed) {
-        return null;
-      }
-      ownerId = parsed;
-    }
-    return {
-      type: 'GameEvent',
-      event: eventName,
-      ownerId,
-      projectileId
-    };
-  }
-
-  return null;
-};
-
-const parseStateSnapshotPayload = (payload: Record<string, unknown>): StateSnapshot | null => {
-  if (payload.type !== 'StateSnapshot') {
+  const posX = message.posX();
+  const posY = message.posY();
+  const posZ = message.posZ();
+  const velX = message.velX();
+  const velY = message.velY();
+  const velZ = message.velZ();
+  const dashCooldown = message.dashCooldown();
+  const health = message.health();
+  if (![posX, posY, posZ, velX, velY, velZ, dashCooldown, health].every(isFiniteNumber)) {
     return null;
   }
-
-  const serverTick = readInt(payload.serverTick);
-  const lastProcessedInputSeq = readInt(payload.lastProcessedInputSeq);
-  const posX = readNumber(payload.posX);
-  const posY = readNumber(payload.posY);
-  const posZ = readNumber(payload.posZ);
-  const velX = readNumber(payload.velX);
-  const velY = readNumber(payload.velY);
-  const velZ = readNumber(payload.velZ);
-  const weaponSlot = readInt(payload.weaponSlot);
-  const dashCooldown = readNumber(payload.dashCooldown);
-  const health = readNumber(payload.health);
-  const kills = readInt(payload.kills);
-  const deaths = readInt(payload.deaths);
-
-  if (serverTick === null || serverTick < 0) {
-    return null;
-  }
-  if (lastProcessedInputSeq === null || lastProcessedInputSeq < -1) {
-    return null;
-  }
-  if (
-    posX === null ||
-    posY === null ||
-    posZ === null ||
-    velX === null ||
-    velY === null ||
-    velZ === null ||
-    weaponSlot === null ||
-    dashCooldown === null ||
-    health === null ||
-    kills === null ||
-    deaths === null ||
-    dashCooldown < 0
-  ) {
-    return null;
-  }
-  if (health < 0 || kills < 0 || deaths < 0 || weaponSlot < 0) {
-    return null;
-  }
-
-  let clientId: string | undefined;
-  if ('clientId' in payload) {
-    const parsed = readString(payload.clientId);
-    if (!parsed) {
-      return null;
-    }
-    clientId = parsed;
-  }
-
-  return {
+  const snapshot: StateSnapshot = {
     type: 'StateSnapshot',
     serverTick,
     lastProcessedInputSeq,
@@ -483,162 +376,223 @@ const parseStateSnapshotPayload = (payload: Record<string, unknown>): StateSnaps
     velX,
     velY,
     velZ,
-    weaponSlot,
+    weaponSlot: message.weaponSlot(),
     dashCooldown,
     health,
-    kills,
-    deaths,
-    clientId
+    kills: message.kills(),
+    deaths: message.deaths()
   };
+  const clientId = message.clientId();
+  if (clientId && clientId.length > 0) {
+    snapshot.clientId = clientId;
+  }
+  return snapshot;
 };
 
-const parseStateSnapshotDeltaPayload = (payload: Record<string, unknown>): StateSnapshotDelta | null => {
-  if (payload.type !== 'StateSnapshotDelta') {
+export const parseStateSnapshotDeltaPayload = (payload: Uint8Array): StateSnapshotDelta | null => {
+  const bb = new flatbuffers.ByteBuffer(payload);
+  const message = StateSnapshotDeltaFbs.getRootAsStateSnapshotDelta(bb);
+  const serverTick = message.serverTick();
+  const baseTick = message.baseTick();
+  const lastProcessedInputSeq = message.lastProcessedInputSeq();
+  const mask = message.mask();
+  if (serverTick < 0 || baseTick < 0 || lastProcessedInputSeq < -1) {
     return null;
   }
-
-  const serverTick = readInt(payload.serverTick);
-  const baseTick = readInt(payload.baseTick);
-  const lastProcessedInputSeq = readInt(payload.lastProcessedInputSeq);
-  const mask = readInt(payload.mask);
-
-  if (serverTick === null || serverTick < 0) {
+  if ((mask | SNAPSHOT_MASK_ALL) !== SNAPSHOT_MASK_ALL) {
     return null;
   }
-  if (baseTick === null || baseTick < 0 || baseTick > serverTick) {
-    return null;
-  }
-  if (lastProcessedInputSeq === null || lastProcessedInputSeq < -1) {
-    return null;
-  }
-  if (mask === null || mask < 0 || (mask & ~SNAPSHOT_MASK_ALL) !== 0) {
-    return null;
-  }
-
-  const posX = readMaskedNumber(payload, 'posX', mask, SNAPSHOT_MASK_POS_X);
-  const posY = readMaskedNumber(payload, 'posY', mask, SNAPSHOT_MASK_POS_Y);
-  const posZ = readMaskedNumber(payload, 'posZ', mask, SNAPSHOT_MASK_POS_Z);
-  const velX = readMaskedNumber(payload, 'velX', mask, SNAPSHOT_MASK_VEL_X);
-  const velY = readMaskedNumber(payload, 'velY', mask, SNAPSHOT_MASK_VEL_Y);
-  const velZ = readMaskedNumber(payload, 'velZ', mask, SNAPSHOT_MASK_VEL_Z);
-  const weaponSlot = readMaskedInt(payload, 'weaponSlot', mask, SNAPSHOT_MASK_WEAPON_SLOT);
-  const dashCooldown = readMaskedNumber(payload, 'dashCooldown', mask, SNAPSHOT_MASK_DASH_COOLDOWN);
-  const health = readMaskedNumber(payload, 'health', mask, SNAPSHOT_MASK_HEALTH);
-  const kills = readMaskedInt(payload, 'kills', mask, SNAPSHOT_MASK_KILLS);
-  const deaths = readMaskedInt(payload, 'deaths', mask, SNAPSHOT_MASK_DEATHS);
-
-  if (
-    !posX.ok ||
-    !posY.ok ||
-    !posZ.ok ||
-    !velX.ok ||
-    !velY.ok ||
-    !velZ.ok ||
-    !weaponSlot.ok ||
-    !dashCooldown.ok ||
-    !health.ok ||
-    !kills.ok ||
-    !deaths.ok
-  ) {
-    return null;
-  }
-  if (weaponSlot.value !== undefined && weaponSlot.value < 0) {
-    return null;
-  }
-  if (dashCooldown.value !== undefined && dashCooldown.value < 0) {
-    return null;
-  }
-  if (health.value !== undefined && health.value < 0) {
-    return null;
-  }
-  if (kills.value !== undefined && kills.value < 0) {
-    return null;
-  }
-  if (deaths.value !== undefined && deaths.value < 0) {
-    return null;
-  }
-
-  let clientId: string | undefined;
-  if ('clientId' in payload) {
-    const parsed = readString(payload.clientId);
-    if (!parsed) {
-      return null;
-    }
-    clientId = parsed;
-  }
-
-  const delta: StateSnapshotDelta = {
+  const snapshot: StateSnapshotDelta = {
     type: 'StateSnapshotDelta',
     serverTick,
     baseTick,
     lastProcessedInputSeq,
-    mask,
-    clientId
+    mask
   };
+  const clientId = message.clientId();
+  if (clientId && clientId.length > 0) {
+    snapshot.clientId = clientId;
+  }
+  if (mask & SNAPSHOT_MASK_POS_X) snapshot.posX = message.posX();
+  if (mask & SNAPSHOT_MASK_POS_Y) snapshot.posY = message.posY();
+  if (mask & SNAPSHOT_MASK_POS_Z) snapshot.posZ = message.posZ();
+  if (mask & SNAPSHOT_MASK_VEL_X) snapshot.velX = message.velX();
+  if (mask & SNAPSHOT_MASK_VEL_Y) snapshot.velY = message.velY();
+  if (mask & SNAPSHOT_MASK_VEL_Z) snapshot.velZ = message.velZ();
+  if (mask & SNAPSHOT_MASK_WEAPON_SLOT) snapshot.weaponSlot = message.weaponSlot();
+  if (mask & SNAPSHOT_MASK_DASH_COOLDOWN) snapshot.dashCooldown = message.dashCooldown();
+  if (mask & SNAPSHOT_MASK_HEALTH) snapshot.health = message.health();
+  if (mask & SNAPSHOT_MASK_KILLS) snapshot.kills = message.kills();
+  if (mask & SNAPSHOT_MASK_DEATHS) snapshot.deaths = message.deaths();
 
-  if (posX.value !== undefined) {
-    delta.posX = posX.value;
-  }
-  if (posY.value !== undefined) {
-    delta.posY = posY.value;
-  }
-  if (posZ.value !== undefined) {
-    delta.posZ = posZ.value;
-  }
-  if (velX.value !== undefined) {
-    delta.velX = velX.value;
-  }
-  if (velY.value !== undefined) {
-    delta.velY = velY.value;
-  }
-  if (velZ.value !== undefined) {
-    delta.velZ = velZ.value;
-  }
-  if (weaponSlot.value !== undefined) {
-    delta.weaponSlot = weaponSlot.value;
-  }
-  if (dashCooldown.value !== undefined) {
-    delta.dashCooldown = dashCooldown.value;
-  }
-  if (health.value !== undefined) {
-    delta.health = health.value;
-  }
-  if (kills.value !== undefined) {
-    delta.kills = kills.value;
-  }
-  if (deaths.value !== undefined) {
-    delta.deaths = deaths.value;
-  }
-
-  return delta;
-};
-
-export const parseStateSnapshot = (message: string): StateSnapshot | null => {
-  const payload = parseJsonPayload(message);
-  if (!payload) {
+  const numericValues = [
+    snapshot.posX,
+    snapshot.posY,
+    snapshot.posZ,
+    snapshot.velX,
+    snapshot.velY,
+    snapshot.velZ,
+    snapshot.dashCooldown,
+    snapshot.health
+  ].filter((value) => typeof value === 'number') as number[];
+  if (!numericValues.every(isFiniteNumber)) {
     return null;
   }
-  return parseStateSnapshotPayload(payload);
+  return snapshot;
 };
 
-export const parseStateSnapshotDelta = (message: string): StateSnapshotDelta | null => {
-  const payload = parseJsonPayload(message);
-  if (!payload) {
-    return null;
+export const parseGameEventPayload = (payload: Uint8Array): GameEvent | null => {
+  const bb = new flatbuffers.ByteBuffer(payload);
+  const message = GameEventFbs.getRootAsGameEvent(bb);
+  const eventType = message.eventType();
+  switch (eventType) {
+    case GameEventType.HitConfirmed: {
+      const damage = message.damage();
+      const killed = message.killed();
+      if (!isFiniteNumber(damage)) {
+        return null;
+      }
+      const targetId = message.targetId() ?? undefined;
+      return {
+        type: 'GameEvent',
+        event: 'HitConfirmed',
+        targetId: targetId && targetId.length > 0 ? targetId : undefined,
+        damage,
+        killed
+      };
+    }
+    case GameEventType.ProjectileSpawn: {
+      const ownerId = message.ownerId();
+      const posX = message.posX();
+      const posY = message.posY();
+      const posZ = message.posZ();
+      const velX = message.velX();
+      const velY = message.velY();
+      const velZ = message.velZ();
+      const ttl = message.ttl();
+      if (!ownerId || !ownerId.length) {
+        return null;
+      }
+      if (![posX, posY, posZ, velX, velY, velZ, ttl].every(isFiniteNumber)) {
+        return null;
+      }
+      return {
+        type: 'GameEvent',
+        event: 'ProjectileSpawn',
+        ownerId,
+        projectileId: message.projectileId() || undefined,
+        posX,
+        posY,
+        posZ,
+        velX,
+        velY,
+        velZ,
+        ttl
+      };
+    }
+    case GameEventType.ProjectileRemove: {
+      const projectileId = message.projectileId();
+      if (projectileId <= 0) {
+        return null;
+      }
+      const ownerId = message.ownerId() ?? undefined;
+      return {
+        type: 'GameEvent',
+        event: 'ProjectileRemove',
+        ownerId: ownerId && ownerId.length > 0 ? ownerId : undefined,
+        projectileId
+      };
+    }
+    default:
+      return null;
   }
-  return parseStateSnapshotDeltaPayload(payload);
 };
 
-export const parseSnapshotMessage = (message: string): SnapshotMessage | null => {
-  const payload = parseJsonPayload(message);
-  if (!payload) {
+export const parseErrorPayload = (payload: Uint8Array): ProtocolErrorMessage | null => {
+  const bb = new flatbuffers.ByteBuffer(payload);
+  const message = ProtocolError.getRootAsError(bb);
+  const code = message.code();
+  const detail = message.message();
+  if (!code || !detail) {
     return null;
   }
-  if (payload.type === 'StateSnapshot') {
-    return parseStateSnapshotPayload(payload);
+  return { type: 'Error', code, message: detail };
+};
+
+export const parseServerHello = (data: ArrayBuffer | Uint8Array): ServerHello | null => {
+  const envelope = decodeEnvelope(data);
+  if (!envelope || envelope.header.msgType !== MessageType.ServerHello) {
+    return null;
   }
-  if (payload.type === 'StateSnapshotDelta') {
-    return parseStateSnapshotDeltaPayload(payload);
+  return parseServerHelloPayload(envelope.payload);
+};
+
+export const parsePlayerProfile = (data: ArrayBuffer | Uint8Array): PlayerProfile | null => {
+  const envelope = decodeEnvelope(data);
+  if (!envelope || envelope.header.msgType !== MessageType.PlayerProfile) {
+    return null;
+  }
+  return parsePlayerProfilePayload(envelope.payload);
+};
+
+export const parsePong = (data: ArrayBuffer | Uint8Array): PongMessage | null => {
+  const envelope = decodeEnvelope(data);
+  if (!envelope || envelope.header.msgType !== MessageType.Pong) {
+    return null;
+  }
+  return parsePongPayload(envelope.payload);
+};
+
+export const parseStateSnapshot = (data: ArrayBuffer | Uint8Array): StateSnapshot | null => {
+  const envelope = decodeEnvelope(data);
+  if (!envelope || envelope.header.msgType !== MessageType.StateSnapshot) {
+    return null;
+  }
+  return parseStateSnapshotPayload(envelope.payload);
+};
+
+export const parseStateSnapshotDelta = (data: ArrayBuffer | Uint8Array): StateSnapshotDelta | null => {
+  const envelope = decodeEnvelope(data);
+  if (!envelope || envelope.header.msgType !== MessageType.StateSnapshotDelta) {
+    return null;
+  }
+  return parseStateSnapshotDeltaPayload(envelope.payload);
+};
+
+export const parseSnapshotMessage = (data: ArrayBuffer | Uint8Array): SnapshotMessage | null => {
+  const envelope = decodeEnvelope(data);
+  if (!envelope) {
+    return null;
+  }
+  if (envelope.header.msgType === MessageType.StateSnapshot) {
+    return parseStateSnapshotPayload(envelope.payload);
+  }
+  if (envelope.header.msgType === MessageType.StateSnapshotDelta) {
+    return parseStateSnapshotDeltaPayload(envelope.payload);
   }
   return null;
 };
+
+export const parseGameEvent = (data: ArrayBuffer | Uint8Array): GameEvent | null => {
+  const envelope = decodeEnvelope(data);
+  if (!envelope || envelope.header.msgType !== MessageType.GameEvent) {
+    return null;
+  }
+  return parseGameEventPayload(envelope.payload);
+};
+
+export const parseProtocolError = (data: ArrayBuffer | Uint8Array): ProtocolErrorMessage | null => {
+  const envelope = decodeEnvelope(data);
+  if (!envelope || envelope.header.msgType !== MessageType.Error) {
+    return null;
+  }
+  return parseErrorPayload(envelope.payload);
+};
+
+export const __test = {
+  SNAPSHOT_MASK_ALL,
+  HEADER_BYTES,
+  MAGIC
+};
+
+export { MessageType, GameEventType };

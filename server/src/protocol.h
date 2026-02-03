@@ -1,15 +1,19 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
+#include <vector>
 
-constexpr int kProtocolVersion = 3;
+constexpr int kProtocolVersion = 4;
 constexpr int kServerTickRate = 60;
 constexpr int kSnapshotRate = 20;
 constexpr int kSnapshotKeyframeInterval = 5;
 constexpr size_t kMaxClientMessageBytes = 4096;
+constexpr size_t kProtocolHeaderBytes = 20;
 constexpr const char *kReliableChannelLabel = "afps_reliable";
 constexpr const char *kUnreliableChannelLabel = "afps_unreliable";
+constexpr uint8_t kProtocolMagic[4] = {'A', 'F', 'P', 'S'};
 constexpr int kSnapshotMaskPosX = 1 << 0;
 constexpr int kSnapshotMaskPosY = 1 << 1;
 constexpr int kSnapshotMaskPosZ = 1 << 2;
@@ -130,13 +134,49 @@ struct PlayerProfile {
   std::string character_id;
 };
 
-bool ParseClientHello(const std::string &message, ClientHello &out, std::string &error);
-bool ParseInputCmd(const std::string &message, InputCmd &out, std::string &error);
-bool ParsePing(const std::string &message, Ping &out, std::string &error);
-std::string BuildServerHello(const ServerHello &hello);
-std::string BuildProtocolError(const std::string &code, const std::string &message);
-std::string BuildPong(const Pong &pong);
-std::string BuildGameEvent(const GameEvent &event);
-std::string BuildStateSnapshot(const StateSnapshot &snapshot);
-std::string BuildStateSnapshotDelta(const StateSnapshotDelta &delta);
-std::string BuildPlayerProfile(const PlayerProfile &profile);
+enum class MessageType : uint16_t {
+  ClientHello = 1,
+  ServerHello = 2,
+  JoinRequest = 3,
+  JoinAccept = 4,
+  InputCmd = 5,
+  StateSnapshot = 6,
+  StateSnapshotDelta = 7,
+  GameEvent = 8,
+  Ping = 9,
+  Pong = 10,
+  PlayerProfile = 11,
+  Error = 12,
+  Disconnect = 13
+};
+
+struct MessageHeader {
+  uint16_t protocol_version = 0;
+  MessageType msg_type = MessageType::Error;
+  uint32_t payload_bytes = 0;
+  uint32_t msg_seq = 0;
+  uint32_t server_seq_ack = 0;
+};
+
+struct DecodedEnvelope {
+  MessageHeader header;
+  std::vector<uint8_t> payload;
+};
+
+bool DecodeEnvelope(const std::vector<uint8_t> &message, DecodedEnvelope &out, std::string &error);
+std::vector<uint8_t> EncodeEnvelope(MessageType type, const uint8_t *payload, size_t payload_size,
+                                    uint32_t msg_seq, uint32_t server_seq_ack,
+                                    uint16_t protocol_version = static_cast<uint16_t>(kProtocolVersion));
+
+bool ParseClientHelloPayload(const std::vector<uint8_t> &payload, ClientHello &out, std::string &error);
+bool ParseInputCmdPayload(const std::vector<uint8_t> &payload, InputCmd &out, std::string &error);
+bool ParsePingPayload(const std::vector<uint8_t> &payload, Ping &out, std::string &error);
+std::vector<uint8_t> BuildServerHello(const ServerHello &hello, uint32_t msg_seq, uint32_t server_seq_ack);
+std::vector<uint8_t> BuildProtocolError(const std::string &code, const std::string &message,
+                                        uint32_t msg_seq, uint32_t server_seq_ack);
+std::vector<uint8_t> BuildPong(const Pong &pong, uint32_t msg_seq, uint32_t server_seq_ack);
+std::vector<uint8_t> BuildGameEvent(const GameEvent &event, uint32_t msg_seq, uint32_t server_seq_ack);
+std::vector<uint8_t> BuildStateSnapshot(const StateSnapshot &snapshot, uint32_t msg_seq, uint32_t server_seq_ack);
+std::vector<uint8_t> BuildStateSnapshotDelta(const StateSnapshotDelta &delta, uint32_t msg_seq,
+                                             uint32_t server_seq_ack);
+std::vector<uint8_t> BuildPlayerProfile(const PlayerProfile &profile, uint32_t msg_seq, uint32_t server_seq_ack);

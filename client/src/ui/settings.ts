@@ -1,3 +1,5 @@
+import type { AudioSettings } from '../audio/settings';
+import { DEFAULT_AUDIO_SETTINGS, normalizeAudioSettings } from '../audio/settings';
 import type { InputBindings } from '../input/sampler';
 import { getPrimaryBinding, normalizeBindings, setPrimaryBinding } from '../input/bindings';
 
@@ -9,6 +11,7 @@ export interface SettingsOverlay {
   setSensitivity: (value: number) => void;
   setLookInversion: (invertX: boolean, invertY: boolean) => void;
   setMetricsVisible: (visible: boolean) => void;
+  setAudioSettings: (settings: AudioSettings) => void;
   dispose: () => void;
 }
 
@@ -23,6 +26,8 @@ export interface SettingsOptions {
   onBindingsChange?: (bindings: InputBindings) => void;
   initialShowMetrics?: boolean;
   onShowMetricsChange?: (visible: boolean) => void;
+  initialAudioSettings?: AudioSettings;
+  onAudioSettingsChange?: (settings: AudioSettings) => void;
 }
 
 const DEFAULT_SENSITIVITY = 0.002;
@@ -34,6 +39,12 @@ const clampSensitivity = (value: number) =>
   Math.min(MAX_SENSITIVITY, Math.max(MIN_SENSITIVITY, value));
 
 const formatSensitivity = (value: number) => value.toFixed(4);
+
+const AUDIO_RANGE = {
+  min: 0,
+  max: 1,
+  step: 0.05
+};
 
 export const createSettingsOverlay = (
   doc: Document,
@@ -47,7 +58,9 @@ export const createSettingsOverlay = (
     initialBindings,
     onBindingsChange,
     initialShowMetrics,
-    onShowMetricsChange
+    onShowMetricsChange,
+    initialAudioSettings,
+    onAudioSettingsChange
   }: SettingsOptions = {},
   containerId = 'app'
 ): SettingsOverlay => {
@@ -89,6 +102,9 @@ export const createSettingsOverlay = (
   const bindingsGroup = doc.createElement('div');
   bindingsGroup.className = 'settings-group settings-bindings';
 
+  const audioGroup = doc.createElement('div');
+  audioGroup.className = 'settings-group settings-audio';
+
   const metricsGroup = doc.createElement('div');
   metricsGroup.className = 'settings-group settings-toggles';
 
@@ -117,6 +133,60 @@ export const createSettingsOverlay = (
   metricsRow.append(metricsToggle, metricsLabel);
   metricsGroup.append(invertXRow, invertYRow, metricsRow);
 
+  const audioTitle = doc.createElement('div');
+  audioTitle.className = 'settings-subtitle';
+  audioTitle.textContent = 'Audio';
+
+  const audioList = doc.createElement('div');
+  audioList.className = 'settings-audio-list';
+
+  const makeAudioRow = (labelText: string) => {
+    const row = doc.createElement('label');
+    row.className = 'settings-audio-row';
+    const labelEl = doc.createElement('span');
+    labelEl.textContent = labelText;
+    const valueEl = doc.createElement('span');
+    valueEl.className = 'settings-audio-value';
+    row.append(labelEl, valueEl);
+    return { row, valueEl };
+  };
+
+  const masterRow = makeAudioRow('Master');
+  const sfxRow = makeAudioRow('SFX');
+  const uiRow = makeAudioRow('UI');
+  const musicRow = makeAudioRow('Music');
+
+  const masterSlider = doc.createElement('input');
+  masterSlider.type = 'range';
+  masterSlider.min = String(AUDIO_RANGE.min);
+  masterSlider.max = String(AUDIO_RANGE.max);
+  masterSlider.step = String(AUDIO_RANGE.step);
+
+  const sfxSlider = masterSlider.cloneNode() as HTMLInputElement;
+  const uiSlider = masterSlider.cloneNode() as HTMLInputElement;
+  const musicSlider = masterSlider.cloneNode() as HTMLInputElement;
+
+  const muteRow = doc.createElement('label');
+  muteRow.className = 'settings-toggle';
+  const muteToggle = doc.createElement('input');
+  muteToggle.type = 'checkbox';
+  const muteLabel = doc.createElement('span');
+  muteLabel.textContent = 'Mute all';
+  muteRow.append(muteToggle, muteLabel);
+
+  const appendAudioControl = (row: HTMLElement, slider: HTMLInputElement) => {
+    const wrapper = doc.createElement('div');
+    wrapper.className = 'settings-audio-control';
+    wrapper.append(row, slider);
+    audioList.append(wrapper);
+  };
+
+  appendAudioControl(masterRow.row, masterSlider);
+  appendAudioControl(sfxRow.row, sfxSlider);
+  appendAudioControl(uiRow.row, uiSlider);
+  appendAudioControl(musicRow.row, musicSlider);
+  audioGroup.append(audioTitle, audioList, muteRow);
+
   const bindingsTitle = doc.createElement('div');
   bindingsTitle.className = 'settings-subtitle';
   bindingsTitle.textContent = 'Keybinds';
@@ -126,7 +196,7 @@ export const createSettingsOverlay = (
 
   bindingsGroup.append(bindingsTitle, bindingsList);
 
-  panel.append(title, hint, group, metricsGroup, bindingsGroup);
+  panel.append(title, hint, group, metricsGroup, audioGroup, bindingsGroup);
   overlay.append(panel);
   host.appendChild(overlay);
 
@@ -238,6 +308,42 @@ export const createSettingsOverlay = (
     onShowMetricsChange?.(metricsToggle.checked);
   });
 
+  let audioSettings = normalizeAudioSettings(initialAudioSettings ?? DEFAULT_AUDIO_SETTINGS);
+  const formatAudioValue = (value: number) => `${Math.round(value * 100)}%`;
+
+  const setAudioSettings = (value: AudioSettings) => {
+    audioSettings = normalizeAudioSettings(value);
+    masterSlider.value = String(audioSettings.master);
+    sfxSlider.value = String(audioSettings.sfx);
+    uiSlider.value = String(audioSettings.ui);
+    musicSlider.value = String(audioSettings.music);
+    masterRow.valueEl.textContent = formatAudioValue(audioSettings.master);
+    sfxRow.valueEl.textContent = formatAudioValue(audioSettings.sfx);
+    uiRow.valueEl.textContent = formatAudioValue(audioSettings.ui);
+    musicRow.valueEl.textContent = formatAudioValue(audioSettings.music);
+    muteToggle.checked = audioSettings.muted;
+  };
+
+  const updateAudio = (patch: Partial<AudioSettings>) => {
+    audioSettings = normalizeAudioSettings({ ...audioSettings, ...patch });
+    setAudioSettings(audioSettings);
+    onAudioSettingsChange?.(audioSettings);
+  };
+
+  const handleAudioInput = (slider: HTMLInputElement, key: keyof AudioSettings) => {
+    slider.addEventListener('input', () => {
+      updateAudio({ [key]: Number(slider.value) } as Partial<AudioSettings>);
+    });
+  };
+
+  handleAudioInput(masterSlider, 'master');
+  handleAudioInput(sfxSlider, 'sfx');
+  handleAudioInput(uiSlider, 'ui');
+  handleAudioInput(musicSlider, 'music');
+  muteToggle.addEventListener('change', () => {
+    updateAudio({ muted: muteToggle.checked });
+  });
+
   const isVisible = () => overlay.dataset.visible === 'true';
 
   const setVisible = (visible: boolean) => {
@@ -255,6 +361,7 @@ export const createSettingsOverlay = (
   );
   setLookInversion(Boolean(initialInvertLookX), Boolean(initialInvertLookY));
   setMetricsVisible(initialShowMetrics ?? true);
+  setAudioSettings(audioSettings);
 
   const dispose = () => {
     doc.removeEventListener('keydown', handleKeydown);
@@ -269,6 +376,7 @@ export const createSettingsOverlay = (
     setSensitivity,
     setLookInversion,
     setMetricsVisible,
+    setAudioSettings,
     dispose
   };
 };

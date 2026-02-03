@@ -40,7 +40,10 @@ TEST_CASE("BuildConnectResponse emits offer and ice") {
   ConnectionOffer offer{
       "id",
       rtc::Description("v=0", "offer"),
-      {"stun:stun.example.com:3478"},
+      {
+          {"stun:stun.example.com:3478", "", ""},
+          {"turn:turn.example.com:3478", "user", "pass"}
+      },
       "2026-01-31T00:00:00Z"
   };
 
@@ -48,6 +51,9 @@ TEST_CASE("BuildConnectResponse emits offer and ice") {
 
   CHECK(payload.find("connectionId") != std::string::npos);
   CHECK(payload.find("stun:stun.example.com:3478") != std::string::npos);
+  CHECK(payload.find("turn:turn.example.com:3478") != std::string::npos);
+  CHECK(payload.find("user") != std::string::npos);
+  CHECK(payload.find("pass") != std::string::npos);
   CHECK(payload.find("offer") != std::string::npos);
 }
 

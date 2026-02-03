@@ -6,5 +6,22 @@
   "snapshotBufferSample": {
     "iterations": 10000,
     "budgetMs": 150
+  },
+  "bundleSize": {
+    "maxMb": 30
+  },
+  "tti": {
+    "maxMs": 3000
+  },
+  "frameTime": {
+    "maxMs": 16.6,
+    "sampleFrames": 120
+  },
+  "snapshotBandwidth": {
+    "maxKbps": 40
+  },
+  "memoryLeak": {
+    "maxDeltaMb": 25,
+    "sampleDurationMs": 2000
   }
 }

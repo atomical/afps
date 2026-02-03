@@ -54,11 +54,13 @@ void AttachDataChannel(const std::shared_ptr<State> &state, const std::shared_pt
     }
 
     bool echo_incoming = true;
-    std::function<void(const std::string &, const std::string &)> on_message;
+    std::function<void(const std::string &, const std::string &)> on_text_message;
+    std::function<void(const std::string &, const rtc::binary &)> on_binary_message;
     {
       std::scoped_lock lock(locked->mutex);
       echo_incoming = locked->echo_incoming;
-      on_message = locked->callbacks.on_message;
+      on_text_message = locked->callbacks.on_text_message;
+      on_binary_message = locked->callbacks.on_binary_message;
     }
 
     if (const auto text = std::get_if<std::string>(&message)) {
@@ -69,8 +71,8 @@ void AttachDataChannel(const std::shared_ptr<State> &state, const std::shared_pt
           // ignore send failures during teardown
         }
       }
-      if (on_message) {
-        on_message(label, *text);
+      if (on_text_message) {
+        on_text_message(label, *text);
       }
       return;
     }
@@ -82,6 +84,9 @@ void AttachDataChannel(const std::shared_ptr<State> &state, const std::shared_pt
         } catch (...) {
           // ignore send failures during teardown
         }
+      }
+      if (on_binary_message) {
+        on_binary_message(label, *binary);
       }
     }
   });
@@ -186,6 +191,34 @@ bool RtcEchoPeer::SendOn(const std::string &label, const std::string &message) {
     return true;
   } catch (...) {
     // libdatachannel may throw if the SCTP transport is torn down mid-send.
+    return false;
+  }
+}
+
+bool RtcEchoPeer::Send(const rtc::binary &message) {
+  return SendOn(PrimaryLabel(), message);
+}
+
+bool RtcEchoPeer::SendOn(const std::string &label, const rtc::binary &message) {
+  if (label.empty()) {
+    return false;
+  }
+  std::shared_ptr<rtc::DataChannel> channel;
+  {
+    std::scoped_lock lock(state_->mutex);
+    auto iter = state_->channels.find(label);
+    if (iter == state_->channels.end()) {
+      return false;
+    }
+    channel = iter->second;
+  }
+  if (!channel || !channel->isOpen()) {
+    return false;
+  }
+  try {
+    channel->send(message);
+    return true;
+  } catch (...) {
     return false;
   }
 }

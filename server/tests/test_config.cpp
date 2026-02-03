@@ -17,6 +17,12 @@ TEST_CASE("ParseArgs parses required flags") {
       "secret",
       "--ice",
       "stun:stun.example.com:3478",
+      "--turn-secret",
+      "turnsecret",
+      "--turn-user",
+      "afps",
+      "--turn-ttl",
+      "600",
       "--snapshot-keyframe-interval",
       "3"};
   const int argc = static_cast<int>(sizeof(argv) / sizeof(argv[0]));
@@ -31,6 +37,9 @@ TEST_CASE("ParseArgs parses required flags") {
   CHECK(result.config.auth_token == "secret");
   CHECK(result.config.ice_servers.size() == 1);
   CHECK(result.config.ice_servers[0] == "stun:stun.example.com:3478");
+  CHECK(result.config.turn_secret == "turnsecret");
+  CHECK(result.config.turn_user == "afps");
+  CHECK(result.config.turn_ttl_seconds == 600);
   CHECK(result.config.snapshot_keyframe_interval == 3);
   CHECK(result.config.use_https);
 }
@@ -66,6 +75,19 @@ TEST_CASE("ValidateConfig skips cert and key when HTTP") {
   const auto errors = ValidateConfig(config);
 
   CHECK(errors.size() == 1);
+}
+
+TEST_CASE("ValidateConfig requires TURN ttl when secret set") {
+  ServerConfig config;
+  config.use_https = false;
+  config.auth_token = "secret";
+  config.turn_secret = "turnsecret";
+  config.turn_ttl_seconds = 0;
+
+  const auto errors = ValidateConfig(config);
+
+  CHECK(errors.size() == 1);
+  CHECK(errors[0].find("TURN TTL") != std::string::npos);
 }
 
 TEST_CASE("ParseArgs accepts --http") {

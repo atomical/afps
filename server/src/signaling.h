@@ -26,10 +26,16 @@ struct IceCandidate {
   std::string mid;
 };
 
+struct IceServerConfig {
+  std::string url;
+  std::string username;
+  std::string credential;
+};
+
 struct ConnectionOffer {
   std::string connection_id;
   rtc::Description offer;
-  std::vector<std::string> ice_servers;
+  std::vector<IceServerConfig> ice_servers;
   std::string expires_at;
 };
 
@@ -50,6 +56,9 @@ enum class SignalingError {
 struct SignalingConfig {
   std::chrono::seconds session_ttl = std::chrono::seconds(900);
   std::vector<std::string> ice_servers;
+  std::string turn_secret;
+  std::string turn_user = "afps";
+  int turn_ttl_seconds = 3600;
   double input_max_tokens = 120.0;
   double input_refill_per_second = 120.0;
   int max_invalid_inputs = 5;
@@ -82,7 +91,9 @@ public:
                                                      const std::string &connection_id);
   std::vector<InputBatch> DrainAllInputs();
   std::vector<std::string> ReadyConnectionIds();
-  bool SendUnreliable(const std::string &connection_id, const std::string &message);
+  bool SendUnreliable(const std::string &connection_id, const std::vector<uint8_t> &message);
+  uint32_t NextServerMessageSeq(const std::string &connection_id);
+  uint32_t LastClientMessageSeq(const std::string &connection_id);
 
   size_t SessionCount() const;
   size_t ConnectionCount() const;
@@ -109,6 +120,9 @@ private:
     std::string connection_nonce;
     std::vector<InputCmd> pending_inputs;
     int last_input_seq = -1;
+    uint32_t last_client_msg_seq = 0;
+    uint32_t last_client_seq_ack = 0;
+    uint32_t next_server_msg_seq = 0;
     int invalid_input_count = 0;
     int rate_limit_count = 0;
     bool closed = false;
@@ -120,9 +134,10 @@ private:
   void PruneExpiredSessionsLocked();
   std::string GenerateToken(size_t bytes);
   static std::string FormatUtc(std::chrono::system_clock::time_point time_point);
-  rtc::Configuration BuildRtcConfig() const;
+  rtc::Configuration BuildRtcConfig(const std::vector<IceServerConfig> &ice_servers) const;
+  std::vector<IceServerConfig> BuildIceServers(std::chrono::system_clock::time_point now) const;
   void HandleClientMessage(const std::shared_ptr<ConnectionState> &connection,
-                           const std::string &label, const std::string &message);
+                           const std::string &label, const rtc::binary &message);
 
   SignalingConfig config_;
   RateLimiter input_limiter_;

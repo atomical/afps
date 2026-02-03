@@ -54,6 +54,9 @@ const DEFAULTS = {
   outlineFlashStrength: 2.0,
   outlineFlashThickness: 1.0,
   outlineFlashDurationMs: 140,
+  viewmodelOutlineStrength: 2.6,
+  viewmodelOutlineThickness: 1.4,
+  viewmodelOutlineColor: 0x0f0f0f,
   snapshotRate: 20,
   tickRate: 60
 };
@@ -128,11 +131,13 @@ export const createApp = ({
   const outlineTeamHiddenColors = DEFAULTS.outlineTeamHiddenColors.map((color) => new three.Color(color));
   const outlineFlashVisibleColor = new three.Color(DEFAULTS.outlineFlashColor);
   const outlineFlashHiddenColor = new three.Color(DEFAULTS.outlineFlashHiddenColor);
+  const viewmodelOutlineColor = new three.Color(DEFAULTS.viewmodelOutlineColor);
   const outlineTeamCount = Math.max(1, outlineTeamVisibleColors.length);
   let outlineTeamIndex = 0;
   let outlineFlashUntil = 0;
   let outlineFlashTeamIndex = 0;
   let outlineFlashActive = false;
+  let viewmodelOutlinePass: ReturnType<NonNullable<typeof three.OutlinePass>> | null = null;
 
   const geometry = new three.BoxGeometry(DEFAULTS.cubeSize, DEFAULTS.cubeSize, DEFAULTS.cubeSize);
   const material = new three.MeshToonMaterial({ color: DEFAULTS.cubeColor, gradientMap: toonRamp });
@@ -177,11 +182,26 @@ export const createApp = ({
     pass.hiddenEdgeColor = outlineFlashHiddenColor;
   };
 
+  const applyViewmodelOutline = (pass: ReturnType<NonNullable<typeof three.OutlinePass>>) => {
+    pass.edgeStrength = DEFAULTS.viewmodelOutlineStrength;
+    pass.edgeThickness = DEFAULTS.viewmodelOutlineThickness;
+    pass.edgeGlow = DEFAULTS.outlineGlow;
+    pass.visibleEdgeColor = viewmodelOutlineColor;
+    pass.hiddenEdgeColor = viewmodelOutlineColor;
+  };
+
   const refreshOutlineSelection = () => {
     const cubeSelection = cube.visible === false ? [] : [cube];
     outlinePasses.forEach((pass, index) => {
       pass.selectedObjects = index === outlineTeamIndex ? cubeSelection : [];
     });
+  };
+
+  const refreshViewmodelOutline = () => {
+    if (!viewmodelOutlinePass) {
+      return;
+    }
+    viewmodelOutlinePass.selectedObjects = weaponViewmodelRoot ? [weaponViewmodelRoot] : [];
   };
 
   const refreshOutlineFlash = (nowMs: number) => {
@@ -269,6 +289,14 @@ export const createApp = ({
       outlinePasses.push(pass);
       composer.addPass(pass);
     }
+    const viewPass = new three.OutlinePass(new three.Vector2(width, height), scene, camera);
+    viewPass.selectedObjects = [];
+    viewPass.edgeGlow = DEFAULTS.outlineGlow;
+    viewPass.downSampleRatio = DEFAULTS.outlineDownSampleRatio;
+    viewPass.pulsePeriod = 0;
+    applyViewmodelOutline(viewPass);
+    viewmodelOutlinePass = viewPass;
+    composer.addPass(viewPass);
     refreshOutlineSelection();
   }
 
@@ -318,6 +346,7 @@ export const createApp = ({
       }
       weaponViewmodelParent = attachWeaponViewmodel(scene, camera, nextRoot);
       weaponViewmodelRoot = nextRoot;
+      refreshViewmodelOutline();
     });
   };
 
@@ -679,6 +708,7 @@ export const createApp = ({
     renderer.setSize(nextWidth, nextHeight);
     composer?.setSize?.(nextWidth, nextHeight);
     outlinePasses.forEach((pass) => pass.setSize?.(nextWidth, nextHeight));
+    viewmodelOutlinePass?.setSize?.(nextWidth, nextHeight);
   };
 
   const dispose = () => {

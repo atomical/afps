@@ -62,3 +62,17 @@ mkdir -p certs
 openssl req -x509 -newkey rsa:2048 -keyout certs/key.pem -out certs/cert.pem -days 365 -nodes -subj "/CN=localhost"
 ./build/afps_server --cert certs/cert.pem --key certs/key.pem --auth-token devtoken --host 0.0.0.0 --port 8443 --snapshot-keyframe-interval 5
 ```
+
+TURN (coturn) setup and TURN REST credentials:
+
+```bash
+./build/afps_server --auth-token devtoken --ice turn:turn.example.com:3478 --turn-secret supersecret
+```
+
+See `docs/TURN.md` for the full coturn recipe.
+
+Load test harness:
+
+```bash
+./server/build/afps_server_loadtest --clients 64 --ticks 600
+```

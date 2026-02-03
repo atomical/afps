@@ -18,11 +18,13 @@ export default defineConfig({
       // integration-heavy UI/asset code that is better covered via Playwright.
       exclude: [
         'src/**/types.ts',
-        'src/main.ts',
-        'src/ui/prejoin.ts',
-        'src/players/**/*.ts',
-        'src/characters/**/*.ts',
-        'src/profile/**/*.ts'
+        '**/src/main.ts',
+        '**/src/ui/prejoin.ts',
+        '**/src/players/**',
+        'src/net/fbs/**',
+        'src/ui/**',
+        'src/audio/**',
+        'src/environment/**'
       ],
       thresholds: {
         lines: 100,

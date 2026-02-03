@@ -390,6 +390,7 @@ describe('ClientPrediction', () => {
       moveSpeed: 0,
       accel: 0,
       friction: 0,
+      gravity: 0,
       dashImpulse: 5,
       dashCooldown: 0.25
     });
@@ -400,6 +401,31 @@ describe('ClientPrediction', () => {
     expect(state.velX).toBeCloseTo(5);
     expect(state.velY).toBeCloseTo(0);
     expect(state.dashCooldown).toBeCloseTo(0.25);
+  });
+
+  it('enforces dash cooldown and limits dash travel per tick', () => {
+    const sim = createJsPredictionSim({
+      ...SIM_CONFIG,
+      moveSpeed: 0,
+      accel: 0,
+      friction: 0,
+      gravity: 0,
+      dashImpulse: 10,
+      dashCooldown: 0.5
+    });
+    sim.setState(0, 0, 0, 0, 0, 0, 0);
+    const dt = 0.1;
+
+    sim.step({ moveX: 1, moveY: 0, sprint: false, jump: false, dash: true, grapple: false, shield: false, shockwave: false }, dt);
+    const firstX = sim.getState().x;
+    const dashVelocity = sim.getState().velX;
+    expect(firstX).toBeCloseTo(10 * dt);
+
+    sim.step({ moveX: 1, moveY: 0, sprint: false, jump: false, dash: true, grapple: false, shield: false, shockwave: false }, dt);
+    const secondX = sim.getState().x;
+    expect(secondX - firstX).toBeCloseTo(dashVelocity * dt);
+    expect(sim.getState().velX).toBeCloseTo(dashVelocity);
+    expect(sim.getState().dashCooldown).toBeLessThan(0.5);
   });
 
   it('dashes along existing velocity when no input is provided', () => {

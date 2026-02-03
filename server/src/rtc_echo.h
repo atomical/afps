@@ -13,7 +13,8 @@ struct RtcEchoCallbacks {
   std::function<void(const rtc::Candidate &)> on_local_candidate;
   std::function<void()> on_channel_open;
   std::function<void()> on_channel_closed;
-  std::function<void(const std::string &, const std::string &)> on_message;
+  std::function<void(const std::string &, const std::string &)> on_text_message;
+  std::function<void(const std::string &, const rtc::binary &)> on_binary_message;
 };
 
 struct RtcEchoPeerState {
@@ -38,6 +39,8 @@ public:
 
   bool Send(const std::string &message);
   bool SendOn(const std::string &label, const std::string &message);
+  bool Send(const rtc::binary &message);
+  bool SendOn(const std::string &label, const rtc::binary &message);
 
 private:
   std::string PrimaryLabel();

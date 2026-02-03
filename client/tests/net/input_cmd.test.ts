@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildInputCmd, serializeInputCmd } from '../../src/net/input_cmd';
+import { buildInputCmd } from '../../src/net/input_cmd';
 import type { InputSample } from '../../src/input/sampler';
 
 describe('input cmd', () => {
@@ -41,26 +41,6 @@ describe('input cmd', () => {
     });
   });
 
-  it('serializes input cmd to json', () => {
-    const cmd = buildInputCmd(3, {
-      moveX: 0,
-      moveY: 1,
-      lookDeltaX: 4,
-      lookDeltaY: -2,
-      jump: false,
-      fire: true,
-      sprint: false,
-      dash: false,
-      grapple: false,
-      shield: false,
-      shockwave: false,
-      weaponSlot: 0
-    });
-
-    const json = serializeInputCmd(cmd);
-    expect(JSON.parse(json)).toEqual(cmd);
-  });
-
   it('normalizes non-finite axis values', () => {
     const cmd = buildInputCmd(1, {
       moveX: Number.NaN,
@@ -79,5 +59,24 @@ describe('input cmd', () => {
 
     expect(cmd.moveX).toBe(0);
     expect(cmd.moveY).toBe(0);
+  });
+
+  it('clamps weapon slots to non-negative integers', () => {
+    const cmd = buildInputCmd(1, {
+      moveX: 0,
+      moveY: 0,
+      lookDeltaX: 0,
+      lookDeltaY: 0,
+      jump: false,
+      fire: false,
+      sprint: false,
+      dash: false,
+      grapple: false,
+      shield: false,
+      shockwave: false,
+      weaponSlot: Number.NaN
+    });
+
+    expect(cmd.weaponSlot).toBe(0);
   });
 });

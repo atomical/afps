@@ -13,6 +13,7 @@ const MANIFEST_URL = '/assets/environments/cc0/kenney_city_kit_suburban_20/map.j
 const DEFAULT_YAW_CHOICES = [0, Math.PI / 2, Math.PI, (Math.PI * 3) / 2];
 const DEBUG_BOUNDS_FLAG = 'VITE_DEBUG_RETRO_URBAN_BOUNDS';
 const DEBUG_GRID_FLAG = 'VITE_DEBUG_RETRO_URBAN_GRID';
+const DEBUG_MAP_FLAG = 'VITE_DEBUG_MAP_STATS';
 const DEBUG_BOUNDS_COLOR = 0x22ffcc;
 const DEBUG_GRID_SIZE = 40;
 const DEBUG_GRID_DIVISIONS = 10;
@@ -210,6 +211,13 @@ export const loadRetroUrbanMap = async (scene: SceneLike) => {
     }
     const loader = new GLTFLoader();
     const placements = await loadManifestPlacements();
+    const debugMap = (import.meta.env?.[DEBUG_MAP_FLAG] ?? '') === 'true';
+    const mapStats = debugMap
+      ? { total: placements.length, loaded: 0, failed: 0, complete: false }
+      : null;
+    if (debugMap) {
+      (globalThis as unknown as { __afpsMapStats?: unknown }).__afpsMapStats = mapStats;
+    }
 
     if (GridHelper) {
       const grid = new GridHelper(
@@ -236,10 +244,22 @@ export const loadRetroUrbanMap = async (scene: SceneLike) => {
             const helper = new BoxHelper(root as unknown as object, DEBUG_BOUNDS_COLOR);
             scene.add(helper as unknown as Object3DLike);
           }
+          if (mapStats) {
+            mapStats.loaded += 1;
+            if (mapStats.loaded + mapStats.failed >= mapStats.total) {
+              mapStats.complete = true;
+            }
+          }
         },
         undefined,
         (error) => {
           console.warn(`suburban asset failed: ${placement.file}`, error);
+          if (mapStats) {
+            mapStats.failed += 1;
+            if (mapStats.loaded + mapStats.failed >= mapStats.total) {
+              mapStats.complete = true;
+            }
+          }
         }
       );
     }

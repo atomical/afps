@@ -42,6 +42,29 @@ describe('weapon config', () => {
     });
   });
 
+  it('uses provided weapon names and ignores non-array entries', () => {
+    const defs = parseWeaponConfig({
+      weapons: [
+        {
+          id: 'named',
+          name: 'Custom',
+          kind: 'hitscan',
+          damage: 5,
+          fireRate: 4,
+          spreadDeg: 0,
+          range: 10,
+          projectileSpeed: 0,
+          explosionRadius: 0
+        }
+      ]
+    });
+
+    expect(defs[0]?.name).toBe('Custom');
+
+    const fallback = parseWeaponConfig({ weapons: 'bad' } as unknown as { weapons: unknown });
+    expect(getIds(fallback)).toEqual(['rifle', 'launcher']);
+  });
+
   it('rejects invalid weapon fields', () => {
     const defs = parseWeaponConfig({
       weapons: [

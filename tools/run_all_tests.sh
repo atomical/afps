@@ -54,6 +54,9 @@ echo "==> Starting client dev server for UI tests on port ${UI_TEST_PORT}"
   cd "${CLIENT_DIR}"
   VITE_SIGNALING_URL="${VITE_SIGNALING_URL:-http://localhost:8443}" \
   VITE_SIGNALING_AUTH_TOKEN="${VITE_SIGNALING_AUTH_TOKEN:-devtoken}" \
+  VITE_DEBUG_AUDIO="${VITE_DEBUG_AUDIO:-true}" \
+  VITE_DEBUG_HUD="${VITE_DEBUG_HUD:-true}" \
+  VITE_DEBUG_MAP_STATS="${VITE_DEBUG_MAP_STATS:-true}" \
     npm run dev -- --host 127.0.0.1 --port "${UI_TEST_PORT}" --strictPort \
       >"${ROOT_DIR}/.ui_test_dev_server.log" 2>&1 &
   DEV_PID=$!
@@ -82,6 +85,9 @@ echo "==> Running UI tests against ${TEST_BASE_URL}"
 pushd "${CLIENT_DIR}" >/dev/null
 PW_NO_WEB_SERVER=1 PW_BASE_URL="${TEST_BASE_URL}" npm run test:ui || FAILED=1
 popd >/dev/null
+
+echo "==> Running perf budget checks"
+"${ROOT_DIR}/tools/perf_check.sh" || FAILED=1
 
 if [[ "${FAILED}" -ne 0 ]]; then
   echo "==> Test suite completed with failures"

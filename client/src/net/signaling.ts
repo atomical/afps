@@ -80,12 +80,27 @@ const parseIceServers = (payload: unknown): RTCIceServer[] => {
     }
     const record = entry as Record<string, unknown>;
     const urls = record.urls;
+    const username = record.username;
+    const credential = record.credential;
+    if (username !== undefined && typeof username !== 'string') {
+      throw new SignalingClientError(`Invalid field: iceServers[${index}].username`);
+    }
+    if (credential !== undefined && typeof credential !== 'string') {
+      throw new SignalingClientError(`Invalid field: iceServers[${index}].credential`);
+    }
+    const extras: Partial<RTCIceServer> = {};
+    if (username && username.trim()) {
+      extras.username = username;
+    }
+    if (credential && credential.trim()) {
+      extras.credential = credential;
+    }
     if (typeof urls === 'string') {
-      return { urls };
+      return { urls, ...extras };
     }
     if (Array.isArray(urls)) {
       const sanitized = urls.map((url, urlIndex) => ensureString(url, `iceServers[${index}].urls[${urlIndex}]`));
-      return { urls: sanitized };
+      return { urls: sanitized, ...extras };
     }
     throw new SignalingClientError(`Invalid field: iceServers[${index}].urls`);
   });

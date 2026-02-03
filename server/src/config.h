@@ -12,6 +12,9 @@ struct ServerConfig {
   std::string key_path;
   std::string auth_token;
   std::vector<std::string> ice_servers;
+  std::string turn_secret;
+  std::string turn_user = "afps";
+  int turn_ttl_seconds = 3600;
   int snapshot_keyframe_interval = kSnapshotKeyframeInterval;
   std::string character_manifest_path;
   bool use_https = true;

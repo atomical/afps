@@ -1,11 +1,14 @@
 import type { Logger, TimerLike, DataChannelLike } from './types';
 import type { InputSampler } from '../input/sampler';
 import type { InputCmd } from './input_cmd';
-import { buildInputCmd, serializeInputCmd } from './input_cmd';
+import { buildInputCmd } from './input_cmd';
+import { encodeInputCmd } from './protocol';
 
 export interface InputSenderOptions {
   channel: DataChannelLike;
   sampler: InputSampler;
+  nextMessageSeq: () => number;
+  getServerSeqAck: () => number;
   tickRate?: number;
   logger?: Logger;
   timers?: TimerLike;
@@ -31,6 +34,8 @@ const resolveTickRate = (tickRate?: number) =>
 export const createInputSender = ({
   channel,
   sampler,
+  nextMessageSeq,
+  getServerSeqAck,
   tickRate,
   logger,
   timers = defaultTimers,
@@ -50,7 +55,7 @@ export const createInputSender = ({
     sequence += 1;
     const cmd = buildInputCmd(sequence, sampler.sample());
     onSend?.(cmd);
-    channel.send(serializeInputCmd(cmd));
+    channel.send(encodeInputCmd(cmd, nextMessageSeq(), getServerSeqAck()));
     return true;
   };
 

@@ -1,7 +1,23 @@
 import { describe, expect, it, vi } from 'vitest';
+import * as flatbuffers from 'flatbuffers';
 import { createWebRtcConnector } from '../../src/net/webrtc';
-import { SNAPSHOT_MASK_POS_X, SNAPSHOT_MASK_VEL_Y } from '../../src/net/protocol';
+import {
+  decodeEnvelope,
+  encodeEnvelope,
+  MessageType,
+  PROTOCOL_VERSION,
+  SNAPSHOT_MASK_POS_X,
+  SNAPSHOT_MASK_VEL_Y
+} from '../../src/net/protocol';
 import { FakeDataChannel, FakePeerConnection, FakePeerConnectionFactory, FakeSignalingClient } from './fakes';
+import { ClientHello } from '../../src/net/fbs/afps/protocol/client-hello';
+import { GameEvent } from '../../src/net/fbs/afps/protocol/game-event';
+import { GameEventType } from '../../src/net/fbs/afps/protocol/game-event-type';
+import { PlayerProfile } from '../../src/net/fbs/afps/protocol/player-profile';
+import { Pong } from '../../src/net/fbs/afps/protocol/pong';
+import { ServerHello } from '../../src/net/fbs/afps/protocol/server-hello';
+import { StateSnapshot } from '../../src/net/fbs/afps/protocol/state-snapshot';
+import { StateSnapshotDelta } from '../../src/net/fbs/afps/protocol/state-snapshot-delta';
 
 const createTimers = () => ({
   setInterval: (callback: () => void, ms: number) => window.setInterval(callback, ms),
@@ -24,6 +40,178 @@ const waitForPeer = async (factory: FakePeerConnectionFactory) => {
     throw new Error('peer not created');
   }
   return factory.last;
+};
+
+const buildServerHello = (
+  connectionId: string,
+  overrides: Partial<{
+    protocolVersion: number;
+    serverTickRate: number;
+    snapshotRate: number;
+    snapshotKeyframeInterval: number;
+    msgSeq: number;
+  }> = {}
+) => {
+  const builder = new flatbuffers.Builder(256);
+  const connectionOffset = builder.createString(connectionId);
+  const clientOffset = builder.createString(connectionId);
+  const offset = ServerHello.createServerHello(
+    builder,
+    overrides.protocolVersion ?? PROTOCOL_VERSION,
+    connectionOffset,
+    clientOffset,
+    overrides.serverTickRate ?? 60,
+    overrides.snapshotRate ?? 20,
+    overrides.snapshotKeyframeInterval ?? 5,
+    0,
+    0
+  );
+  builder.finish(offset);
+  return encodeEnvelope(MessageType.ServerHello, builder.asUint8Array(), overrides.msgSeq ?? 1, 0);
+};
+
+const buildStateSnapshot = (snapshot: {
+  serverTick: number;
+  lastProcessedInputSeq: number;
+  posX: number;
+  posY: number;
+  posZ: number;
+  velX: number;
+  velY: number;
+  velZ: number;
+  weaponSlot: number;
+  dashCooldown: number;
+  health: number;
+  kills: number;
+  deaths: number;
+  clientId?: string;
+}, msgSeq = 2) => {
+  const builder = new flatbuffers.Builder(256);
+  const clientId = builder.createString(snapshot.clientId ?? '');
+  const offset = StateSnapshot.createStateSnapshot(
+    builder,
+    snapshot.serverTick,
+    snapshot.lastProcessedInputSeq,
+    clientId,
+    snapshot.posX,
+    snapshot.posY,
+    snapshot.posZ,
+    snapshot.velX,
+    snapshot.velY,
+    snapshot.velZ,
+    snapshot.weaponSlot,
+    snapshot.dashCooldown,
+    snapshot.health,
+    snapshot.kills,
+    snapshot.deaths
+  );
+  builder.finish(offset);
+  return encodeEnvelope(MessageType.StateSnapshot, builder.asUint8Array(), msgSeq, 0);
+};
+
+const buildStateSnapshotDelta = (delta: {
+  serverTick: number;
+  baseTick: number;
+  lastProcessedInputSeq: number;
+  mask: number;
+  posX?: number;
+  posY?: number;
+  posZ?: number;
+  velX?: number;
+  velY?: number;
+  velZ?: number;
+  weaponSlot?: number;
+  dashCooldown?: number;
+  health?: number;
+  kills?: number;
+  deaths?: number;
+  clientId?: string;
+}, msgSeq = 3) => {
+  const builder = new flatbuffers.Builder(256);
+  const clientId = builder.createString(delta.clientId ?? '');
+  const offset = StateSnapshotDelta.createStateSnapshotDelta(
+    builder,
+    delta.serverTick,
+    delta.baseTick,
+    delta.lastProcessedInputSeq,
+    delta.mask,
+    clientId,
+    delta.posX ?? 0,
+    delta.posY ?? 0,
+    delta.posZ ?? 0,
+    delta.velX ?? 0,
+    delta.velY ?? 0,
+    delta.velZ ?? 0,
+    delta.weaponSlot ?? 0,
+    delta.dashCooldown ?? 0,
+    delta.health ?? 0,
+    delta.kills ?? 0,
+    delta.deaths ?? 0
+  );
+  builder.finish(offset);
+  return encodeEnvelope(MessageType.StateSnapshotDelta, builder.asUint8Array(), msgSeq, 0);
+};
+
+const buildPlayerProfile = (profile: { clientId: string; nickname: string; characterId: string }, msgSeq = 2) => {
+  const builder = new flatbuffers.Builder(128);
+  const clientId = builder.createString(profile.clientId);
+  const nickname = builder.createString(profile.nickname);
+  const characterId = builder.createString(profile.characterId);
+  const offset = PlayerProfile.createPlayerProfile(builder, clientId, nickname, characterId);
+  builder.finish(offset);
+  return encodeEnvelope(MessageType.PlayerProfile, builder.asUint8Array(), msgSeq, 0);
+};
+
+const buildGameEventProjectileSpawn = (msgSeq = 4) => {
+  const builder = new flatbuffers.Builder(256);
+  const ownerId = builder.createString('owner-1');
+  const offset = GameEvent.createGameEvent(
+    builder,
+    GameEventType.ProjectileSpawn,
+    0,
+    ownerId,
+    9,
+    0,
+    false,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    0.5
+  );
+  builder.finish(offset);
+  return encodeEnvelope(MessageType.GameEvent, builder.asUint8Array(), msgSeq, 0);
+};
+
+const buildGameEventHitConfirmed = (msgSeq = 6) => {
+  const builder = new flatbuffers.Builder(128);
+  const offset = GameEvent.createGameEvent(
+    builder,
+    GameEventType.HitConfirmed,
+    0,
+    0,
+    0,
+    5.5,
+    true,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  );
+  builder.finish(offset);
+  return encodeEnvelope(MessageType.GameEvent, builder.asUint8Array(), msgSeq, 0);
+};
+
+const buildPong = (clientTimeMs: number, msgSeq = 5) => {
+  const builder = new flatbuffers.Builder(64);
+  const offset = Pong.createPong(builder, clientTimeMs);
+  builder.finish(offset);
+  return encodeEnvelope(MessageType.Pong, builder.asUint8Array(), msgSeq, 0);
 };
 
 describe('webrtc connector', () => {
@@ -51,32 +239,66 @@ describe('webrtc connector', () => {
     unreliable.open();
     await Promise.resolve();
     reliable.emitMessage(new ArrayBuffer(4));
-    reliable.emitMessage(
-      JSON.stringify({
-        type: 'ServerHello',
-        protocolVersion: 3,
-        connectionId: signaling.connectionId,
-        serverTickRate: 60,
-        snapshotRate: 20
-      })
-    );
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
 
     const session = await connectPromise;
 
     expect(signaling.createSessionCalls).toBe(1);
     expect(signaling.sendAnswerCalls).toHaveLength(1);
-    const sent = reliable.sent.find((entry) => typeof entry === 'string') as string | undefined;
+    const sent = reliable.sent.find((entry) => entry instanceof Uint8Array) as Uint8Array | undefined;
     expect(sent).toBeDefined();
-    const parsed = JSON.parse(sent ?? '{}') as Record<string, unknown>;
-    expect(parsed.type).toBe('ClientHello');
-    expect(parsed.sessionToken).toBe(signaling.sessionToken);
-    expect(parsed.connectionId).toBe(signaling.connectionId);
+    const envelope = decodeEnvelope(sent!);
+    expect(envelope?.header.msgType).toBe(MessageType.ClientHello);
+    const client = ClientHello.getRootAsClientHello(new flatbuffers.ByteBuffer(envelope!.payload));
+    expect(client.sessionToken()).toBe(signaling.sessionToken);
+    expect(client.connectionId()).toBe(signaling.connectionId);
     expect(session.serverHello.connectionId).toBe(signaling.connectionId);
-    reliable.emitMessage('pong');
+    reliable.emitMessage(buildPong(1));
     session.close();
     const fetchCount = signaling.fetchCandidatesCalls.length;
     vi.advanceTimersByTime(500);
     expect(signaling.fetchCandidatesCalls.length).toBe(fetchCount);
+    vi.useRealTimers();
+  });
+
+  it('ignores string data messages on both channels', async () => {
+    vi.useFakeTimers();
+    const signaling = new FakeSignalingClient();
+    const rtcFactory = new FakePeerConnectionFactory();
+    const onPlayerProfile = vi.fn();
+    const onSnapshot = vi.fn();
+    const connector = createWebRtcConnector({
+      signaling,
+      rtcFactory,
+      logger: silentLogger,
+      pollIntervalMs: 100,
+      connectTimeoutMs: 1000,
+      timers: createTimers(),
+      onPlayerProfile,
+      onSnapshot
+    });
+
+    const connectPromise = connector.connect();
+    const pc = await waitForPeer(rtcFactory);
+
+    const reliable = new FakeDataChannel('afps_reliable');
+    const unreliable = new FakeDataChannel('afps_unreliable');
+    pc.emitDataChannel(reliable);
+    pc.emitDataChannel(unreliable);
+    reliable.open();
+    unreliable.open();
+    await Promise.resolve();
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
+
+    const session = await connectPromise;
+
+    reliable.emitMessage('hello');
+    unreliable.emitMessage('world');
+
+    expect(onPlayerProfile).not.toHaveBeenCalled();
+    expect(onSnapshot).not.toHaveBeenCalled();
+
+    session.close();
     vi.useRealTimers();
   });
 
@@ -105,15 +327,7 @@ describe('webrtc connector', () => {
     reliable.open();
     unreliable.open();
     await Promise.resolve();
-    reliable.emitMessage(
-      JSON.stringify({
-        type: 'ServerHello',
-        protocolVersion: 3,
-        connectionId: signaling.connectionId,
-        serverTickRate: 60,
-        snapshotRate: 20
-      })
-    );
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
 
     const session = await connectPromise;
 
@@ -135,7 +349,7 @@ describe('webrtc connector', () => {
       kills: 0,
       deaths: 0
     };
-    unreliable.emitMessage(JSON.stringify(snapshot));
+    unreliable.emitMessage(buildStateSnapshot(snapshot));
 
     const delta = {
       type: 'StateSnapshotDelta',
@@ -146,7 +360,7 @@ describe('webrtc connector', () => {
       posX: 2.25,
       velY: -0.5
     };
-    unreliable.emitMessage(JSON.stringify(delta));
+    unreliable.emitMessage(buildStateSnapshotDelta(delta));
 
     expect(onSnapshot).toHaveBeenCalledTimes(2);
     expect(onSnapshot).toHaveBeenNthCalledWith(1, snapshot);
@@ -196,26 +410,11 @@ describe('webrtc connector', () => {
     reliable.open();
     unreliable.open();
     await Promise.resolve();
-    reliable.emitMessage(
-      JSON.stringify({
-        type: 'ServerHello',
-        protocolVersion: 3,
-        connectionId: signaling.connectionId,
-        serverTickRate: 60,
-        snapshotRate: 20
-      })
-    );
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
 
     await connectPromise;
 
-    reliable.emitMessage(
-      JSON.stringify({
-        type: 'PlayerProfile',
-        clientId: 'client-1',
-        nickname: 'Ada',
-        characterId: 'casual-a'
-      })
-    );
+    reliable.emitMessage(buildPlayerProfile({ clientId: 'client-1', nickname: 'Ada', characterId: 'casual-a' }));
 
     expect(onPlayerProfile).toHaveBeenCalledWith({
       type: 'PlayerProfile',
@@ -253,15 +452,7 @@ describe('webrtc connector', () => {
     reliable.open();
     unreliable.open();
     await Promise.resolve();
-    reliable.emitMessage(
-      JSON.stringify({
-        type: 'ServerHello',
-        protocolVersion: 3,
-        connectionId: signaling.connectionId,
-        serverTickRate: 60,
-        snapshotRate: 20
-      })
-    );
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
 
     const session = await connectPromise;
     expect(session.connectionId).toBe(signaling.connectionId);
@@ -275,6 +466,91 @@ describe('webrtc connector', () => {
     await Promise.resolve();
     expect(fetchCandidatesMock).toHaveBeenCalledTimes(1);
 
+    session.close();
+    vi.useRealTimers();
+  });
+
+  it('stops candidate polling on 404 errors', async () => {
+    vi.useFakeTimers();
+    const signaling = new FakeSignalingClient();
+    const fetchError = { status: 404 };
+    const fetchCandidatesMock = vi.fn().mockRejectedValue(fetchError);
+    signaling.fetchCandidates = fetchCandidatesMock;
+    const warn = vi.fn();
+    const rtcFactory = new FakePeerConnectionFactory();
+    const connector = createWebRtcConnector({
+      signaling,
+      rtcFactory,
+      logger: { ...silentLogger, warn },
+      pollIntervalMs: 100,
+      connectTimeoutMs: 1000,
+      timers: createTimers()
+    });
+
+    const connectPromise = connector.connect();
+    const pc = await waitForPeer(rtcFactory);
+
+    const reliable = new FakeDataChannel('afps_reliable');
+    const unreliable = new FakeDataChannel('afps_unreliable');
+    pc.emitDataChannel(reliable);
+    pc.emitDataChannel(unreliable);
+    reliable.open();
+    unreliable.open();
+    await Promise.resolve();
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
+
+    const session = await connectPromise;
+
+    vi.advanceTimersByTime(100);
+    await Promise.resolve();
+    expect(fetchCandidatesMock).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('candidate poll failed'));
+
+    vi.advanceTimersByTime(500);
+    await Promise.resolve();
+    expect(fetchCandidatesMock).toHaveBeenCalledTimes(1);
+    session.close();
+    vi.useRealTimers();
+  });
+
+  it('continues polling on non-status errors', async () => {
+    vi.useFakeTimers();
+    const signaling = new FakeSignalingClient();
+    const fetchCandidatesMock = vi.fn().mockRejectedValue('boom');
+    signaling.fetchCandidates = fetchCandidatesMock;
+    const warn = vi.fn();
+    const rtcFactory = new FakePeerConnectionFactory();
+    const connector = createWebRtcConnector({
+      signaling,
+      rtcFactory,
+      logger: { ...silentLogger, warn },
+      pollIntervalMs: 100,
+      connectTimeoutMs: 1000,
+      timers: createTimers()
+    });
+
+    const connectPromise = connector.connect();
+    const pc = await waitForPeer(rtcFactory);
+
+    const reliable = new FakeDataChannel('afps_reliable');
+    const unreliable = new FakeDataChannel('afps_unreliable');
+    pc.emitDataChannel(reliable);
+    pc.emitDataChannel(unreliable);
+    reliable.open();
+    unreliable.open();
+    await Promise.resolve();
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
+
+    const session = await connectPromise;
+
+    vi.advanceTimersByTime(100);
+    await Promise.resolve();
+    vi.advanceTimersByTime(100);
+    await Promise.resolve();
+
+    expect(fetchCandidatesMock.mock.calls.length).toBeGreaterThan(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('candidate poll failed'));
+    session.close();
     vi.useRealTimers();
   });
 
@@ -301,26 +577,59 @@ describe('webrtc connector', () => {
     reliable.open();
     unreliable.open();
     await Promise.resolve();
-    reliable.emitMessage(
-      JSON.stringify({
-        type: 'ServerHello',
-        protocolVersion: 3,
-        connectionId: signaling.connectionId,
-        serverTickRate: 60,
-        snapshotRate: 20
-      })
-    );
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
 
-    await connectPromise;
+    const session = await connectPromise;
 
     vi.advanceTimersByTime(100);
     await Promise.resolve();
     const initialPolls = signaling.fetchCandidatesCalls.length;
+    pc.setIceConnectionState('checking');
     pc.setIceConnectionState('connected');
+    pc.setIceConnectionState('completed');
+    pc.setIceConnectionState('failed');
+    pc.setIceConnectionState('closed');
 
     vi.advanceTimersByTime(500);
     await Promise.resolve();
     expect(signaling.fetchCandidatesCalls.length).toBe(initialPolls);
+    session.close();
+    vi.useRealTimers();
+  });
+
+  it('logs unknown datachannel labels', async () => {
+    vi.useFakeTimers();
+    const signaling = new FakeSignalingClient();
+    const warn = vi.fn();
+    const rtcFactory = new FakePeerConnectionFactory();
+    const connector = createWebRtcConnector({
+      signaling,
+      rtcFactory,
+      logger: { ...silentLogger, warn },
+      pollIntervalMs: 100,
+      connectTimeoutMs: 1000,
+      timers: createTimers()
+    });
+
+    const connectPromise = connector.connect();
+    const pc = await waitForPeer(rtcFactory);
+
+    const reliable = new FakeDataChannel('afps_reliable');
+    const unreliable = new FakeDataChannel('afps_unreliable');
+    pc.emitDataChannel(reliable);
+    pc.emitDataChannel(unreliable);
+    reliable.open();
+    unreliable.open();
+    await Promise.resolve();
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
+
+    const session = await connectPromise;
+
+    const unknown = new FakeDataChannel('mystery');
+    pc.emitDataChannel(unknown);
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('unknown datachannel label'));
+    session.close();
     vi.useRealTimers();
   });
 
@@ -349,15 +658,7 @@ describe('webrtc connector', () => {
     reliable.open();
     unreliable.open();
     await Promise.resolve();
-    reliable.emitMessage(
-      JSON.stringify({
-        type: 'ServerHello',
-        protocolVersion: 3,
-        connectionId: signaling.connectionId,
-        serverTickRate: 60,
-        snapshotRate: 20
-      })
-    );
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
 
     const session = await connectPromise;
 
@@ -370,7 +671,7 @@ describe('webrtc connector', () => {
       posX: 2.25,
       velY: -0.5
     };
-    unreliable.emitMessage(JSON.stringify(delta));
+    unreliable.emitMessage(buildStateSnapshotDelta(delta));
     expect(onSnapshot).not.toHaveBeenCalled();
 
     const snapshot = {
@@ -389,7 +690,7 @@ describe('webrtc connector', () => {
       kills: 0,
       deaths: 0
     };
-    unreliable.emitMessage(JSON.stringify(snapshot));
+    unreliable.emitMessage(buildStateSnapshot(snapshot));
     expect(onSnapshot).toHaveBeenCalledWith(snapshot);
 
     session.close();
@@ -421,26 +722,11 @@ describe('webrtc connector', () => {
     reliable.open();
     unreliable.open();
     await Promise.resolve();
-    reliable.emitMessage(
-      JSON.stringify({
-        type: 'ServerHello',
-        protocolVersion: 3,
-        connectionId: signaling.connectionId,
-        serverTickRate: 60,
-        snapshotRate: 20
-      })
-    );
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
 
     const session = await connectPromise;
 
-    unreliable.emitMessage(
-      JSON.stringify({
-        type: 'GameEvent',
-        event: 'HitConfirmed',
-        damage: 5.5,
-        killed: true
-      })
-    );
+    unreliable.emitMessage(buildGameEventHitConfirmed());
 
     expect(onGameEvent).toHaveBeenCalledWith({
       type: 'GameEvent',
@@ -477,19 +763,11 @@ describe('webrtc connector', () => {
     reliable.open();
     unreliable.open();
     await Promise.resolve();
-    reliable.emitMessage(
-      JSON.stringify({
-        type: 'ServerHello',
-        protocolVersion: 3,
-        connectionId: signaling.connectionId,
-        serverTickRate: 60,
-        snapshotRate: 20
-      })
-    );
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
 
     const session = await connectPromise;
 
-    unreliable.emitMessage(JSON.stringify({ type: 'Pong', clientTimeMs: 22 }));
+    unreliable.emitMessage(buildPong(22));
     expect(onPong).toHaveBeenCalledWith({ type: 'Pong', clientTimeMs: 22 });
     session.close();
     vi.useRealTimers();
@@ -521,15 +799,7 @@ describe('webrtc connector', () => {
     reliable.open();
     unreliable.open();
     await Promise.resolve();
-    reliable.emitMessage(
-      JSON.stringify({
-        type: 'ServerHello',
-        protocolVersion: 3,
-        connectionId: signaling.connectionId,
-        serverTickRate: 60,
-        snapshotRate: 20
-      })
-    );
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
 
     await connectPromise;
     expect(warnSpy).toHaveBeenCalledWith('unknown datachannel label: mystery');
@@ -556,15 +826,7 @@ describe('webrtc connector', () => {
     pc.emitDataChannel(reliable);
     reliable.open();
     await Promise.resolve();
-    reliable.emitMessage(
-      JSON.stringify({
-        type: 'ServerHello',
-        protocolVersion: 3,
-        connectionId: signaling.connectionId,
-        serverTickRate: 60,
-        snapshotRate: 20
-      })
-    );
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
 
     await Promise.resolve();
 
@@ -602,15 +864,7 @@ describe('webrtc connector', () => {
     reliable.open();
     unreliable.open();
     await Promise.resolve();
-    reliable.emitMessage(
-      JSON.stringify({
-        type: 'ServerHello',
-        protocolVersion: 3,
-        connectionId: signaling.connectionId,
-        serverTickRate: 60,
-        snapshotRate: 20
-      })
-    );
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
     await connectPromise;
 
     pc.emitIceCandidate({ candidate: 'local', sdpMid: '0' });
@@ -647,15 +901,7 @@ describe('webrtc connector', () => {
     reliable.open();
     unreliable.open();
     await Promise.resolve();
-    reliable.emitMessage(
-      JSON.stringify({
-        type: 'ServerHello',
-        protocolVersion: 1,
-        connectionId: signaling.connectionId,
-        serverTickRate: 60,
-        snapshotRate: 20
-      })
-    );
+    reliable.emitMessage(buildServerHello(signaling.connectionId, { protocolVersion: 1 }));
 
     await expect(connectPromise).rejects.toThrow('ServerHello protocol mismatch (1)');
     vi.useRealTimers();
@@ -684,15 +930,7 @@ describe('webrtc connector', () => {
     reliable.open();
     unreliable.open();
     await Promise.resolve();
-    reliable.emitMessage(
-      JSON.stringify({
-        type: 'ServerHello',
-        protocolVersion: 3,
-        connectionId: 'other',
-        serverTickRate: 60,
-        snapshotRate: 20
-      })
-    );
+    reliable.emitMessage(buildServerHello('other'));
 
     await expect(connectPromise).rejects.toThrow('ServerHello connection mismatch');
     vi.useRealTimers();
@@ -755,15 +993,7 @@ describe('webrtc connector', () => {
     pc.emitDataChannel(unreliable);
     reliable.open();
     unreliable.open();
-    reliable.emitMessage(
-      JSON.stringify({
-        type: 'ServerHello',
-        protocolVersion: 3,
-        connectionId: signaling.connectionId,
-        serverTickRate: 60,
-        snapshotRate: 20
-      })
-    );
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
 
     const session = await connectPromise;
 

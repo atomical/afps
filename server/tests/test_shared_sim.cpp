@@ -142,6 +142,44 @@ TEST_CASE("Shared sim golden input script") {
   CHECK(state.vel_z == doctest::Approx(2.5));
 }
 
+TEST_CASE("Shared sim replay remains deterministic") {
+  std::ifstream file("../../shared/sim/replays/ability_replay.json");
+  REQUIRE(file.is_open());
+
+  nlohmann::json payload;
+  file >> payload;
+
+  const double dt = payload.value("dt", 1.0 / 60.0);
+  const auto inputs = payload.at("inputs");
+  const auto expected = payload.at("expected");
+
+  afps::sim::PlayerState state{};
+  for (const auto &input : inputs) {
+    const auto sim_input = afps::sim::MakeInput(
+        input.value("moveX", 0.0),
+        input.value("moveY", 0.0),
+        input.value("sprint", false),
+        input.value("jump", false),
+        input.value("dash", false),
+        input.value("grapple", false),
+        input.value("shield", false),
+        input.value("shockwave", false),
+        input.value("viewYaw", 0.0),
+        input.value("viewPitch", 0.0));
+    afps::sim::StepPlayer(state, sim_input, afps::sim::kDefaultSimConfig, dt);
+  }
+
+  CHECK(state.x == doctest::Approx(expected.at("x").get<double>()).epsilon(1e-5));
+  CHECK(state.y == doctest::Approx(expected.at("y").get<double>()).epsilon(1e-5));
+  CHECK(state.z == doctest::Approx(expected.at("z").get<double>()).epsilon(1e-5));
+  CHECK(state.vel_x == doctest::Approx(expected.at("velX").get<double>()).epsilon(1e-5));
+  CHECK(state.vel_y == doctest::Approx(expected.at("velY").get<double>()).epsilon(1e-5));
+  CHECK(state.vel_z == doctest::Approx(expected.at("velZ").get<double>()).epsilon(1e-5));
+  CHECK(state.dash_cooldown == doctest::Approx(expected.at("dashCooldown").get<double>()).epsilon(1e-5));
+  CHECK(state.grapple_cooldown == doctest::Approx(expected.at("grappleCooldown").get<double>()).epsilon(1e-5));
+  CHECK(state.grapple_active == expected.at("grappleActive").get<bool>());
+}
+
 TEST_CASE("Shared sim jump height within tolerance") {
   afps::sim::PlayerState state{};
   const double dt = 1.0 / 60.0;
@@ -216,6 +254,34 @@ TEST_CASE("Shared sim slides along arena floor and preserves tangential velocity
   CHECK(state.x == doctest::Approx(0.5));
   CHECK(state.vel_y == doctest::Approx(0.0));
   CHECK(state.vel_x == doctest::Approx(0.4));
+}
+
+TEST_CASE("Shared sim dash enforces cooldown and travel distance") {
+  afps::sim::SimConfig config = afps::sim::kDefaultSimConfig;
+  config.move_speed = 0.0;
+  config.accel = 0.0;
+  config.friction = 0.0;
+  config.gravity = 0.0;
+  config.arena_half_size = 100.0;
+  config.player_radius = 0.2;
+  config.dash_impulse = 10.0;
+  config.dash_cooldown = 0.5;
+
+  afps::sim::PlayerState state{};
+  const double dt = 0.1;
+  const auto dash = afps::sim::MakeInput(1.0, 0.0, false, false, true, false, false, false);
+
+  afps::sim::StepPlayer(state, dash, config, dt);
+  const double first_step = state.x;
+  const double dash_velocity = state.vel_x;
+  CHECK(first_step == doctest::Approx(config.dash_impulse * dt));
+  CHECK(state.dash_cooldown == doctest::Approx(config.dash_cooldown));
+
+  afps::sim::StepPlayer(state, dash, config, dt);
+  const double second_step = state.x - first_step;
+  CHECK(second_step == doctest::Approx(dash_velocity * dt));
+  CHECK(state.vel_x == doctest::Approx(dash_velocity));
+  CHECK(state.dash_cooldown < config.dash_cooldown);
 }
 
 TEST_CASE("Shared sim grapples to arena wall and releases with cooldown") {

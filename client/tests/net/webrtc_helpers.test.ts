@@ -25,6 +25,14 @@ describe('webrtc helpers', () => {
     vi.useRealTimers();
   });
 
+  it('resolves immediately when channel is already open', async () => {
+    const channel = new FakeDataChannel();
+    channel.readyState = 'open';
+    const timers = createTimers();
+
+    await expect(__test.waitForDataChannelOpen(channel, timers, 50)).resolves.toBeUndefined();
+  });
+
   it('clears timeout when channel opens', async () => {
     const channel = new FakeDataChannel();
     let cleared = false;
@@ -90,6 +98,12 @@ describe('webrtc helpers', () => {
     vi.useRealTimers();
   });
 
+  it('propagates channel promise rejections', async () => {
+    const timers = createTimers();
+    const channelPromise = Promise.reject(new Error('boom'));
+    await expect(__test.waitForChannelEvent(channelPromise, timers, 10)).rejects.toThrow('boom');
+  });
+
   it('times out waiting for server hello', async () => {
     vi.useFakeTimers();
     const timers = createTimers();
@@ -99,6 +113,32 @@ describe('webrtc helpers', () => {
     vi.advanceTimersByTime(20);
     await expect(waitPromise).rejects.toThrow('ServerHello timeout');
     vi.useRealTimers();
+  });
+
+  it('propagates server hello rejections', async () => {
+    const timers = createTimers();
+    const failed = Promise.reject(new Error('bad hello'));
+    await expect(__test.waitForServerHello(failed, timers, 50)).rejects.toThrow('bad hello');
+  });
+
+  it('swallows polling errors', async () => {
+    let intervalCallback: (() => void) | null = null;
+    const timers = {
+      setInterval: (callback: () => void) => {
+        intervalCallback = callback;
+        return 1;
+      },
+      clearInterval: vi.fn(),
+      setTimeout: (callback: () => void) => window.setTimeout(callback, 0),
+      clearTimeout: (id: number) => window.clearTimeout(id)
+    };
+
+    const stop = __test.startCandidatePolling(timers, 10, async () => {
+      throw new Error('poll failed');
+    });
+
+    await intervalCallback?.();
+    stop();
   });
 
   it('exercises default logger and timers', () => {

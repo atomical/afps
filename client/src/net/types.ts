@@ -62,8 +62,8 @@ export interface DataChannelLike {
   label: string;
   readyState: 'connecting' | 'open' | 'closing' | 'closed';
   onopen: (() => void) | null;
-  onmessage: ((event: { data: string | ArrayBuffer }) => void) | null;
-  send: (data: string | ArrayBuffer) => void;
+  onmessage: ((event: { data: string | ArrayBuffer | Uint8Array }) => void) | null;
+  send: (data: string | ArrayBuffer | Uint8Array) => void;
   close: () => void;
 }
 
@@ -89,5 +89,7 @@ export interface WebRtcSession {
   peerConnection: RtcPeerConnectionLike;
   reliableChannel: DataChannelLike;
   unreliableChannel: DataChannelLike;
+  nextClientMessageSeq: () => number;
+  getServerSeqAck: () => number;
   close: () => void;
 }

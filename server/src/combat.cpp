@@ -327,6 +327,27 @@ Vec3 ViewDirection(const ViewAngles &angles) {
   return dir;
 }
 
+bool IsShieldFacing(const Vec3 &target_pos,
+                    const ViewAngles &target_view,
+                    const Vec3 &source_pos,
+                    double min_dot) {
+  const Vec3 forward = ViewDirection(target_view);
+  Vec3 to_source{source_pos.x - target_pos.x, source_pos.y - target_pos.y, source_pos.z - target_pos.z};
+  const double len = std::sqrt(to_source.x * to_source.x + to_source.y * to_source.y + to_source.z * to_source.z);
+  if (len <= 1e-6 || !std::isfinite(len)) {
+    return true;
+  }
+  to_source.x /= len;
+  to_source.y /= len;
+  to_source.z /= len;
+  const double dot = forward.x * to_source.x + forward.y * to_source.y + forward.z * to_source.z;
+  if (!std::isfinite(dot)) {
+    return false;
+  }
+  const double threshold = std::isfinite(min_dot) ? min_dot : kShieldBlockDot;
+  return dot >= threshold;
+}
+
 HitResult ResolveHitscan(const std::string &shooter_id,
                          const std::unordered_map<std::string, PoseHistory> &histories,
                          int rewind_tick,
@@ -520,6 +541,7 @@ std::vector<ShockwaveHit> ComputeShockwaveHits(
     double radius,
     double max_impulse,
     double max_damage,
+    const afps::sim::SimConfig &config,
     const std::unordered_map<std::string, afps::sim::PlayerState> &players,
     const std::string &ignore_id) {
   std::vector<ShockwaveHit> hits;
@@ -549,6 +571,14 @@ std::vector<ShockwaveHit> ComputeShockwaveHits(
     const double falloff = std::max(0.0, 1.0 - (dist / radius));
     if (falloff <= 0.0) {
       continue;
+    }
+    if (dist > 1e-6 && std::isfinite(dist)) {
+      const afps::sim::Vec3 origin{center.x, center.y, center.z};
+      const afps::sim::Vec3 dir{dx / dist, dy / dist, dz / dist};
+      const afps::sim::RaycastHit los_hit = afps::sim::RaycastWorld(origin, dir, config);
+      if (los_hit.hit && los_hit.t + 1e-4 < dist) {
+        continue;
+      }
     }
     const double impulse_mag = safe_impulse * falloff;
     const double damage = safe_damage * falloff;

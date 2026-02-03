@@ -7,17 +7,18 @@ import type {
 
 export class FakeDataChannel implements DataChannelLike {
   label: string;
+  binaryType?: string;
   readyState: 'connecting' | 'open' | 'closing' | 'closed' = 'connecting';
   onopen: (() => void) | null = null;
-  onmessage: ((event: { data: string | ArrayBuffer }) => void) | null = null;
-  sent: Array<string | ArrayBuffer> = [];
+  onmessage: ((event: { data: string | ArrayBuffer | Uint8Array }) => void) | null = null;
+  sent: Array<string | ArrayBuffer | Uint8Array> = [];
   closed = false;
 
   constructor(label = 'afps_reliable') {
     this.label = label;
   }
 
-  send(data: string | ArrayBuffer) {
+  send(data: string | ArrayBuffer | Uint8Array) {
     this.sent.push(data);
   }
 
@@ -31,7 +32,7 @@ export class FakeDataChannel implements DataChannelLike {
     this.onopen?.();
   }
 
-  emitMessage(data: string | ArrayBuffer) {
+  emitMessage(data: string | ArrayBuffer | Uint8Array) {
     this.onmessage?.({ data });
   }
 }

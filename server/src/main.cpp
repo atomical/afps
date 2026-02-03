@@ -16,16 +16,94 @@
 #include <rtc/rtc.hpp>
 #endif
 
+#include <cctype>
 #include <filesystem>
 #include <iostream>
+#include <random>
 #include <string>
 #include <vector>
 
 namespace {
 constexpr size_t kMaxPayloadBytes = 32 * 1024;
+constexpr size_t kMaxRequestIdBytes = 64;
 const char *kTooLargeJson = "{\"error\":\"payload_too_large\"}";
 const char *kRateLimitedJson = "{\"error\":\"rate_limited\"}";
 const char *kNotFoundJson = "{\"error\":\"not_found\"}";
+const char *kRequestIdHeader = "X-Request-Id";
+
+bool IsValidRequestIdChar(char ch) {
+  return std::isalnum(static_cast<unsigned char>(ch)) || ch == '-' || ch == '_';
+}
+
+std::string SanitizeRequestId(const std::string &value) {
+  if (value.empty() || value.size() > kMaxRequestIdBytes) {
+    return "";
+  }
+  for (char ch : value) {
+    if (!IsValidRequestIdChar(ch)) {
+      return "";
+    }
+  }
+  return value;
+}
+
+std::string GenerateRequestId() {
+  static thread_local std::mt19937 rng{std::random_device{}()};
+  static constexpr char kHex[] = "0123456789abcdef";
+  std::string out(16, '0');
+  std::uniform_int_distribution<int> dist(0, 15);
+  for (char &ch : out) {
+    ch = kHex[dist(rng)];
+  }
+  return out;
+}
+
+std::string EscapeJson(const std::string &value) {
+  std::string out;
+  out.reserve(value.size() + 8);
+  for (char ch : value) {
+    switch (ch) {
+      case '\\':
+        out += "\\\\";
+        break;
+      case '"':
+        out += "\\\"";
+        break;
+      case '\n':
+        out += "\\n";
+        break;
+      case '\r':
+        out += "\\r";
+        break;
+      case '\t':
+        out += "\\t";
+        break;
+      default:
+        if (static_cast<unsigned char>(ch) < 0x20) {
+          out += '?';
+        } else {
+          out += ch;
+        }
+        break;
+    }
+  }
+  return out;
+}
+
+void LogAuditEvent(const httplib::Request &req,
+                   const httplib::Response &res,
+                   const std::string &event,
+                   const std::string &detail) {
+  const std::string request_id = res.get_header_value(kRequestIdHeader);
+  std::cout << "{\"ts\":\"" << EscapeJson(NowUtcTimestamp())
+            << "\",\"event\":\"" << EscapeJson(event)
+            << "\",\"request_id\":\"" << EscapeJson(request_id)
+            << "\",\"remote\":\"" << EscapeJson(req.remote_addr) << "\"";
+  if (!detail.empty()) {
+    std::cout << ",\"detail\":\"" << EscapeJson(detail) << "\"";
+  }
+  std::cout << "}\n";
+}
 
 void ApplyCorsHeaders(const httplib::Request &req, httplib::Response &res) {
   if (res.has_header("Access-Control-Allow-Origin")) {
@@ -37,7 +115,8 @@ void ApplyCorsHeaders(const httplib::Request &req, httplib::Response &res) {
   }
   res.set_header("Access-Control-Allow-Origin", origin);
   res.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.set_header("Access-Control-Allow-Headers", "Authorization, Content-Type");
+  res.set_header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-Id");
+  res.set_header("Access-Control-Expose-Headers", "X-Request-Id");
   res.set_header("Access-Control-Max-Age", "86400");
   res.set_header("Vary", "Origin");
 }
@@ -87,11 +166,16 @@ int main(int argc, char **argv) {
   }
 
   RateLimiter limiter(40.0, 20.0);
+  RateLimiter session_limiter(30.0, 15.0);
+  RateLimiter connection_limiter(60.0, 30.0);
 #ifdef AFPS_ENABLE_WEBRTC
   rtc::InitLogger(rtc::LogLevel::Warning);
 
   SignalingConfig signaling_config;
   signaling_config.ice_servers = parse.config.ice_servers;
+  signaling_config.turn_secret = parse.config.turn_secret;
+  signaling_config.turn_user = parse.config.turn_user;
+  signaling_config.turn_ttl_seconds = parse.config.turn_ttl_seconds;
   signaling_config.snapshot_keyframe_interval = parse.config.snapshot_keyframe_interval;
   std::filesystem::path manifest_path;
   if (!parse.config.character_manifest_path.empty()) {
@@ -124,6 +208,10 @@ int main(int argc, char **argv) {
     }
 
     server.set_pre_routing_handler([&](const httplib::Request &req, httplib::Response &res) {
+      const std::string incoming_id = SanitizeRequestId(req.get_header_value(kRequestIdHeader));
+      const std::string request_id = incoming_id.empty() ? GenerateRequestId() : incoming_id;
+      res.set_header(kRequestIdHeader, request_id);
+
       if (req.method == "OPTIONS") {
         ApplyCorsHeaders(req, res);
         res.status = 204;
@@ -157,6 +245,16 @@ int main(int argc, char **argv) {
       }
     });
 
+    server.set_logger([](const httplib::Request &req, const httplib::Response &res) {
+      const std::string request_id = res.get_header_value(kRequestIdHeader);
+      std::cout << "{\"ts\":\"" << EscapeJson(NowUtcTimestamp())
+                << "\",\"request_id\":\"" << EscapeJson(request_id)
+                << "\",\"method\":\"" << EscapeJson(req.method)
+                << "\",\"path\":\"" << EscapeJson(req.path)
+                << "\",\"status\":" << res.status
+                << ",\"remote\":\"" << EscapeJson(req.remote_addr) << "\"}\n";
+    });
+
     server.Get("/health", [&](const httplib::Request &, httplib::Response &res) {
       HealthStatus status;
       status.status = "ok";
@@ -174,10 +272,12 @@ int main(int argc, char **argv) {
       const auto auth = ValidateBearerAuth(req.get_header_value("Authorization"),
                                            parse.config.auth_token);
       if (!auth.ok) {
+        LogAuditEvent(req, res, "auth_failed", auth.code);
         RespondError(res, 401, auth.code, auth.message);
         return;
       }
       const auto session = signaling_store.CreateSession();
+      LogAuditEvent(req, res, "session_issued", session.expires_at);
       RespondJson(res, BuildSessionResponse(session));
     });
 
@@ -188,6 +288,11 @@ int main(int argc, char **argv) {
       const auto parsed = ParseConnectRequest(req.body);
       if (!parsed.ok) {
         RespondError(res, 400, "invalid_request", parsed.error);
+        return;
+      }
+      if (!session_limiter.AllowNow(parsed.request.session_token)) {
+        res.status = 429;
+        res.set_content(kRateLimitedJson, "application/json");
         return;
       }
 
@@ -210,6 +315,12 @@ int main(int argc, char **argv) {
         RespondError(res, 400, "invalid_request", parsed.error);
         return;
       }
+      if (!session_limiter.AllowNow(parsed.request.session_token) ||
+          !connection_limiter.AllowNow(parsed.request.connection_id)) {
+        res.status = 429;
+        res.set_content(kRateLimitedJson, "application/json");
+        return;
+      }
 
       const auto error = signaling_store.ApplyAnswer(parsed.request.session_token,
                                                      parsed.request.connection_id,
@@ -230,6 +341,12 @@ int main(int argc, char **argv) {
         RespondError(res, 400, "invalid_request", parsed.error);
         return;
       }
+      if (!session_limiter.AllowNow(parsed.request.session_token) ||
+          !connection_limiter.AllowNow(parsed.request.connection_id)) {
+        res.status = 429;
+        res.set_content(kRateLimitedJson, "application/json");
+        return;
+      }
       const auto error = signaling_store.AddRemoteCandidate(parsed.request.session_token,
                                                             parsed.request.connection_id,
                                                             parsed.request.candidate,
@@ -248,6 +365,11 @@ int main(int argc, char **argv) {
       }
       const auto session_token = req.get_param_value("sessionToken");
       const auto connection_id = req.get_param_value("connectionId");
+      if (!session_limiter.AllowNow(session_token) || !connection_limiter.AllowNow(connection_id)) {
+        res.status = 429;
+        res.set_content(kRateLimitedJson, "application/json");
+        return;
+      }
       auto result = signaling_store.DrainLocalCandidates(session_token, connection_id);
       if (!result.ok || !result.value.has_value()) {
         RespondError(res, 400, SignalingStore::ErrorCode(result.error), "candidate drain failed");

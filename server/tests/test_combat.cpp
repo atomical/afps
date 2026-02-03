@@ -16,6 +16,7 @@ using afps::combat::ApplyDamage;
 using afps::combat::ApplyDamageWithShield;
 using afps::combat::ApplyShieldMultiplier;
 using afps::combat::CreateCombatState;
+using afps::combat::IsShieldFacing;
 using afps::combat::UpdateRespawn;
 using afps::combat::ViewDirection;
 using afps::combat::ViewAngles;
@@ -124,6 +125,16 @@ TEST_CASE("ApplyShieldMultiplier clamps to valid range") {
   CHECK(ApplyShieldMultiplier(10.0, false, 0.2) == doctest::Approx(10.0));
 }
 
+TEST_CASE("Shield directionality blocks attacks from the front") {
+  const afps::combat::Vec3 target{0.0, 0.0, 0.0};
+  const auto view = SanitizeViewAngles(0.0, 0.0);
+  const afps::combat::Vec3 front{0.0, -5.0, 0.0};
+  const afps::combat::Vec3 back{0.0, 5.0, 0.0};
+
+  CHECK(IsShieldFacing(target, view, front));
+  CHECK_FALSE(IsShieldFacing(target, view, back));
+}
+
 TEST_CASE("ComputeShockwaveHits applies falloff impulse inside radius") {
   std::unordered_map<std::string, afps::sim::PlayerState> players;
   afps::sim::PlayerState self{};
@@ -142,8 +153,14 @@ TEST_CASE("ComputeShockwaveHits applies falloff impulse inside radius") {
   players.emplace("near", near);
   players.emplace("far", far);
 
+  afps::sim::SimConfig config = afps::sim::kDefaultSimConfig;
+  config.arena_half_size = 50.0;
+  config.obstacle_min_x = 0.0;
+  config.obstacle_max_x = 0.0;
+  config.obstacle_min_y = 0.0;
+  config.obstacle_max_y = 0.0;
   const afps::combat::Vec3 center{0.0, 0.0, afps::combat::kPlayerHeight * 0.5};
-  const auto hits = ComputeShockwaveHits(center, 5.0, 10.0, 5.0, players, "self");
+  const auto hits = ComputeShockwaveHits(center, 5.0, 10.0, 5.0, config, players, "self");
   REQUIRE(hits.size() == 1);
   CHECK(hits[0].target_id == "near");
   CHECK(hits[0].distance == doctest::Approx(3.0));
@@ -151,6 +168,31 @@ TEST_CASE("ComputeShockwaveHits applies falloff impulse inside radius") {
   CHECK(hits[0].impulse.y == doctest::Approx(0.0));
   CHECK(hits[0].impulse.z == doctest::Approx(0.0));
   CHECK(hits[0].damage == doctest::Approx(2.0));
+}
+
+TEST_CASE("ComputeShockwaveHits respects line of sight") {
+  std::unordered_map<std::string, afps::sim::PlayerState> players;
+  afps::sim::PlayerState self{};
+  self.x = 0.0;
+  self.y = 0.0;
+  self.z = 0.0;
+  afps::sim::PlayerState blocked{};
+  blocked.x = 3.0;
+  blocked.y = 0.0;
+  blocked.z = 0.0;
+  players.emplace("self", self);
+  players.emplace("blocked", blocked);
+
+  afps::sim::SimConfig config = afps::sim::kDefaultSimConfig;
+  config.arena_half_size = 10.0;
+  config.obstacle_min_x = 1.0;
+  config.obstacle_max_x = 2.0;
+  config.obstacle_min_y = -1.0;
+  config.obstacle_max_y = 1.0;
+
+  const afps::combat::Vec3 center{0.0, 0.0, afps::combat::kPlayerHeight * 0.5};
+  const auto hits = ComputeShockwaveHits(center, 6.0, 10.0, 5.0, config, players, "self");
+  CHECK(hits.empty());
 }
 
 TEST_CASE("UpdateRespawn restores health after timer") {

@@ -335,6 +335,32 @@ canvas {
   margin-top: 6px;
 }
 
+.settings-audio-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.settings-audio-control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-audio-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.settings-audio-value {
+  color: #a8ffd6;
+}
+
 .settings-binding-row {
   display: flex;
   align-items: center;
