@@ -292,13 +292,13 @@ IMPLEMENTATION DETAILS (write real code, not pseudocode):
      - casing ejection enabled but casing prefab/mesh missing
 
 DELIVERABLES (what you must commit/change):
-- WeaponDefinition + WeaponDatabase/Registry
-- Complete weapon entries for ALL weapons found in repo (and at least the defaults above)
-- Updated weapon firing code to consume WeaponDefinition
-- Server-synced WeaponFiredEvent that drives client VFX + casing + fire sound
-- Casing prefab built from Blaster Kit bullet + pooling + collision impact sounds
-- Procedural SFX generator integrated and used by WeaponDefinition sounds
-- Minimal documentation in README or docs/WEAPONS.md describing:
+- [ ] WeaponDefinition + WeaponDatabase/Registry
+- [ ] Complete weapon entries for ALL weapons found in repo (and at least the defaults above)
+- [ ] Updated weapon firing code to consume WeaponDefinition
+- [ ] Server-synced WeaponFiredEvent that drives client VFX + casing + fire sound
+- [ ] Casing prefab built from Blaster Kit bullet + pooling + collision impact sounds
+- [ ] Procedural SFX generator integrated and used by WeaponDefinition sounds
+- [ ] Minimal documentation in README or docs/WEAPONS.md describing:
   - how to add a new weapon definition
   - how casing replication works
   - how SFX generation works
