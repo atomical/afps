@@ -13,6 +13,7 @@ struct ServerConfig {
   std::string auth_token;
   std::vector<std::string> ice_servers;
   int snapshot_keyframe_interval = kSnapshotKeyframeInterval;
+  std::string character_manifest_path;
   bool use_https = true;
   bool show_help = false;
 };

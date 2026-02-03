@@ -158,6 +158,90 @@ describe('createApp', () => {
     expect(outlinePasses[1].edgeStrength).toBe(teamStrength);
   });
 
+  it('can hide the local proxy cube', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    // FakeThree meshes don't set `visible` by default, but the real Three.js Mesh does.
+    // Force the property on so setLocalProxyVisible is exercised.
+    (app.state.cube as unknown as { visible: boolean }).visible = true;
+
+    const composer = FakeEffectComposer.instances[0];
+    const outlinePasses = composer.passes.filter(
+      (pass): pass is FakeOutlinePass => pass instanceof FakeOutlinePass
+    );
+
+    expect((app.state.cube as unknown as { visible: boolean }).visible).toBe(true);
+    expect(outlinePasses[0].selectedObjects.length).toBe(1);
+
+    app.setLocalProxyVisible(false);
+    expect((app.state.cube as unknown as { visible: boolean }).visible).toBe(false);
+    expect(outlinePasses[0].selectedObjects.length).toBe(0);
+
+    app.setLocalProxyVisible(true);
+    expect((app.state.cube as unknown as { visible: boolean }).visible).toBe(true);
+    expect(outlinePasses[0].selectedObjects.length).toBe(1);
+  });
+
+  it('invokes beforeRender hooks', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+
+    const hook = vi.fn();
+    app.setBeforeRender(hook);
+    app.renderFrame(0.1, 1000);
+
+    expect(hook).toHaveBeenCalledTimes(1);
+    expect(app.getPlayerPose()).toMatchObject({
+      posX: expect.any(Number),
+      posY: expect.any(Number),
+      posZ: expect.any(Number)
+    });
+  });
+
+  it('ignores stale weapon viewmodel loads', async () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+
+    let resolveFirst: (value: unknown) => void;
+    let resolveSecond: (value: unknown) => void;
+    const firstPromise = new Promise((resolve) => {
+      resolveFirst = resolve;
+    });
+    const secondPromise = new Promise((resolve) => {
+      resolveSecond = resolve;
+    });
+
+    attachWeaponViewmodelMock.mockReturnValue({ remove: vi.fn() });
+
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1, loadEnvironment: true });
+
+    // createApp(loadEnvironment=true) triggers an initial viewmodel load; flush it so it
+    // doesn't affect this test's assertions.
+    await Promise.resolve();
+    loadWeaponViewmodelMock.mockReset();
+    attachWeaponViewmodelMock.mockReset();
+    attachWeaponViewmodelMock.mockReturnValue({ remove: vi.fn() });
+    loadWeaponViewmodelMock.mockImplementationOnce(() => firstPromise);
+    loadWeaponViewmodelMock.mockImplementationOnce(() => secondPromise);
+
+    app.setWeaponViewmodel('rifle');
+    app.setWeaponViewmodel('launcher');
+
+    // Trigger two viewmodel loads; the first should be ignored when it resolves after the second.
+    resolveFirst!(null);
+    await Promise.resolve();
+
+    // Still waiting for the second load to apply.
+    expect(attachWeaponViewmodelMock).not.toHaveBeenCalled();
+
+    resolveSecond!({});
+    await Promise.resolve();
+
+    expect(attachWeaponViewmodelMock).toHaveBeenCalledTimes(1);
+  });
+
   it('applies interpolated snapshots to cube position', () => {
     const three = createFakeThree();
     const canvas = document.createElement('canvas');
@@ -175,6 +259,7 @@ describe('createApp', () => {
         velX: 0,
         velY: 0,
         velZ: 0,
+        weaponSlot: 0,
         dashCooldown: 0,
         health: 100,
         kills: 0,
@@ -193,6 +278,7 @@ describe('createApp', () => {
         velX: 0,
         velY: 0,
         velZ: 0,
+        weaponSlot: 0,
         dashCooldown: 0,
         health: 100,
         kills: 0,
@@ -714,6 +800,7 @@ describe('createApp', () => {
         velX: 0,
         velY: 0,
         velZ: 0,
+        weaponSlot: 0,
         dashCooldown: 0,
         health: 100,
         kills: 0,
@@ -732,6 +819,7 @@ describe('createApp', () => {
         velX: 0,
         velY: 0,
         velZ: 0,
+        weaponSlot: 0,
         dashCooldown: 0,
         health: 90,
         kills: 1,

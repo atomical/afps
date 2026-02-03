@@ -520,6 +520,8 @@ void TickLoop::Step() {
       snapshot.client_id = connection_id;
       auto seq_iter = last_input_seq_.find(connection_id);
       snapshot.last_processed_input_seq = (seq_iter == last_input_seq_.end()) ? -1 : seq_iter->second;
+      auto input_iter = last_inputs_.find(connection_id);
+      snapshot.weapon_slot = (input_iter == last_inputs_.end()) ? 0 : input_iter->second.weapon_slot;
       auto state_iter = players_.find(connection_id);
       if (state_iter != players_.end()) {
         snapshot.pos_x = state_iter->second.x;
@@ -543,11 +545,14 @@ void TickLoop::Step() {
                               (sequence % snapshot_keyframe_interval_ == 0);
 
       if (needs_full) {
-        if (store_.SendUnreliable(connection_id, BuildStateSnapshot(snapshot))) {
-          snapshot_count_ += 1;
-          last_full_snapshots_[connection_id] = snapshot;
-          sequence += 1;
+        const std::string payload = BuildStateSnapshot(snapshot);
+        for (const auto &recipient_id : active_ids) {
+          if (store_.SendUnreliable(recipient_id, payload)) {
+            snapshot_count_ += 1;
+          }
         }
+        last_full_snapshots_[connection_id] = snapshot;
+        sequence += 1;
         continue;
       }
 
@@ -582,6 +587,10 @@ void TickLoop::Step() {
         delta.mask |= kSnapshotMaskVelZ;
         delta.vel_z = snapshot.vel_z;
       }
+      if (snapshot.weapon_slot != baseline.weapon_slot) {
+        delta.mask |= kSnapshotMaskWeaponSlot;
+        delta.weapon_slot = snapshot.weapon_slot;
+      }
       if (snapshot.dash_cooldown != baseline.dash_cooldown) {
         delta.mask |= kSnapshotMaskDashCooldown;
         delta.dash_cooldown = snapshot.dash_cooldown;
@@ -599,10 +608,13 @@ void TickLoop::Step() {
         delta.deaths = snapshot.deaths;
       }
 
-      if (store_.SendUnreliable(connection_id, BuildStateSnapshotDelta(delta))) {
-        snapshot_count_ += 1;
-        sequence += 1;
+      const std::string payload = BuildStateSnapshotDelta(delta);
+      for (const auto &recipient_id : active_ids) {
+        if (store_.SendUnreliable(recipient_id, payload)) {
+          snapshot_count_ += 1;
+        }
       }
+      sequence += 1;
     }
   }
 }

@@ -12,22 +12,27 @@
     "format:check": "prettier --check .",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
+    "test:ui": "playwright test -c playwright.config.ts",
+    "test:ui:prejoin": "playwright test -c playwright.config.ts tests/ui/prejoin_preview.spec.ts",
     "perf:check": "PERF_CHECK=1 vitest run --config vitest.perf.config.ts",
     "wasm:build": "bash ../tools/wasm_sync.sh",
     "wasm:parity": "node ../tools/wasm_parity_check.mjs",
-    "wasm:check": "npm run wasm:build && npm run wasm:parity"
+    "wasm:check": "npm run wasm:build && npm run wasm:parity",
+    "test:ui:prejoin-join": "playwright test -c playwright.config.ts tests/ui/prejoin_join_button.spec.ts"
   },
   "dependencies": {
     "three": "^0.164.1"
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "^4.0.18",
+    "@playwright/test": "^1.50.1",
     "@typescript-eslint/eslint-plugin": "^8.54.0",
     "@typescript-eslint/parser": "^8.54.0",
+    "@vitest/coverage-v8": "^4.0.18",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^9.1.0",
     "globals": "^15.0.0",
     "happy-dom": "^20.4.0",
+    "pngjs": "^7.0.0",
     "prettier": "^3.2.5",
     "typescript": "^5.3.3",
     "vite": "^7.3.1",

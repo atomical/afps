@@ -8,6 +8,8 @@ table ClientHello {
   session_token:string;
   connection_id:string;
   build:string;
+  nickname:string;
+  character_id:string;
 }
 
 table ServerHello {
@@ -49,10 +51,17 @@ table StateSnapshot {
   vel_x:double;
   vel_y:double;
   vel_z:double;
+  weapon_slot:int;
   dash_cooldown:double;
   health:double;
   kills:int;
   deaths:int;
+}
+
+table PlayerProfile {
+  client_id:string;
+  nickname:string;
+  character_id:string;
 }
 
 table GameEvent {

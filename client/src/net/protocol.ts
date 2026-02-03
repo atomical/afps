@@ -1,4 +1,4 @@
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 export const SNAPSHOT_MASK_POS_X = 1 << 0;
 export const SNAPSHOT_MASK_POS_Y = 1 << 1;
 export const SNAPSHOT_MASK_POS_Z = 1 << 2;
@@ -9,6 +9,7 @@ export const SNAPSHOT_MASK_DASH_COOLDOWN = 1 << 6;
 export const SNAPSHOT_MASK_HEALTH = 1 << 7;
 export const SNAPSHOT_MASK_KILLS = 1 << 8;
 export const SNAPSHOT_MASK_DEATHS = 1 << 9;
+export const SNAPSHOT_MASK_WEAPON_SLOT = 1 << 10;
 const SNAPSHOT_MASK_ALL =
   SNAPSHOT_MASK_POS_X |
   SNAPSHOT_MASK_POS_Y |
@@ -19,7 +20,8 @@ const SNAPSHOT_MASK_ALL =
   SNAPSHOT_MASK_DASH_COOLDOWN |
   SNAPSHOT_MASK_HEALTH |
   SNAPSHOT_MASK_KILLS |
-  SNAPSHOT_MASK_DEATHS;
+  SNAPSHOT_MASK_DEATHS |
+  SNAPSHOT_MASK_WEAPON_SLOT;
 
 export interface ClientHello {
   type: 'ClientHello';
@@ -27,6 +29,8 @@ export interface ClientHello {
   sessionToken: string;
   connectionId: string;
   build: string;
+  nickname?: string;
+  characterId?: string;
 }
 
 export interface ServerHello {
@@ -51,6 +55,7 @@ export interface StateSnapshot {
   velX: number;
   velY: number;
   velZ: number;
+  weaponSlot: number;
   dashCooldown: number;
   health: number;
   kills: number;
@@ -70,6 +75,7 @@ export interface StateSnapshotDelta {
   velX?: number;
   velY?: number;
   velZ?: number;
+  weaponSlot?: number;
   dashCooldown?: number;
   health?: number;
   kills?: number;
@@ -85,6 +91,13 @@ export interface Ping {
 export interface Pong {
   type: 'Pong';
   clientTimeMs: number;
+}
+
+export interface PlayerProfile {
+  type: 'PlayerProfile';
+  clientId: string;
+  nickname: string;
+  characterId: string;
 }
 
 export type GameEventName = 'HitConfirmed' | 'ProjectileSpawn' | 'ProjectileRemove';
@@ -182,13 +195,20 @@ const readMaskedInt = (
   return { ok: true, value };
 };
 
-export const buildClientHello = (sessionToken: string, connectionId: string, build = 'dev') =>
+export const buildClientHello = (
+  sessionToken: string,
+  connectionId: string,
+  build = 'dev',
+  profile?: { nickname?: string; characterId?: string }
+) =>
   JSON.stringify({
     type: 'ClientHello',
     protocolVersion: PROTOCOL_VERSION,
     sessionToken,
     connectionId,
-    build
+    build,
+    ...(profile?.nickname ? { nickname: profile.nickname } : {}),
+    ...(profile?.characterId ? { characterId: profile.characterId } : {})
   } satisfies ClientHello);
 
 export const buildPing = (clientTimeMs: number) =>
@@ -243,6 +263,25 @@ export const parseServerHello = (message: string): ServerHello | null => {
     motd: motd ?? undefined,
     clientId: clientId ?? undefined,
     connectionNonce: connectionNonce ?? undefined
+  };
+};
+
+export const parsePlayerProfile = (message: string): PlayerProfile | null => {
+  const payload = parseJsonPayload(message);
+  if (!payload || payload.type !== 'PlayerProfile') {
+    return null;
+  }
+  const clientId = readString(payload.clientId);
+  const nickname = readString(payload.nickname);
+  const characterId = readString(payload.characterId);
+  if (!clientId || !nickname || !characterId) {
+    return null;
+  }
+  return {
+    type: 'PlayerProfile',
+    clientId,
+    nickname,
+    characterId
   };
 };
 
@@ -393,6 +432,7 @@ const parseStateSnapshotPayload = (payload: Record<string, unknown>): StateSnaps
   const velX = readNumber(payload.velX);
   const velY = readNumber(payload.velY);
   const velZ = readNumber(payload.velZ);
+  const weaponSlot = readInt(payload.weaponSlot);
   const dashCooldown = readNumber(payload.dashCooldown);
   const health = readNumber(payload.health);
   const kills = readInt(payload.kills);
@@ -411,6 +451,7 @@ const parseStateSnapshotPayload = (payload: Record<string, unknown>): StateSnaps
     velX === null ||
     velY === null ||
     velZ === null ||
+    weaponSlot === null ||
     dashCooldown === null ||
     health === null ||
     kills === null ||
@@ -419,7 +460,7 @@ const parseStateSnapshotPayload = (payload: Record<string, unknown>): StateSnaps
   ) {
     return null;
   }
-  if (health < 0 || kills < 0 || deaths < 0) {
+  if (health < 0 || kills < 0 || deaths < 0 || weaponSlot < 0) {
     return null;
   }
 
@@ -442,6 +483,7 @@ const parseStateSnapshotPayload = (payload: Record<string, unknown>): StateSnaps
     velX,
     velY,
     velZ,
+    weaponSlot,
     dashCooldown,
     health,
     kills,
@@ -479,6 +521,7 @@ const parseStateSnapshotDeltaPayload = (payload: Record<string, unknown>): State
   const velX = readMaskedNumber(payload, 'velX', mask, SNAPSHOT_MASK_VEL_X);
   const velY = readMaskedNumber(payload, 'velY', mask, SNAPSHOT_MASK_VEL_Y);
   const velZ = readMaskedNumber(payload, 'velZ', mask, SNAPSHOT_MASK_VEL_Z);
+  const weaponSlot = readMaskedInt(payload, 'weaponSlot', mask, SNAPSHOT_MASK_WEAPON_SLOT);
   const dashCooldown = readMaskedNumber(payload, 'dashCooldown', mask, SNAPSHOT_MASK_DASH_COOLDOWN);
   const health = readMaskedNumber(payload, 'health', mask, SNAPSHOT_MASK_HEALTH);
   const kills = readMaskedInt(payload, 'kills', mask, SNAPSHOT_MASK_KILLS);
@@ -491,11 +534,15 @@ const parseStateSnapshotDeltaPayload = (payload: Record<string, unknown>): State
     !velX.ok ||
     !velY.ok ||
     !velZ.ok ||
+    !weaponSlot.ok ||
     !dashCooldown.ok ||
     !health.ok ||
     !kills.ok ||
     !deaths.ok
   ) {
+    return null;
+  }
+  if (weaponSlot.value !== undefined && weaponSlot.value < 0) {
     return null;
   }
   if (dashCooldown.value !== undefined && dashCooldown.value < 0) {
@@ -546,6 +593,9 @@ const parseStateSnapshotDeltaPayload = (payload: Record<string, unknown>): State
   }
   if (velZ.value !== undefined) {
     delta.velZ = velZ.value;
+  }
+  if (weaponSlot.value !== undefined) {
+    delta.weaponSlot = weaponSlot.value;
   }
   if (dashCooldown.value !== undefined) {
     delta.dashCooldown = dashCooldown.value;

@@ -4,9 +4,16 @@ const startAppMock = vi.fn();
 const connectMock = vi.fn();
 const createInputSamplerMock = vi.fn();
 const createInputSenderMock = vi.fn();
+const sceneMock = {
+  add: vi.fn(),
+  remove: vi.fn(),
+  position: { x: 0, y: 0, z: 0, set: vi.fn() },
+  rotation: { x: 0, y: 0, z: 0 }
+};
 const appInstance = {
   ingestSnapshot: vi.fn(),
   setSnapshotRate: vi.fn(),
+  setBeforeRender: vi.fn(),
   recordInput: vi.fn(),
   spawnProjectileVfx: vi.fn(),
   removeProjectileVfx: vi.fn(),
@@ -24,9 +31,10 @@ const appInstance = {
   applyLookDelta: vi.fn(),
   getLookAngles: vi.fn().mockReturnValue({ yaw: 0, pitch: 0 }),
   setLookSensitivity: vi.fn(),
+  setLocalProxyVisible: vi.fn(),
   setOutlineTeam: vi.fn(),
   triggerOutlineFlash: vi.fn(),
-  state: { cube: { rotation: { x: 0 } } }
+  state: { cube: { rotation: { x: 0 } }, scene: sceneMock }
 };
 const inputSenderInstance = {
   start: vi.fn(),
@@ -88,6 +96,19 @@ const pointerLockMock = {
   isLocked: vi.fn().mockReturnValue(false),
   dispose: vi.fn()
 };
+const loadCatalogMock = vi.fn();
+const prejoinOverlayMock = {
+  element: document.createElement('div'),
+  waitForSubmit: vi.fn(),
+  setVisible: vi.fn(),
+  dispose: vi.fn()
+};
+const profileStorageMock = {
+  loadProfile: vi.fn(),
+  saveProfile: vi.fn()
+};
+
+const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 vi.mock('../src/bootstrap', () => ({
   startApp: startAppMock
@@ -113,6 +134,23 @@ vi.mock('../src/ui/status', () => ({
 
 vi.mock('../src/ui/hud', () => ({
   createHudOverlay: () => hudMock
+}));
+
+vi.mock('../src/characters/catalog', () => ({
+  loadCharacterCatalog: (...args: unknown[]) => loadCatalogMock(...args),
+  resolveCharacterEntry: (catalog: { entries: Array<{ id: string }> }, id?: string | null) => {
+    const match = id ? catalog.entries.find((entry) => entry.id === id) : undefined;
+    return match ?? catalog.entries[0];
+  }
+}));
+
+vi.mock('../src/ui/prejoin', () => ({
+  createPrejoinOverlay: () => prejoinOverlayMock
+}));
+
+vi.mock('../src/profile/storage', () => ({
+  loadProfile: (...args: unknown[]) => profileStorageMock.loadProfile(...args),
+  saveProfile: (...args: unknown[]) => profileStorageMock.saveProfile(...args)
 }));
 
 const wasmLoaderMock = vi.fn();
@@ -211,6 +249,8 @@ describe('main entry', () => {
     appInstance.setLookSensitivity.mockReset();
     appInstance.setOutlineTeam.mockReset();
     appInstance.triggerOutlineFlash.mockReset();
+    sceneMock.add.mockReset();
+    sceneMock.remove.mockReset();
     statusMock.setState.mockReset();
     statusMock.setDetail.mockReset();
     statusMock.setMetrics.mockReset();
@@ -276,9 +316,24 @@ describe('main entry', () => {
     metricsSettingsMock.loadMetricsVisibility.mockReset();
     metricsSettingsMock.saveMetricsVisibility.mockReset();
     metricsSettingsMock.loadMetricsVisibility.mockReturnValue(true);
+    loadCatalogMock.mockReset();
+    prejoinOverlayMock.waitForSubmit.mockReset();
+    prejoinOverlayMock.setVisible.mockReset();
+    prejoinOverlayMock.dispose.mockReset();
+    profileStorageMock.loadProfile.mockReset();
+    profileStorageMock.saveProfile.mockReset();
     wasmLoaderMock.mockReset();
     wasmAdapterMock.mockReset();
     wasmParityMock.mockReset();
+    loadCatalogMock.mockResolvedValue({
+      defaultId: 'placeholder-a',
+      entries: [{ id: 'placeholder-a', displayName: 'Placeholder Alpha' }]
+    });
+    prejoinOverlayMock.waitForSubmit.mockResolvedValue({
+      nickname: 'TestPilot',
+      characterId: 'placeholder-a'
+    });
+    profileStorageMock.loadProfile.mockReturnValue(null);
     vi.resetModules();
   });
 
@@ -374,6 +429,7 @@ describe('main entry', () => {
     });
 
     await import('../src/main');
+    await flushPromises();
 
     expect(statusMock.setDetail).toHaveBeenCalledWith('hello');
     expect(statusMock.setDetail).toHaveBeenCalledWith('warn: caution');
@@ -387,6 +443,7 @@ describe('main entry', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     await import('../src/main');
+    await flushPromises();
 
     expect(errorSpy).toHaveBeenCalled();
     expect(statusMock.setState).toHaveBeenCalledWith('error', 'boom');
@@ -399,6 +456,7 @@ describe('main entry', () => {
     connectMock.mockResolvedValue(null);
 
     await import('../src/main');
+    await flushPromises();
 
     expect(statusMock.setState).toHaveBeenCalledWith('connecting', 'https://example.test');
     expect(createInputSamplerMock).not.toHaveBeenCalled();
@@ -415,6 +473,7 @@ describe('main entry', () => {
     envMock.getSignalingAuthToken.mockReturnValue('token');
 
     await import('../src/main');
+    await flushPromises();
 
     expect(sendPing).not.toHaveBeenCalled();
     expect(appInstance.setOutlineTeam).toHaveBeenCalledWith(0);
@@ -427,6 +486,7 @@ describe('main entry', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     await import('../src/main');
+    await flushPromises();
 
     expect(statusMock.setState).toHaveBeenCalledWith('error', 'bad');
     errorSpy.mockRestore();
@@ -443,6 +503,7 @@ describe('main entry', () => {
       velX: 0,
       velY: 0,
       velZ: 0,
+      weaponSlot: 0,
       dashCooldown: 0,
       health: 100,
       kills: 0,
@@ -494,6 +555,7 @@ describe('main entry', () => {
     envMock.getSignalingAuthToken.mockReturnValue('token');
 
     await import('../src/main');
+    await flushPromises();
 
     expect(statusMock.setState).toHaveBeenCalledWith('connecting', 'https://example.test');
     expect(connectMock).toHaveBeenCalledWith(
@@ -587,6 +649,7 @@ describe('main entry', () => {
     envMock.getSignalingAuthToken.mockReturnValue('token');
 
     await import('../src/main');
+    await flushPromises();
 
     expect(statusMock.setMetrics).toHaveBeenCalledWith(expect.stringContaining('kf 7'));
   });
@@ -641,6 +704,7 @@ describe('main entry', () => {
     envMock.getSignalingAuthToken.mockReturnValue('token');
 
     await import('../src/main');
+    await flushPromises();
 
     const updated = {
       forward: ['KeyI'],

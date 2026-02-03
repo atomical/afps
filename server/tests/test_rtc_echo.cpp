@@ -31,6 +31,7 @@ TEST_CASE("RtcEchoPeer performs a loopback message exchange") {
         opened = true;
         offerer.Send("ping");
       },
+      nullptr,
       [&](const std::string &label, const std::string &message) {
         std::scoped_lock lock(mutex);
         echoed = (label == "echo" && message == "ping");
@@ -40,6 +41,7 @@ TEST_CASE("RtcEchoPeer performs a loopback message exchange") {
   answerer.SetCallbacks({
       [&](const rtc::Description &description) { offerer.SetRemoteDescription(description); },
       [&](const rtc::Candidate &candidate) { offerer.AddRemoteCandidate(candidate); },
+      nullptr,
       nullptr,
       nullptr});
 

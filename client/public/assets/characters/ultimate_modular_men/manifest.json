@@ -1,0 +1,203 @@
+{
+  "defaultId": "adventurer",
+  "entries": [
+    {
+      "id": "adventurer",
+      "displayName": "Adventurer",
+      "modelUrl": "/assets/characters/ultimate_modular_men/models/Adventurer.glb",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0.0,
+          1.57,
+          0.0
+        ],
+        "scale": 1.0
+      }
+    },
+    {
+      "id": "beach",
+      "displayName": "Beach",
+      "modelUrl": "/assets/characters/ultimate_modular_men/models/Beach.glb",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0.0,
+          1.57,
+          0.0
+        ],
+        "scale": 1.0
+      }
+    },
+    {
+      "id": "casual_2",
+      "displayName": "Casual 2",
+      "modelUrl": "/assets/characters/ultimate_modular_men/models/Casual_2.glb",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0.0,
+          1.57,
+          0.0
+        ],
+        "scale": 1.0
+      }
+    },
+    {
+      "id": "casual_hoodie",
+      "displayName": "Casual Hoodie",
+      "modelUrl": "/assets/characters/ultimate_modular_men/models/Casual_Hoodie.glb",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0.0,
+          1.57,
+          0.0
+        ],
+        "scale": 1.0
+      }
+    },
+    {
+      "id": "farmer",
+      "displayName": "Farmer",
+      "modelUrl": "/assets/characters/ultimate_modular_men/models/Farmer.glb",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0.0,
+          1.57,
+          0.0
+        ],
+        "scale": 1.0
+      }
+    },
+    {
+      "id": "king",
+      "displayName": "King",
+      "modelUrl": "/assets/characters/ultimate_modular_men/models/King.glb",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0.0,
+          1.57,
+          0.0
+        ],
+        "scale": 1.0
+      }
+    },
+    {
+      "id": "punk",
+      "displayName": "Punk",
+      "modelUrl": "/assets/characters/ultimate_modular_men/models/Punk.glb",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0.0,
+          1.57,
+          0.0
+        ],
+        "scale": 1.0
+      }
+    },
+    {
+      "id": "spacesuit",
+      "displayName": "Spacesuit",
+      "modelUrl": "/assets/characters/ultimate_modular_men/models/Spacesuit.glb",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0.0,
+          1.57,
+          0.0
+        ],
+        "scale": 1.0
+      }
+    },
+    {
+      "id": "suit",
+      "displayName": "Suit",
+      "modelUrl": "/assets/characters/ultimate_modular_men/models/Suit.glb",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0.0,
+          1.57,
+          0.0
+        ],
+        "scale": 1.0
+      }
+    },
+    {
+      "id": "swat",
+      "displayName": "Swat",
+      "modelUrl": "/assets/characters/ultimate_modular_men/models/Swat.glb",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0.0,
+          1.57,
+          0.0
+        ],
+        "scale": 1.0
+      }
+    },
+    {
+      "id": "worker",
+      "displayName": "Worker",
+      "modelUrl": "/assets/characters/ultimate_modular_men/models/Worker.glb",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0.0,
+          1.57,
+          0.0
+        ],
+        "scale": 1.0
+      }
+    }
+  ]
+}

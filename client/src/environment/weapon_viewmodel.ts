@@ -7,7 +7,9 @@ type ViewmodelSpec = {
   scale: number;
 };
 
-const VIEWMODEL_ROOT = '/assets/weapons/cc0/kenney_blaster_kit/';
+const BASE_URL = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
+const NORMALIZED_BASE = BASE_URL.endsWith('/') ? BASE_URL : `${BASE_URL}/`;
+const VIEWMODEL_ROOT = `${NORMALIZED_BASE}assets/weapons/cc0/kenney_blaster_kit/`;
 const DEFAULT_VIEWMODEL: ViewmodelSpec = {
   file: `${VIEWMODEL_ROOT}blaster-a.glb`,
   position: [0.38, -0.32, -0.65],

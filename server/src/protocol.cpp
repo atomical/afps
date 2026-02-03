@@ -115,6 +115,20 @@ bool ParseClientHello(const std::string &message, ClientHello &out, std::string 
     }
     out.build = payload.at("build").get<std::string>();
   }
+  if (payload.contains("nickname")) {
+    if (!payload.at("nickname").is_string()) {
+      error = "invalid_field: nickname";
+      return false;
+    }
+    out.nickname = payload.at("nickname").get<std::string>();
+  }
+  if (payload.contains("characterId")) {
+    if (!payload.at("characterId").is_string()) {
+      error = "invalid_field: characterId";
+      return false;
+    }
+    out.character_id = payload.at("characterId").get<std::string>();
+  }
 
   return true;
 }
@@ -339,6 +353,7 @@ std::string BuildStateSnapshot(const StateSnapshot &snapshot) {
   payload["velX"] = snapshot.vel_x;
   payload["velY"] = snapshot.vel_y;
   payload["velZ"] = snapshot.vel_z;
+  payload["weaponSlot"] = snapshot.weapon_slot;
   payload["dashCooldown"] = snapshot.dash_cooldown;
   payload["health"] = snapshot.health;
   payload["kills"] = snapshot.kills;
@@ -374,6 +389,9 @@ std::string BuildStateSnapshotDelta(const StateSnapshotDelta &delta) {
   if (delta.mask & kSnapshotMaskVelZ) {
     payload["velZ"] = delta.vel_z;
   }
+  if (delta.mask & kSnapshotMaskWeaponSlot) {
+    payload["weaponSlot"] = delta.weapon_slot;
+  }
   if (delta.mask & kSnapshotMaskDashCooldown) {
     payload["dashCooldown"] = delta.dash_cooldown;
   }
@@ -386,5 +404,14 @@ std::string BuildStateSnapshotDelta(const StateSnapshotDelta &delta) {
   if (delta.mask & kSnapshotMaskDeaths) {
     payload["deaths"] = delta.deaths;
   }
+  return payload.dump();
+}
+
+std::string BuildPlayerProfile(const PlayerProfile &profile) {
+  json payload;
+  payload["type"] = "PlayerProfile";
+  payload["clientId"] = profile.client_id;
+  payload["nickname"] = profile.nickname;
+  payload["characterId"] = profile.character_id;
   return payload.dump();
 }

@@ -54,7 +54,7 @@ describe('webrtc connector', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 2,
+        protocolVersion: 3,
         connectionId: signaling.connectionId,
         serverTickRate: 60,
         snapshotRate: 20
@@ -108,7 +108,7 @@ describe('webrtc connector', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 2,
+        protocolVersion: 3,
         connectionId: signaling.connectionId,
         serverTickRate: 60,
         snapshotRate: 20
@@ -129,6 +129,7 @@ describe('webrtc connector', () => {
       velX: 0,
       velY: 0,
       velZ: 0,
+      weaponSlot: 0,
       dashCooldown: 0,
       health: 100,
       kills: 0,
@@ -159,6 +160,7 @@ describe('webrtc connector', () => {
       velX: 0,
       velY: -0.5,
       velZ: 0,
+      weaponSlot: 0,
       dashCooldown: 0,
       health: 100,
       kills: 0,
@@ -166,6 +168,61 @@ describe('webrtc connector', () => {
       clientId: undefined
     });
     session.close();
+    vi.useRealTimers();
+  });
+
+  it('forwards player profiles from reliable channel', async () => {
+    vi.useFakeTimers();
+    const signaling = new FakeSignalingClient();
+    const rtcFactory = new FakePeerConnectionFactory();
+    const onPlayerProfile = vi.fn();
+    const connector = createWebRtcConnector({
+      signaling,
+      rtcFactory,
+      logger: silentLogger,
+      pollIntervalMs: 100,
+      connectTimeoutMs: 1000,
+      timers: createTimers(),
+      onPlayerProfile
+    });
+
+    const connectPromise = connector.connect();
+    const pc = await waitForPeer(rtcFactory);
+
+    const reliable = new FakeDataChannel('afps_reliable');
+    const unreliable = new FakeDataChannel('afps_unreliable');
+    pc.emitDataChannel(reliable);
+    pc.emitDataChannel(unreliable);
+    reliable.open();
+    unreliable.open();
+    await Promise.resolve();
+    reliable.emitMessage(
+      JSON.stringify({
+        type: 'ServerHello',
+        protocolVersion: 3,
+        connectionId: signaling.connectionId,
+        serverTickRate: 60,
+        snapshotRate: 20
+      })
+    );
+
+    await connectPromise;
+
+    reliable.emitMessage(
+      JSON.stringify({
+        type: 'PlayerProfile',
+        clientId: 'client-1',
+        nickname: 'Ada',
+        characterId: 'casual-a'
+      })
+    );
+
+    expect(onPlayerProfile).toHaveBeenCalledWith({
+      type: 'PlayerProfile',
+      clientId: 'client-1',
+      nickname: 'Ada',
+      characterId: 'casual-a'
+    });
     vi.useRealTimers();
   });
 
@@ -199,7 +256,7 @@ describe('webrtc connector', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 2,
+        protocolVersion: 3,
         connectionId: signaling.connectionId,
         serverTickRate: 60,
         snapshotRate: 20
@@ -247,7 +304,7 @@ describe('webrtc connector', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 2,
+        protocolVersion: 3,
         connectionId: signaling.connectionId,
         serverTickRate: 60,
         snapshotRate: 20
@@ -295,7 +352,7 @@ describe('webrtc connector', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 2,
+        protocolVersion: 3,
         connectionId: signaling.connectionId,
         serverTickRate: 60,
         snapshotRate: 20
@@ -326,6 +383,7 @@ describe('webrtc connector', () => {
       velX: 0,
       velY: 0,
       velZ: 0,
+      weaponSlot: 0,
       dashCooldown: 0,
       health: 100,
       kills: 0,
@@ -366,7 +424,7 @@ describe('webrtc connector', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 2,
+        protocolVersion: 3,
         connectionId: signaling.connectionId,
         serverTickRate: 60,
         snapshotRate: 20
@@ -422,7 +480,7 @@ describe('webrtc connector', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 2,
+        protocolVersion: 3,
         connectionId: signaling.connectionId,
         serverTickRate: 60,
         snapshotRate: 20
@@ -466,7 +524,7 @@ describe('webrtc connector', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 2,
+        protocolVersion: 3,
         connectionId: signaling.connectionId,
         serverTickRate: 60,
         snapshotRate: 20
@@ -501,7 +559,7 @@ describe('webrtc connector', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 2,
+        protocolVersion: 3,
         connectionId: signaling.connectionId,
         serverTickRate: 60,
         snapshotRate: 20
@@ -547,7 +605,7 @@ describe('webrtc connector', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 2,
+        protocolVersion: 3,
         connectionId: signaling.connectionId,
         serverTickRate: 60,
         snapshotRate: 20
@@ -629,7 +687,7 @@ describe('webrtc connector', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 2,
+        protocolVersion: 3,
         connectionId: 'other',
         serverTickRate: 60,
         snapshotRate: 20
@@ -700,7 +758,7 @@ describe('webrtc connector', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 2,
+        protocolVersion: 3,
         connectionId: signaling.connectionId,
         serverTickRate: 60,
         snapshotRate: 20

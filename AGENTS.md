@@ -1,0 +1,1 @@
+- Always run the full test suite at the end of a round.

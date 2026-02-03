@@ -8,16 +8,18 @@ TEST_CASE("ParseClientHello reads required fields") {
   ClientHello hello;
   std::string error;
   const std::string payload =
-      R"({"type":"ClientHello","protocolVersion":2,"sessionToken":"sess","connectionId":"conn","build":"dev"})";
+      R"({"type":"ClientHello","protocolVersion":3,"sessionToken":"sess","connectionId":"conn","build":"dev","nickname":"Ada","characterId":"casual-a"})";
 
   const bool ok = ParseClientHello(payload, hello, error);
 
   CHECK(ok);
   CHECK(error.empty());
-  CHECK(hello.protocol_version == 2);
+  CHECK(hello.protocol_version == 3);
   CHECK(hello.session_token == "sess");
   CHECK(hello.connection_id == "conn");
   CHECK(hello.build == "dev");
+  CHECK(hello.nickname == "Ada");
+  CHECK(hello.character_id == "casual-a");
 }
 
 TEST_CASE("ParseClientHello rejects invalid payloads") {
@@ -38,7 +40,7 @@ TEST_CASE("ParseClientHello rejects invalid payloads") {
 
 TEST_CASE("BuildServerHello emits expected fields") {
   ServerHello hello;
-  hello.protocol_version = 2;
+  hello.protocol_version = 3;
   hello.connection_id = "conn";
   hello.client_id = "client";
   hello.server_tick_rate = 60;
@@ -51,7 +53,7 @@ TEST_CASE("BuildServerHello emits expected fields") {
   const auto json = nlohmann::json::parse(payload);
 
   CHECK(json.at("type") == "ServerHello");
-  CHECK(json.at("protocolVersion") == 2);
+  CHECK(json.at("protocolVersion") == 3);
   CHECK(json.at("connectionId") == "conn");
   CHECK(json.at("clientId") == "client");
   CHECK(json.at("serverTickRate") == 60);
@@ -274,4 +276,19 @@ TEST_CASE("ParseInputCmd rejects invalid payloads") {
       R"({"type":"InputCmd","inputSeq":1,"moveX":2,"moveY":0,"lookDeltaX":0,"lookDeltaY":0,"jump":false,"fire":false,"sprint":false})",
       cmd, error));
   CHECK(error == "out_of_range: moveX");
+}
+
+TEST_CASE("BuildPlayerProfile emits expected fields") {
+  PlayerProfile profile;
+  profile.client_id = "client-1";
+  profile.nickname = "Ada";
+  profile.character_id = "casual-a";
+
+  const auto payload = BuildPlayerProfile(profile);
+  const auto json = nlohmann::json::parse(payload);
+
+  CHECK(json.at("type") == "PlayerProfile");
+  CHECK(json.at("clientId") == "client-1");
+  CHECK(json.at("nickname") == "Ada");
+  CHECK(json.at("characterId") == "casual-a");
 }

@@ -62,6 +62,7 @@ export class SnapshotBuffer {
       velX: older.snapshot.velX + (newer.snapshot.velX - older.snapshot.velX) * alpha,
       velY: older.snapshot.velY + (newer.snapshot.velY - older.snapshot.velY) * alpha,
       velZ: older.snapshot.velZ + (newer.snapshot.velZ - older.snapshot.velZ) * alpha,
+      weaponSlot: newer.snapshot.weaponSlot,
       dashCooldown:
         older.snapshot.dashCooldown + (newer.snapshot.dashCooldown - older.snapshot.dashCooldown) * alpha,
       health: newer.snapshot.health,

@@ -60,6 +60,7 @@ TEST_CASE("SignalingStore handles answer and candidate flow") {
       },
       nullptr,
       nullptr,
+      nullptr,
       nullptr});
 
   remote.SetRemoteDescription(connect.value->offer);
@@ -134,6 +135,7 @@ TEST_CASE("SignalingStore queues input commands after handshake") {
                                  candidate.mid());
       },
       nullptr,
+      nullptr,
       [&](const std::string &label, const std::string &message) {
         if (label == kReliableChannelLabel &&
             message.find("ServerHello") != std::string::npos) {
@@ -159,7 +161,7 @@ TEST_CASE("SignalingStore queues input commands after handshake") {
   CHECK(answer_error == SignalingError::None);
 
   const std::string hello =
-      std::string("{\"type\":\"ClientHello\",\"protocolVersion\":2,\"sessionToken\":\"") +
+      std::string("{\"type\":\"ClientHello\",\"protocolVersion\":3,\"sessionToken\":\"") +
       session.token + "\",\"connectionId\":\"" + connect.value->connection_id + "\",\"build\":\"test\"}";
   const std::string input =
       R"({"type":"InputCmd","inputSeq":1,"moveX":1,"moveY":0,"lookDeltaX":0,"lookDeltaY":0,"jump":false,"fire":true,"sprint":false})";
@@ -207,6 +209,179 @@ TEST_CASE("SignalingStore queues input commands after handshake") {
   CHECK(drained.value->empty());
 }
 
+TEST_CASE("SignalingStore normalizes character ids in PlayerProfile") {
+  rtc::InitLogger(rtc::LogLevel::None);
+
+  SignalingConfig config;
+  SignalingStore store(config);
+
+  const auto session = store.CreateSession();
+  auto connect = store.CreateConnection(session.token, std::chrono::milliseconds(2000));
+  REQUIRE(connect.ok);
+  REQUIRE(connect.value.has_value());
+
+  rtc::Configuration rtc_config;
+  rtc_config.iceServers.clear();
+  RtcEchoPeer remote(rtc_config, false);
+
+  std::mutex mutex;
+  std::condition_variable cv;
+  std::optional<rtc::Description> answer;
+  std::optional<nlohmann::json> profile_json;
+  bool hello_sent = false;
+
+  remote.SetCallbacks({
+      [&](const rtc::Description &description) {
+        std::scoped_lock lock(mutex);
+        answer = description;
+        cv.notify_all();
+      },
+      [&](const rtc::Candidate &candidate) {
+        store.AddRemoteCandidate(session.token, connect.value->connection_id, candidate.candidate(),
+                                 candidate.mid());
+      },
+      nullptr,
+      nullptr,
+      [&](const std::string &label, const std::string &message) {
+        if (label != kReliableChannelLabel || message.find("PlayerProfile") == std::string::npos) {
+          return;
+        }
+        std::scoped_lock lock(mutex);
+        profile_json = nlohmann::json::parse(message);
+        cv.notify_all();
+      }});
+
+  remote.SetRemoteDescription(connect.value->offer);
+  remote.SetLocalDescription();
+
+  {
+    std::unique_lock lock(mutex);
+    cv.wait_for(lock, std::chrono::seconds(2), [&] { return answer.has_value(); });
+  }
+
+  REQUIRE(answer.has_value());
+
+  const auto answer_error = store.ApplyAnswer(session.token, connect.value->connection_id,
+                                              std::string(*answer), answer->typeString());
+  CHECK(answer_error == SignalingError::None);
+
+  const std::string hello =
+      std::string("{\"type\":\"ClientHello\",\"protocolVersion\":3,\"sessionToken\":\"") +
+      session.token + "\",\"connectionId\":\"" + connect.value->connection_id +
+      "\",\"build\":\"test\",\"nickname\":\"Ada\",\"characterId\":\"bad id!\"}";
+
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+  while (std::chrono::steady_clock::now() < deadline && !profile_json.has_value()) {
+    auto candidates = store.DrainLocalCandidates(session.token, connect.value->connection_id);
+    if (candidates.ok && candidates.value.has_value()) {
+      for (const auto &candidate : *candidates.value) {
+        if (candidate.mid.empty()) {
+          remote.AddRemoteCandidate(rtc::Candidate(candidate.candidate));
+        } else {
+          remote.AddRemoteCandidate(rtc::Candidate(candidate.candidate, candidate.mid));
+        }
+      }
+    }
+
+    if (!hello_sent) {
+      hello_sent = remote.SendOn(kReliableChannelLabel, hello);
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+
+  REQUIRE(profile_json.has_value());
+  CHECK(profile_json->at("type") == "PlayerProfile");
+  CHECK(profile_json->at("characterId") == "default");
+}
+
+TEST_CASE("SignalingStore enforces character allowlist") {
+  rtc::InitLogger(rtc::LogLevel::None);
+
+  SignalingConfig config;
+  config.allowed_character_ids = {"casual-a"};
+  SignalingStore store(config);
+
+  const auto session = store.CreateSession();
+  auto connect = store.CreateConnection(session.token, std::chrono::milliseconds(2000));
+  REQUIRE(connect.ok);
+  REQUIRE(connect.value.has_value());
+
+  rtc::Configuration rtc_config;
+  rtc_config.iceServers.clear();
+  RtcEchoPeer remote(rtc_config, false);
+
+  std::mutex mutex;
+  std::condition_variable cv;
+  std::optional<rtc::Description> answer;
+  std::optional<nlohmann::json> profile_json;
+  bool hello_sent = false;
+
+  remote.SetCallbacks({
+      [&](const rtc::Description &description) {
+        std::scoped_lock lock(mutex);
+        answer = description;
+        cv.notify_all();
+      },
+      [&](const rtc::Candidate &candidate) {
+        store.AddRemoteCandidate(session.token, connect.value->connection_id, candidate.candidate(),
+                                 candidate.mid());
+      },
+      nullptr,
+      nullptr,
+      [&](const std::string &label, const std::string &message) {
+        if (label != kReliableChannelLabel || message.find("PlayerProfile") == std::string::npos) {
+          return;
+        }
+        std::scoped_lock lock(mutex);
+        profile_json = nlohmann::json::parse(message);
+        cv.notify_all();
+      }});
+
+  remote.SetRemoteDescription(connect.value->offer);
+  remote.SetLocalDescription();
+
+  {
+    std::unique_lock lock(mutex);
+    cv.wait_for(lock, std::chrono::seconds(2), [&] { return answer.has_value(); });
+  }
+
+  REQUIRE(answer.has_value());
+
+  const auto answer_error = store.ApplyAnswer(session.token, connect.value->connection_id,
+                                              std::string(*answer), answer->typeString());
+  CHECK(answer_error == SignalingError::None);
+
+  const std::string hello =
+      std::string("{\"type\":\"ClientHello\",\"protocolVersion\":3,\"sessionToken\":\"") +
+      session.token + "\",\"connectionId\":\"" + connect.value->connection_id +
+      "\",\"build\":\"test\",\"nickname\":\"Ada\",\"characterId\":\"casual-b\"}";
+
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+  while (std::chrono::steady_clock::now() < deadline && !profile_json.has_value()) {
+    auto candidates = store.DrainLocalCandidates(session.token, connect.value->connection_id);
+    if (candidates.ok && candidates.value.has_value()) {
+      for (const auto &candidate : *candidates.value) {
+        if (candidate.mid.empty()) {
+          remote.AddRemoteCandidate(rtc::Candidate(candidate.candidate));
+        } else {
+          remote.AddRemoteCandidate(rtc::Candidate(candidate.candidate, candidate.mid));
+        }
+      }
+    }
+
+    if (!hello_sent) {
+      hello_sent = remote.SendOn(kReliableChannelLabel, hello);
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+
+  REQUIRE(profile_json.has_value());
+  CHECK(profile_json->at("type") == "PlayerProfile");
+  CHECK(profile_json->at("characterId") == "default");
+}
+
 TEST_CASE("SignalingStore exposes ready connections and sends unreliable messages") {
   rtc::InitLogger(rtc::LogLevel::None);
 
@@ -242,6 +417,7 @@ TEST_CASE("SignalingStore exposes ready connections and sends unreliable message
                                  candidate.mid());
       },
       nullptr,
+      nullptr,
       [&](const std::string &label, const std::string &message) {
         if (label == kReliableChannelLabel &&
             message.find("ServerHello") != std::string::npos) {
@@ -272,7 +448,7 @@ TEST_CASE("SignalingStore exposes ready connections and sends unreliable message
   CHECK(answer_error == SignalingError::None);
 
   const std::string hello =
-      std::string("{\"type\":\"ClientHello\",\"protocolVersion\":2,\"sessionToken\":\"") +
+      std::string("{\"type\":\"ClientHello\",\"protocolVersion\":3,\"sessionToken\":\"") +
       session.token + "\",\"connectionId\":\"" + connect.value->connection_id + "\",\"build\":\"test\"}";
 
   bool hello_sent = false;
@@ -351,6 +527,7 @@ TEST_CASE("SignalingStore rate limits input commands") {
                                  candidate.mid());
       },
       nullptr,
+      nullptr,
       [&](const std::string &label, const std::string &message) {
         if (label == kReliableChannelLabel &&
             message.find("ServerHello") != std::string::npos) {
@@ -375,7 +552,7 @@ TEST_CASE("SignalingStore rate limits input commands") {
   CHECK(answer_error == SignalingError::None);
 
   const std::string hello =
-      std::string("{\"type\":\"ClientHello\",\"protocolVersion\":2,\"sessionToken\":\"") +
+      std::string("{\"type\":\"ClientHello\",\"protocolVersion\":3,\"sessionToken\":\"") +
       session.token + "\",\"connectionId\":\"" + connect.value->connection_id + "\",\"build\":\"test\"}";
   const std::string input_one =
       R"({"type":"InputCmd","inputSeq":1,"moveX":0,"moveY":0,"lookDeltaX":0,"lookDeltaY":0,"jump":false,"fire":false,"sprint":false})";
@@ -468,6 +645,7 @@ TEST_CASE("SignalingStore closes connection after invalid inputs") {
                                  candidate.mid());
       },
       nullptr,
+      nullptr,
       nullptr});
 
   remote.SetRemoteDescription(connect.value->offer);
@@ -553,6 +731,7 @@ TEST_CASE("SignalingStore responds to ping with pong") {
                                  candidate.mid());
       },
       nullptr,
+      nullptr,
       [&](const std::string &label, const std::string &message) {
         if (label == kReliableChannelLabel &&
             message.find("ServerHello") != std::string::npos) {
@@ -584,7 +763,7 @@ TEST_CASE("SignalingStore responds to ping with pong") {
   CHECK(answer_error == SignalingError::None);
 
   const std::string hello =
-      std::string("{\"type\":\"ClientHello\",\"protocolVersion\":2,\"sessionToken\":\"") +
+      std::string("{\"type\":\"ClientHello\",\"protocolVersion\":3,\"sessionToken\":\"") +
       session.token + "\",\"connectionId\":\"" + connect.value->connection_id + "\",\"build\":\"test\"}";
   const std::string ping = R"({"type":"Ping","clientTimeMs":5})";
 

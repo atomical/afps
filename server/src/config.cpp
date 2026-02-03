@@ -108,6 +108,11 @@ ParseResult ParseArgs(int argc, const char *const *argv) {
           result.config.snapshot_keyframe_interval = interval;
         }
       }
+    } else if (arg == "--character-manifest") {
+      auto value = require_value("--character-manifest");
+      if (!value.empty()) {
+        result.config.character_manifest_path = value;
+      }
     } else {
       result.errors.push_back("Unknown argument: " + arg);
     }

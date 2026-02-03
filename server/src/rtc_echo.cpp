@@ -2,35 +2,147 @@
 
 #include <utility>
 
+namespace {
+using State = RtcEchoPeerState;
+
+void AttachDataChannel(const std::shared_ptr<State> &state, const std::shared_ptr<rtc::DataChannel> &channel) {
+  const auto label = channel->label();
+  {
+    std::scoped_lock lock(state->mutex);
+    state->channels[label] = channel;
+    if (state->primary_label.empty()) {
+      state->primary_label = label;
+    }
+  }
+
+  std::weak_ptr<State> weak_state = state;
+
+  channel->onOpen([weak_state]() {
+    const auto locked = weak_state.lock();
+    if (!locked) {
+      return;
+    }
+    std::function<void()> cb;
+    {
+      std::scoped_lock lock(locked->mutex);
+      cb = locked->callbacks.on_channel_open;
+    }
+    if (cb) {
+      cb();
+    }
+  });
+
+  channel->onClosed([weak_state]() {
+    const auto locked = weak_state.lock();
+    if (!locked) {
+      return;
+    }
+    std::function<void()> cb;
+    {
+      std::scoped_lock lock(locked->mutex);
+      cb = locked->callbacks.on_channel_closed;
+    }
+    if (cb) {
+      cb();
+    }
+  });
+
+  channel->onMessage([weak_state, channel, label](rtc::message_variant message) {
+    const auto locked = weak_state.lock();
+    if (!locked) {
+      return;
+    }
+
+    bool echo_incoming = true;
+    std::function<void(const std::string &, const std::string &)> on_message;
+    {
+      std::scoped_lock lock(locked->mutex);
+      echo_incoming = locked->echo_incoming;
+      on_message = locked->callbacks.on_message;
+    }
+
+    if (const auto text = std::get_if<std::string>(&message)) {
+      if (echo_incoming && channel->isOpen()) {
+        try {
+          channel->send(*text);
+        } catch (...) {
+          // ignore send failures during teardown
+        }
+      }
+      if (on_message) {
+        on_message(label, *text);
+      }
+      return;
+    }
+
+    if (const auto binary = std::get_if<rtc::binary>(&message)) {
+      if (echo_incoming && channel->isOpen()) {
+        try {
+          channel->send(*binary);
+        } catch (...) {
+          // ignore send failures during teardown
+        }
+      }
+    }
+  });
+}
+}  // namespace
+
 RtcEchoPeer::RtcEchoPeer(const rtc::Configuration &config, bool echo_incoming)
-    : peer_(config), echo_incoming_(echo_incoming) {
-  peer_.onLocalDescription([this](const rtc::Description &description) {
-    if (callbacks_.on_local_description) {
-      callbacks_.on_local_description(description);
+    : peer_(config), state_(std::make_shared<State>()) {
+  state_->echo_incoming = echo_incoming;
+  std::weak_ptr<State> weak_state = state_;
+
+  peer_.onLocalDescription([weak_state](const rtc::Description &description) {
+    const auto locked = weak_state.lock();
+    if (!locked) {
+      return;
+    }
+    std::function<void(const rtc::Description &)> cb;
+    {
+      std::scoped_lock lock(locked->mutex);
+      cb = locked->callbacks.on_local_description;
+    }
+    if (cb) {
+      cb(description);
     }
   });
 
-  peer_.onLocalCandidate([this](const rtc::Candidate &candidate) {
-    if (callbacks_.on_local_candidate) {
-      callbacks_.on_local_candidate(candidate);
+  peer_.onLocalCandidate([weak_state](const rtc::Candidate &candidate) {
+    const auto locked = weak_state.lock();
+    if (!locked) {
+      return;
+    }
+    std::function<void(const rtc::Candidate &)> cb;
+    {
+      std::scoped_lock lock(locked->mutex);
+      cb = locked->callbacks.on_local_candidate;
+    }
+    if (cb) {
+      cb(candidate);
     }
   });
 
-  peer_.onDataChannel([this](const std::shared_ptr<rtc::DataChannel> &channel) {
-    AttachDataChannel(channel);
+  peer_.onDataChannel([weak_state](const std::shared_ptr<rtc::DataChannel> &channel) {
+    const auto locked = weak_state.lock();
+    if (!locked) {
+      return;
+    }
+    AttachDataChannel(locked, channel);
   });
 }
 
 void RtcEchoPeer::SetCallbacks(RtcEchoCallbacks callbacks) {
-  callbacks_ = std::move(callbacks);
+  std::scoped_lock lock(state_->mutex);
+  state_->callbacks = std::move(callbacks);
 }
 
 void RtcEchoPeer::CreateDataChannel(const std::string &label) {
-  AttachDataChannel(peer_.createDataChannel(label));
+  AttachDataChannel(state_, peer_.createDataChannel(label));
 }
 
 void RtcEchoPeer::CreateDataChannel(const std::string &label, const rtc::DataChannelInit &init) {
-  AttachDataChannel(peer_.createDataChannel(label, init));
+  AttachDataChannel(state_, peer_.createDataChannel(label, init));
 }
 
 void RtcEchoPeer::SetLocalDescription() {
@@ -59,9 +171,9 @@ bool RtcEchoPeer::SendOn(const std::string &label, const std::string &message) {
   }
   std::shared_ptr<rtc::DataChannel> channel;
   {
-    std::scoped_lock lock(channel_mutex_);
-    auto iter = channels_.find(label);
-    if (iter == channels_.end()) {
+    std::scoped_lock lock(state_->mutex);
+    auto iter = state_->channels.find(label);
+    if (iter == state_->channels.end()) {
       return false;
     }
     channel = iter->second;
@@ -69,50 +181,16 @@ bool RtcEchoPeer::SendOn(const std::string &label, const std::string &message) {
   if (!channel || !channel->isOpen()) {
     return false;
   }
-  channel->send(message);
-  return true;
-}
-
-void RtcEchoPeer::AttachDataChannel(const std::shared_ptr<rtc::DataChannel> &channel) {
-  const auto label = channel->label();
-  {
-    std::scoped_lock lock(channel_mutex_);
-    channels_[label] = channel;
-    if (primary_label_.empty()) {
-      primary_label_ = label;
-    }
+  try {
+    channel->send(message);
+    return true;
+  } catch (...) {
+    // libdatachannel may throw if the SCTP transport is torn down mid-send.
+    return false;
   }
-
-  channel->onOpen([this]() {
-    if (callbacks_.on_channel_open) {
-      callbacks_.on_channel_open();
-    }
-  });
-
-  channel->onMessage([this, channel, label](rtc::message_variant message) {
-    if (const auto text = std::get_if<std::string>(&message)) {
-      if (echo_incoming_) {
-        if (channel->isOpen()) {
-          channel->send(*text);
-        }
-      }
-      if (callbacks_.on_message) {
-        callbacks_.on_message(label, *text);
-      }
-      return;
-    }
-
-    if (const auto binary = std::get_if<rtc::binary>(&message)) {
-      if (echo_incoming_) {
-        if (channel->isOpen()) {
-          channel->send(*binary);
-        }
-      }
-    }
-  });
 }
 
 std::string RtcEchoPeer::PrimaryLabel() {
-  std::scoped_lock lock(channel_mutex_);
-  return primary_label_;
+  std::scoped_lock lock(state_->mutex);
+  return state_->primary_label;
 }

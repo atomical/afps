@@ -24,6 +24,7 @@ endif()
 
 set(AFPS_SERVER_SOURCES
   src/auth.cpp
+  src/character_manifest.cpp
   src/combat.cpp
   src/config.cpp
   src/health.cpp

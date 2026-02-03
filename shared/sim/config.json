@@ -20,7 +20,7 @@
   "shockwaveImpulse": 10.0,
   "shockwaveCooldown": 6.0,
   "shockwaveDamage": 10.0,
-  "arenaHalfSize": 50.0,
+  "arenaHalfSize": 18.0,
   "playerRadius": 0.5,
   "playerHeight": 1.7,
   "obstacleMinX": 0.0,

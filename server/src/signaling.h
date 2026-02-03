@@ -8,6 +8,7 @@
 #include <random>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "protocol.h"
@@ -54,6 +55,7 @@ struct SignalingConfig {
   int max_invalid_inputs = 5;
   int max_rate_limit_drops = 20;
   int snapshot_keyframe_interval = kSnapshotKeyframeInterval;
+  std::vector<std::string> allowed_character_ids;
 };
 
 template <typename T>
@@ -102,6 +104,8 @@ private:
     bool handshake_complete = false;
     int handshake_attempts = 0;
     std::string client_build;
+    std::string nickname;
+    std::string character_id;
     std::string connection_nonce;
     std::vector<InputCmd> pending_inputs;
     int last_input_seq = -1;
@@ -125,5 +129,6 @@ private:
   mutable std::mutex mutex_;
   std::unordered_map<std::string, Session> sessions_;
   std::unordered_map<std::string, std::shared_ptr<ConnectionState>> connections_;
+  std::unordered_set<std::string> allowed_character_ids_;
   std::mt19937 rng_;
 };

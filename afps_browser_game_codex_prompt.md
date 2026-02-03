@@ -8,7 +8,7 @@
 ---
 
 ## Status Header (update every session)
-- **Last updated:** `2026-02-02 08:35:00 CT`
+- **Last updated:** `2026-02-02 16:05:00 CT`
 - **Session author:** `codex`
 - **Current milestone:** `M5`
 - **CI note:** Skip CI work unless explicitly requested.
@@ -198,6 +198,13 @@
 - [2026-02-01 17:16:38 CT] (rendering-tests) Covered outline flash/team edge cases and main entry outline hooks; client tests green. (tests: npm test)
 - [2026-02-02 08:05:00 CT] (perf) Added client perf budgets + perf check harness and documented the budgets/command. (tests: npm run perf:check)
 - [2026-02-02 08:27:00 CT] (tooling) Added tools/perf_check.sh wrapper for client perf budgets. (tests: ./tools/perf_check.sh)
+- [2026-02-02 14:40:00 CT] (characters/net) Added character manifest generator + pre-join doc note, and server test to normalize invalid character ids. (tests: not run)
+- [2026-02-02 14:47:00 CT] (verification) Server build + ctest pass after character id normalization test. (tests: ctest)
+- [2026-02-02 15:10:00 CT] (characters/net) Added server-side character allowlist loading from manifest + config flag; updated docs/tests. (tests: ctest)
+- [2026-02-02 15:20:00 CT] (characters/net) Defaulted allowlist to `default` if manifest load fails; server rebuild + ctest pass. (tests: ctest)
+- [2026-02-02 15:32:00 CT] (assets) Dropped Kenney Animated Characters 1 assets (FBX + skins) into public assets and regenerated the character manifest. (tests: none)
+- [2026-02-02 15:45:00 CT] (assets) Converted Kenney Animated Characters 1 FBX assets to GLB, moved FBX to source folders, and refreshed manifest. (tests: none)
+- [2026-02-02 16:05:00 CT] (ui) Added 3D GLB preview rendering for pre-join character selection and updated manifest generator to skip source folders. (tests: npm test (fails coverage)) 
 - [2026-02-02 08:35:00 CT] (rendering/map) Set sand sky color, warmer sunny lighting, and ground-aligned camera start. (tests: npm test)
 
 ---
@@ -1017,6 +1024,7 @@ Server (C++):
 - Client dev server (Suburban bounds): `cd client && VITE_DEBUG_RETRO_URBAN_BOUNDS=true npm run dev`
 - Client dev server (Suburban grid): `cd client && VITE_DEBUG_RETRO_URBAN_GRID=true npm run dev`
 - Validate Suburban manifest: `python3 tools/validate_retro_urban_map.py`
+- Generate character manifest: `python3 tools/generate_character_manifest.py`
 - Client WASM parity check: `cd client && npm run wasm:check`
 - Client lint: `cd client && npm run lint`
 - Client format: `cd client && npm run format`
@@ -1026,6 +1034,7 @@ Server (C++):
 - Client perf check (wrapper): `./tools/perf_check.sh`
 - Server build: `cd server && cmake -S . -B build && cmake --build build`
 - Server run (HTTP, builds + runs): `./tools/run_server.sh`
+- Server run (HTTP + character allowlist): `./tools/run_server.sh --character-manifest client/public/assets/characters/ultimate_modular_men/manifest.json`
 - Server run (HTTPS, builds + certs): `SERVER_USE_HTTPS=1 ./tools/run_server.sh`
 - Server + client (HTTP dev): `./tools/run_dev.sh`
 - Server tests: `cd server && ctest --test-dir build`

@@ -12,7 +12,16 @@ struct RtcEchoCallbacks {
   std::function<void(const rtc::Description &)> on_local_description;
   std::function<void(const rtc::Candidate &)> on_local_candidate;
   std::function<void()> on_channel_open;
+  std::function<void()> on_channel_closed;
   std::function<void(const std::string &, const std::string &)> on_message;
+};
+
+struct RtcEchoPeerState {
+  std::mutex mutex;
+  std::unordered_map<std::string, std::shared_ptr<rtc::DataChannel>> channels;
+  std::string primary_label;
+  bool echo_incoming = true;
+  RtcEchoCallbacks callbacks;
 };
 
 class RtcEchoPeer {
@@ -31,13 +40,10 @@ public:
   bool SendOn(const std::string &label, const std::string &message);
 
 private:
-  void AttachDataChannel(const std::shared_ptr<rtc::DataChannel> &channel);
   std::string PrimaryLabel();
 
   rtc::PeerConnection peer_;
-  std::unordered_map<std::string, std::shared_ptr<rtc::DataChannel>> channels_;
-  std::mutex channel_mutex_;
-  std::string primary_label_;
-  bool echo_incoming_ = true;
-  RtcEchoCallbacks callbacks_;
+  // Keep the callback state in a shared object so libdatachannel callbacks never capture `this`.
+  // This prevents use-after-free when callbacks fire during teardown.
+  std::shared_ptr<RtcEchoPeerState> state_;
 };

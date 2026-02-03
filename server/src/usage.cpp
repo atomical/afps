@@ -14,6 +14,7 @@ std::string UsageText(const char *argv0) {
   out << "  --port <port>   Bind port (default 8443)\n";
   out << "  --ice <url>     ICE server URL (repeatable)\n";
   out << "  --snapshot-keyframe-interval <n> Keyframe interval in snapshots (default 5, 0=all)\n";
+  out << "  --character-manifest <path> Character manifest JSON for allowlisting character ids\n";
   out << "  --http          Disable TLS (local development only)\n";
   out << "  -h, --help      Show this help text\n";
   return out.str();

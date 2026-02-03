@@ -1,11 +1,13 @@
 import {
   buildClientHello as buildClientHelloMessage,
   parseGameEvent,
+  parsePlayerProfile,
   parsePong,
   parseServerHello,
   parseSnapshotMessage,
   PROTOCOL_VERSION,
   type GameEvent,
+  type PlayerProfile,
   type Pong,
   type StateSnapshot
 } from './protocol';
@@ -32,6 +34,7 @@ interface WebRtcConnectOptions {
   onSnapshot?: (snapshot: StateSnapshot) => void;
   onPong?: (pong: Pong) => void;
   onGameEvent?: (event: GameEvent) => void;
+  onPlayerProfile?: (profile: PlayerProfile) => void;
 }
 
 const RELIABLE_LABEL = 'afps_reliable';
@@ -142,7 +145,8 @@ export const createWebRtcConnector = ({
   buildClientHello = buildClientHelloMessage,
   onSnapshot,
   onPong,
-  onGameEvent
+  onGameEvent,
+  onPlayerProfile
 }: WebRtcConnectOptions) => {
   const connect = async (): Promise<WebRtcSession> => {
     const session = await signaling.createSession();
@@ -176,6 +180,11 @@ export const createWebRtcConnector = ({
       if (serverHello) {
         resolveServerHello?.(serverHello);
         resolveServerHello = null;
+        return;
+      }
+      const profile = parsePlayerProfile(message.data);
+      if (profile) {
+        onPlayerProfile?.(profile);
         return;
       }
       logger.info(`dc: ${message.data}`);

@@ -30,7 +30,7 @@ const createDeps = () => {
     connectionId: 'conn',
     serverHello: {
       type: 'ServerHello',
-      protocolVersion: 2,
+      protocolVersion: 3,
       connectionId: 'conn',
       serverTickRate: 60,
       snapshotRate: 20
@@ -75,6 +75,8 @@ const createDeps = () => {
     onSnapshot?: unknown;
     onPong?: unknown;
     onGameEvent?: unknown;
+    onPlayerProfile?: unknown;
+    buildClientHello?: unknown;
   } | null = null;
   const createWebRtcConnector = (options: {
     signaling: SignalingClient;
@@ -86,6 +88,8 @@ const createDeps = () => {
     onSnapshot?: unknown;
     onPong?: unknown;
     onGameEvent?: unknown;
+    onPlayerProfile?: unknown;
+    buildClientHello?: unknown;
   }) => {
     connectorCalled = true;
     lastConnectorOptions = options;
@@ -248,7 +252,7 @@ describe('connectIfConfigured', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 2,
+        protocolVersion: 3,
         connectionId: 'conn',
         serverTickRate: 60,
         snapshotRate: 20
@@ -325,7 +329,7 @@ describe('connectIfConfigured', () => {
     reliable.emitMessage(
       JSON.stringify({
         type: 'ServerHello',
-        protocolVersion: 2,
+        protocolVersion: 3,
         connectionId: 'conn',
         serverTickRate: 60,
         snapshotRate: 20

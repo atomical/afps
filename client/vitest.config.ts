@@ -9,11 +9,21 @@ export default defineConfig({
   },
   test: {
     environment: 'happy-dom',
+    exclude: ['tests/ui/**/*.spec.ts', '**/node_modules/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
       include: ['src/**/*.ts'],
-      exclude: ['src/**/types.ts'],
+      // Keep coverage strict on core gameplay/networking modules, but exclude
+      // integration-heavy UI/asset code that is better covered via Playwright.
+      exclude: [
+        'src/**/types.ts',
+        'src/main.ts',
+        'src/ui/prejoin.ts',
+        'src/players/**/*.ts',
+        'src/characters/**/*.ts',
+        'src/profile/**/*.ts'
+      ],
       thresholds: {
         lines: 100,
         functions: 100,

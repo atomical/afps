@@ -3,6 +3,7 @@ import {
   buildClientHello,
   buildPing,
   parseGameEvent,
+  parsePlayerProfile,
   parsePong,
   parseServerHello,
   parseSnapshotMessage,
@@ -18,7 +19,8 @@ import {
   SNAPSHOT_MASK_DASH_COOLDOWN,
   SNAPSHOT_MASK_HEALTH,
   SNAPSHOT_MASK_KILLS,
-  SNAPSHOT_MASK_DEATHS
+  SNAPSHOT_MASK_DEATHS,
+  SNAPSHOT_MASK_WEAPON_SLOT
 } from '../../src/net/protocol';
 
 describe('protocol helpers', () => {
@@ -36,7 +38,7 @@ describe('protocol helpers', () => {
   it('parses ServerHello payload', () => {
     const payload = JSON.stringify({
       type: 'ServerHello',
-      protocolVersion: 2,
+      protocolVersion: PROTOCOL_VERSION,
       connectionId: 'conn',
       serverTickRate: 60,
       snapshotRate: 20,
@@ -49,7 +51,7 @@ describe('protocol helpers', () => {
     const parsed = parseServerHello(payload);
     expect(parsed).toEqual({
       type: 'ServerHello',
-      protocolVersion: 2,
+      protocolVersion: PROTOCOL_VERSION,
       connectionId: 'conn',
       serverTickRate: 60,
       snapshotRate: 20,
@@ -73,12 +75,53 @@ describe('protocol helpers', () => {
     }))).toBeNull();
     expect(parseServerHello(JSON.stringify({
       type: 'ServerHello',
-      protocolVersion: 2,
+      protocolVersion: PROTOCOL_VERSION,
       connectionId: 'conn',
       serverTickRate: 60,
       snapshotRate: 20,
       snapshotKeyframeInterval: 'bad'
     }))).toBeNull();
+  });
+
+  it('parses PlayerProfile payloads', () => {
+    const payload = JSON.stringify({
+      type: 'PlayerProfile',
+      clientId: 'client-1',
+      nickname: 'Ada',
+      characterId: 'casual-a'
+    });
+
+    expect(parsePlayerProfile(payload)).toEqual({
+      type: 'PlayerProfile',
+      clientId: 'client-1',
+      nickname: 'Ada',
+      characterId: 'casual-a'
+    });
+  });
+
+  it('rejects invalid PlayerProfile payloads', () => {
+    expect(parsePlayerProfile('nope')).toBeNull();
+    expect(parsePlayerProfile('null')).toBeNull();
+    expect(parsePlayerProfile(JSON.stringify({ type: 'Other' }))).toBeNull();
+    expect(
+      parsePlayerProfile(
+        JSON.stringify({
+          type: 'PlayerProfile',
+          clientId: 'client-1',
+          nickname: 'Ada'
+        })
+      )
+    ).toBeNull();
+    expect(
+      parsePlayerProfile(
+        JSON.stringify({
+          type: 'PlayerProfile',
+          clientId: '',
+          nickname: 'Ada',
+          characterId: 'casual-a'
+        })
+      )
+    ).toBeNull();
   });
 
   it('parses StateSnapshot payloads', () => {
@@ -92,6 +135,7 @@ describe('protocol helpers', () => {
       velX: 0.5,
       velY: -0.25,
       velZ: 0.1,
+      weaponSlot: 1,
       dashCooldown: 0.4,
       health: 75,
       kills: 2,
@@ -109,6 +153,7 @@ describe('protocol helpers', () => {
       velX: 0.5,
       velY: -0.25,
       velZ: 0.1,
+      weaponSlot: 1,
       dashCooldown: 0.4,
       health: 75,
       kills: 2,
@@ -174,6 +219,39 @@ describe('protocol helpers', () => {
       deaths: 0,
       clientId: ''
     }))).toBeNull();
+    expect(parseStateSnapshot(JSON.stringify({
+      type: 'StateSnapshot',
+      serverTick: 0,
+      lastProcessedInputSeq: 0,
+      posX: 0,
+      posY: 0,
+      posZ: 0,
+      velX: 0,
+      velY: 0,
+      velZ: 0,
+      weaponSlot: 0,
+      dashCooldown: 0,
+      health: -1,
+      kills: 0,
+      deaths: 0
+    }))).toBeNull();
+    expect(parseStateSnapshot(JSON.stringify({
+      type: 'StateSnapshot',
+      serverTick: 0,
+      lastProcessedInputSeq: 0,
+      posX: 0,
+      posY: 0,
+      posZ: 0,
+      velX: 0,
+      velY: 0,
+      velZ: 0,
+      weaponSlot: 0,
+      dashCooldown: 0,
+      health: 100,
+      kills: 0,
+      deaths: 0,
+      clientId: 123
+    } as unknown as Record<string, unknown>))).toBeNull();
     expect(parseStateSnapshot(JSON.stringify({
       type: 'StateSnapshot',
       serverTick: 0,
@@ -401,7 +479,8 @@ describe('protocol helpers', () => {
       SNAPSHOT_MASK_DASH_COOLDOWN |
       SNAPSHOT_MASK_HEALTH |
       SNAPSHOT_MASK_KILLS |
-      SNAPSHOT_MASK_DEATHS;
+      SNAPSHOT_MASK_DEATHS |
+      SNAPSHOT_MASK_WEAPON_SLOT;
     const payload = JSON.stringify({
       type: 'StateSnapshotDelta',
       serverTick: 10,
@@ -414,6 +493,7 @@ describe('protocol helpers', () => {
       velX: 0.75,
       velY: -0.5,
       velZ: 0.1,
+      weaponSlot: 2,
       dashCooldown: 0.35,
       health: 80,
       kills: 1,
@@ -433,6 +513,7 @@ describe('protocol helpers', () => {
       velX: 0.75,
       velY: -0.5,
       velZ: 0.1,
+      weaponSlot: 2,
       dashCooldown: 0.35,
       health: 80,
       kills: 1,
@@ -564,6 +645,14 @@ describe('protocol helpers', () => {
       mask: SNAPSHOT_MASK_DEATHS,
       deaths: -2
     }))).toBeNull();
+    expect(parseStateSnapshotDelta(JSON.stringify({
+      type: 'StateSnapshotDelta',
+      serverTick: 1,
+      baseTick: 1,
+      lastProcessedInputSeq: 0,
+      mask: SNAPSHOT_MASK_WEAPON_SLOT,
+      weaponSlot: -1
+    }))).toBeNull();
   });
 
   it('parses snapshot messages for full and delta payloads', () => {
@@ -577,6 +666,7 @@ describe('protocol helpers', () => {
       velX: 0.5,
       velY: -0.25,
       velZ: 0.1,
+      weaponSlot: 0,
       dashCooldown: 0.4,
       health: 100,
       kills: 0,

@@ -3,18 +3,105 @@
 #include "protocol.h"
 
 #include <algorithm>
+#include <cctype>
 #include <iomanip>
 #include <sstream>
 
 namespace {
 constexpr int kMaxClientHelloAttempts = 3;
 constexpr size_t kMaxPendingInputs = 128;
+
+std::string TrimWhitespace(const std::string &value) {
+  const auto start = value.find_first_not_of(" \t\r\n");
+  if (start == std::string::npos) {
+    return "";
+  }
+  const auto end = value.find_last_not_of(" \t\r\n");
+  return value.substr(start, end - start + 1);
+}
+
+bool IsNicknameChar(char ch) {
+  const unsigned char uch = static_cast<unsigned char>(ch);
+  return std::isalnum(uch) || ch == '_' || ch == '-' || ch == ' ';
+}
+
+std::string DefaultNickname(const std::string &seed) {
+  unsigned int hash = 0;
+  for (unsigned char ch : seed) {
+    hash = (hash * 131u) + ch;
+  }
+  const int suffix = static_cast<int>(hash % 10000u);
+  std::ostringstream output;
+  output << "Player" << std::setw(4) << std::setfill('0') << suffix;
+  return output.str();
+}
+
+std::string NormalizeNickname(const std::string &value, const std::string &seed) {
+  const std::string trimmed = TrimWhitespace(value);
+  if (trimmed.size() < 3 || trimmed.size() > 16) {
+    return DefaultNickname(seed);
+  }
+  for (char ch : trimmed) {
+    if (!IsNicknameChar(ch)) {
+      return DefaultNickname(seed);
+    }
+  }
+  return trimmed;
+}
+
+bool IsCharacterIdChar(char ch) {
+  const unsigned char uch = static_cast<unsigned char>(ch);
+  return std::isalnum(uch) || ch == '_' || ch == '-';
+}
+
+std::unordered_set<std::string> BuildAllowedCharacterIds(const std::vector<std::string> &ids) {
+  std::unordered_set<std::string> allowed;
+  for (const auto &entry : ids) {
+    const std::string trimmed = TrimWhitespace(entry);
+    if (trimmed.empty() || trimmed.size() > 32) {
+      continue;
+    }
+    bool valid = true;
+    for (char ch : trimmed) {
+      if (!IsCharacterIdChar(ch)) {
+        valid = false;
+        break;
+      }
+    }
+    if (valid) {
+      allowed.insert(trimmed);
+    }
+  }
+  if (!allowed.empty() || !ids.empty()) {
+    allowed.insert("default");
+  }
+  return allowed;
+}
+
+std::string NormalizeCharacterId(const std::string &value,
+                                 const std::unordered_set<std::string> &allowed_ids) {
+  const std::string trimmed = TrimWhitespace(value);
+  if (trimmed.empty() || trimmed.size() > 32) {
+    return "default";
+  }
+  for (char ch : trimmed) {
+    if (!IsCharacterIdChar(ch)) {
+      return "default";
+    }
+  }
+  if (!allowed_ids.empty() && allowed_ids.find(trimmed) == allowed_ids.end()) {
+    return "default";
+  }
+  return trimmed;
+}
 }
 
 SignalingStore::SignalingStore(SignalingConfig config)
     : config_(std::move(config)),
       input_limiter_(config_.input_max_tokens, config_.input_refill_per_second),
-      rng_(std::random_device{}()) {}
+      rng_(std::random_device{}()) {
+  allowed_character_ids_ = BuildAllowedCharacterIds(config_.allowed_character_ids);
+}
 
 SessionInfo SignalingStore::CreateSession() {
   const auto now = std::chrono::system_clock::now();
@@ -78,6 +165,12 @@ SignalingResult<ConnectionOffer> SignalingStore::CreateConnection(const std::str
       [connection]() {
         std::scoped_lock lock(connection->mutex);
         connection->channel_open = true;
+      },
+      // Mark the connection as closed when any data channel closes. Avoid touching the
+      // SignalingStore from this callback because it can fire during teardown.
+      [connection]() {
+        std::scoped_lock lock(connection->mutex);
+        connection->closed = true;
       },
       [this, connection](const std::string &label, const std::string &message) {
         HandleClientMessage(connection, label, message);
@@ -489,6 +582,10 @@ void SignalingStore::HandleClientMessage(const std::shared_ptr<ConnectionState> 
       return;
     }
 
+    const std::string nickname = NormalizeNickname(hello.nickname, connection->id);
+    const std::string character_id =
+        NormalizeCharacterId(hello.character_id, allowed_character_ids_);
+
     {
       std::scoped_lock lock(connection->mutex);
       if (connection->closed) {
@@ -496,6 +593,8 @@ void SignalingStore::HandleClientMessage(const std::shared_ptr<ConnectionState> 
       }
       connection->handshake_complete = true;
       connection->client_build = hello.build;
+      connection->nickname = nickname;
+      connection->character_id = character_id;
     }
 
     ServerHello response;
@@ -507,6 +606,53 @@ void SignalingStore::HandleClientMessage(const std::shared_ptr<ConnectionState> 
     response.snapshot_keyframe_interval = config_.snapshot_keyframe_interval;
     response.connection_nonce = connection->connection_nonce;
     connection->peer->Send(BuildServerHello(response));
+
+    PlayerProfile self_profile;
+    self_profile.client_id = connection->id;
+    self_profile.nickname = nickname;
+    self_profile.character_id = character_id;
+
+    struct ProfileTarget {
+      std::shared_ptr<ConnectionState> connection;
+      PlayerProfile profile;
+    };
+    std::vector<ProfileTarget> profiles;
+    {
+      std::vector<std::shared_ptr<ConnectionState>> connections;
+      {
+        std::scoped_lock lock(mutex_);
+        connections.reserve(connections_.size());
+        for (const auto &entry : connections_) {
+          connections.push_back(entry.second);
+        }
+      }
+      for (const auto &peer : connections) {
+        std::scoped_lock lock(peer->mutex);
+        if (peer->closed || !peer->handshake_complete || !peer->channel_open) {
+          continue;
+        }
+        PlayerProfile profile;
+        profile.client_id = peer->id;
+        profile.nickname = peer->nickname;
+        profile.character_id = peer->character_id;
+        profiles.push_back({peer, profile});
+      }
+    }
+
+    const std::string self_payload = BuildPlayerProfile(self_profile);
+    for (const auto &entry : profiles) {
+      if (entry.profile.client_id == connection->id) {
+        continue;
+      }
+      connection->peer->SendOn(kReliableChannelLabel, BuildPlayerProfile(entry.profile));
+    }
+    for (const auto &entry : profiles) {
+      if (entry.profile.client_id == connection->id) {
+        continue;
+      }
+      entry.connection->peer->SendOn(kReliableChannelLabel, self_payload);
+    }
+    connection->peer->SendOn(kReliableChannelLabel, self_payload);
     return;
   }
 

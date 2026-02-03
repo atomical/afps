@@ -1,0 +1,89 @@
+{
+  "defaultId": "survivorfemalea",
+  "entries": [
+    {
+      "id": "survivorfemalea",
+      "displayName": "Survivorfemalea",
+      "skinUrl": "/assets/characters/kenney_animated_characters_1/skins/survivorFemaleA.png",
+      "handBone": "RightHand",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0.0,
+          1.57,
+          0.0
+        ],
+        "scale": 1.0
+      },
+      "modelUrl": "/assets/characters/kenney_animated_characters_1/models/characterMedium.glb",
+      "previewUrl": "/assets/characters/kenney_animated_characters_1/skins/survivorFemaleA.png"
+    },
+    {
+      "id": "survivormaleb",
+      "displayName": "Survivormaleb",
+      "skinUrl": "/assets/characters/kenney_animated_characters_1/skins/survivorMaleB.png",
+      "handBone": "RightHand",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0.0,
+          1.57,
+          0.0
+        ],
+        "scale": 1.0
+      },
+      "modelUrl": "/assets/characters/kenney_animated_characters_1/models/characterMedium.glb",
+      "previewUrl": "/assets/characters/kenney_animated_characters_1/skins/survivorMaleB.png"
+    },
+    {
+      "id": "zombiea",
+      "displayName": "Zombiea",
+      "skinUrl": "/assets/characters/kenney_animated_characters_1/skins/zombieA.png",
+      "handBone": "RightHand",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0.0,
+          1.57,
+          0.0
+        ],
+        "scale": 1.0
+      },
+      "modelUrl": "/assets/characters/kenney_animated_characters_1/models/characterMedium.glb",
+      "previewUrl": "/assets/characters/kenney_animated_characters_1/skins/zombieA.png"
+    },
+    {
+      "id": "zombiec",
+      "displayName": "Zombiec",
+      "skinUrl": "/assets/characters/kenney_animated_characters_1/skins/zombieC.png",
+      "handBone": "RightHand",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0.0,
+          1.57,
+          0.0
+        ],
+        "scale": 1.0
+      },
+      "modelUrl": "/assets/characters/kenney_animated_characters_1/models/characterMedium.glb",
+      "previewUrl": "/assets/characters/kenney_animated_characters_1/skins/zombieC.png"
+    }
+  ]
+}

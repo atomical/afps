@@ -178,8 +178,9 @@ export const createApp = ({
   };
 
   const refreshOutlineSelection = () => {
+    const cubeSelection = cube.visible === false ? [] : [cube];
     outlinePasses.forEach((pass, index) => {
-      pass.selectedObjects = index === outlineTeamIndex ? [cube] : [];
+      pass.selectedObjects = index === outlineTeamIndex ? cubeSelection : [];
     });
   };
 
@@ -214,6 +215,14 @@ export const createApp = ({
       outlineFlashActive = false;
     }
     outlineTeamIndex = next;
+    refreshOutlineSelection();
+  };
+
+  const setLocalProxyVisible = (visible: boolean) => {
+    const next = visible !== false;
+    if (cube.visible !== undefined) {
+      cube.visible = next;
+    }
     refreshOutlineSelection();
   };
 
@@ -285,6 +294,14 @@ export const createApp = ({
   let weaponViewmodelRoot: Object3DLike | null = null;
   let weaponViewmodelParent: Object3DLike | null = null;
   let weaponViewmodelToken = 0;
+  const createFallbackViewmodel = () => {
+    const geometry = new three.BoxGeometry(0.32, 0.18, 0.8);
+    const material = new three.MeshToonMaterial({ color: 0x2f2f2f, gradientMap: toonRamp });
+    const mesh = new three.Mesh(geometry, material);
+    mesh.position.set(0.4, -0.34, -0.85);
+    mesh.rotation.y = Math.PI;
+    return mesh as unknown as Object3DLike;
+  };
   const setWeaponViewmodel = (weaponId?: string) => {
     if (!loadEnvironment) {
       return;
@@ -292,14 +309,15 @@ export const createApp = ({
     const token = weaponViewmodelToken + 1;
     weaponViewmodelToken = token;
     void Promise.resolve(loadWeaponViewmodel({ scene, camera, weaponId, attach: false })).then((root) => {
-      if (!root || token !== weaponViewmodelToken) {
+      if (token !== weaponViewmodelToken) {
         return;
       }
+      const nextRoot = root ?? createFallbackViewmodel();
       if (weaponViewmodelRoot && weaponViewmodelParent?.remove) {
         weaponViewmodelParent.remove(weaponViewmodelRoot);
       }
-      weaponViewmodelParent = attachWeaponViewmodel(scene, camera, root);
-      weaponViewmodelRoot = root;
+      weaponViewmodelParent = attachWeaponViewmodel(scene, camera, nextRoot);
+      weaponViewmodelRoot = nextRoot;
     });
   };
 
@@ -317,9 +335,57 @@ export const createApp = ({
     cube
   };
 
+  let beforeRenderHook: ((deltaSeconds: number, nowMs: number) => void) | null = null;
+  const setBeforeRender = (hook: ((deltaSeconds: number, nowMs: number) => void) | null) => {
+    beforeRenderHook = hook;
+  };
+
   const snapshotBuffer = new SnapshotBuffer(DEFAULTS.snapshotRate);
   const prediction = new ClientPrediction();
   prediction.setTickRate(DEFAULTS.tickRate);
+  let lastPlayerPose = {
+    posX: cube.position.x,
+    posY: cube.position.z,
+    posZ: cube.position.y - 0.5,
+    velX: 0,
+    velY: 0,
+    velZ: 0
+  };
+  const resolvePlayerPose = (nowMs: number) => {
+    if (prediction.isActive()) {
+      const predicted = prediction.getState();
+      return {
+        posX: predicted.x,
+        posY: predicted.y,
+        posZ: predicted.z,
+        velX: predicted.velX,
+        velY: predicted.velY,
+        velZ: predicted.velZ
+      };
+    }
+    const snapshot = snapshotBuffer.sample(nowMs);
+    if (snapshot) {
+      return {
+        posX: snapshot.posX,
+        posY: snapshot.posY,
+        posZ: snapshot.posZ,
+        velX: snapshot.velX,
+        velY: snapshot.velY,
+        velZ: snapshot.velZ
+      };
+    }
+    const fallbackX = Number.isFinite(cube.position.x) ? cube.position.x : 0;
+    const fallbackY = Number.isFinite(cube.position.z) ? cube.position.z : 0;
+    const fallbackZ = Number.isFinite(cube.position.y) ? cube.position.y - 0.5 : 0;
+    return {
+      posX: fallbackX,
+      posY: fallbackY,
+      posZ: fallbackZ,
+      velX: 0,
+      velY: 0,
+      velZ: 0
+    };
+  };
   let lookYaw = 0;
   let lookPitch = 0;
   let lookSensitivity = DEFAULTS.lookSensitivity;
@@ -540,6 +606,8 @@ export const createApp = ({
     pitch: Number.isFinite(lookPitch) ? lookPitch : 0
   });
 
+  const getPlayerPose = () => ({ ...lastPlayerPose });
+
   const setLookSensitivity = (value: number) => {
     if (Number.isFinite(value) && value > 0) {
       lookSensitivity = value;
@@ -587,27 +655,14 @@ export const createApp = ({
     state.cubeRotation += safeDelta * state.rotationSpeed;
     cube.rotation.x = state.cubeRotation;
     cube.rotation.y = state.cubeRotation * 0.8;
-    let targetX: number | null = null;
-    let targetY: number | null = null;
-    let targetZ: number | null = null;
-    if (prediction.isActive()) {
-      const predicted = prediction.getState();
-      targetX = predicted.x;
-      targetY = predicted.y;
-      targetZ = predicted.z;
-    } else {
-      const snapshot = snapshotBuffer.sample(now);
-      if (snapshot) {
-        targetX = snapshot.posX;
-        targetY = snapshot.posY;
-        targetZ = snapshot.posZ;
-      }
+    const pose = resolvePlayerPose(now);
+    if (pose) {
+      lastPlayerPose = pose;
+      const height = pose.posZ ?? 0;
+      cube.position.set(pose.posX, 0.5 + height, pose.posY);
+      camera.position.set(pose.posX, DEFAULTS.cameraHeight + height, pose.posY);
     }
-    if (targetX !== null && targetY !== null) {
-      const height = targetZ ?? 0;
-      cube.position.set(targetX, 0.5 + height, targetY);
-      camera.position.set(targetX, DEFAULTS.cameraHeight + height, targetY);
-    }
+    beforeRenderHook?.(safeDelta, now);
     refreshOutlineFlash(now);
     if (composer) {
       composer.render();
@@ -637,6 +692,8 @@ export const createApp = ({
     state,
     renderFrame,
     resize,
+    setBeforeRender,
+    getPlayerPose,
     ingestSnapshot,
     setSnapshotRate,
     recordInput,
@@ -650,6 +707,7 @@ export const createApp = ({
     applyLookDelta,
     getLookAngles,
     setLookSensitivity,
+    setLocalProxyVisible,
     setOutlineTeam,
     triggerOutlineFlash,
     dispose

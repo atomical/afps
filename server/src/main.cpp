@@ -1,4 +1,5 @@
 #include "auth.h"
+#include "character_manifest.h"
 #include "config.h"
 #include "health.h"
 #include "rate_limiter.h"
@@ -92,6 +93,25 @@ int main(int argc, char **argv) {
   SignalingConfig signaling_config;
   signaling_config.ice_servers = parse.config.ice_servers;
   signaling_config.snapshot_keyframe_interval = parse.config.snapshot_keyframe_interval;
+  std::filesystem::path manifest_path;
+  if (!parse.config.character_manifest_path.empty()) {
+    manifest_path = parse.config.character_manifest_path;
+  } else {
+    auto default_path = std::filesystem::current_path() /
+                        "client/public/assets/characters/ultimate_modular_men/manifest.json";
+    if (std::filesystem::exists(default_path)) {
+      manifest_path = std::move(default_path);
+    }
+  }
+  if (!manifest_path.empty()) {
+    std::string manifest_error;
+    signaling_config.allowed_character_ids =
+        LoadCharacterManifestIds(manifest_path, manifest_error);
+    if (!manifest_error.empty()) {
+      std::cerr << "[warn] " << manifest_error << "\n";
+      signaling_config.allowed_character_ids = {"default"};
+    }
+  }
   SignalingStore signaling_store(signaling_config);
   TickLoop tick_loop(signaling_store, kServerTickRate,
                      parse.config.snapshot_keyframe_interval);

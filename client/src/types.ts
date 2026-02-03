@@ -23,6 +23,11 @@ export interface Vector2Like {
 export interface Object3DLike {
   position: Vector3Like;
   rotation: EulerLike;
+  scale?: Vector3Like;
+  visible?: boolean;
+  name?: string;
+  children?: Object3DLike[];
+  traverse?: (callback: (child: Object3DLike) => void) => void;
   add?: (child: Object3DLike) => void;
   remove?: (child: Object3DLike) => void;
 }
@@ -102,6 +107,16 @@ export interface ThreeLike {
   MeshStandardMaterial: new (params: { color: number }) => MaterialLike;
   MeshToonMaterial: new (params: { color: number; gradientMap?: DataTextureLike }) => MaterialLike;
   Mesh: new (geometry: GeometryLike, material: MaterialLike) => MeshLike;
+  TextureLoader?: new () => { load: (url: string, onLoad: (texture: DataTextureLike) => void, onProgress?: unknown, onError?: (error: unknown) => void) => void };
+  AnimationMixer?: new (root: Object3DLike) => unknown;
+  CanvasTexture?: new (canvas: HTMLCanvasElement) => DataTextureLike;
+  SpriteMaterial?: new (params: {
+    map?: DataTextureLike;
+    transparent?: boolean;
+    depthTest?: boolean;
+    depthWrite?: boolean;
+  }) => MaterialLike;
+  Sprite?: new (material: MaterialLike) => Object3DLike;
   Color: new (hex: number) => ColorLike;
   DirectionalLight: new (color: number, intensity: number) => LightLike;
   AmbientLight: new (color: number, intensity: number) => LightLike;
@@ -141,6 +156,7 @@ export interface NetworkSnapshot {
   velX: number;
   velY: number;
   velZ: number;
+  weaponSlot: number;
   dashCooldown: number;
   health: number;
   kills: number;
@@ -160,6 +176,15 @@ export interface App {
   state: AppState;
   renderFrame: (deltaSeconds: number, nowMs?: number) => void;
   resize: (width: number, height: number, dpr: number) => void;
+  setBeforeRender: (hook: ((deltaSeconds: number, nowMs: number) => void) | null) => void;
+  getPlayerPose: () => {
+    posX: number;
+    posY: number;
+    posZ: number;
+    velX: number;
+    velY: number;
+    velZ: number;
+  };
   ingestSnapshot: (snapshot: NetworkSnapshot, nowMs: number) => void;
   setSnapshotRate: (snapshotRate: number) => void;
   recordInput: (cmd: {
@@ -194,6 +219,7 @@ export interface App {
   applyLookDelta: (deltaX: number, deltaY: number) => void;
   getLookAngles: () => { yaw: number; pitch: number };
   setLookSensitivity: (value: number) => void;
+  setLocalProxyVisible: (visible: boolean) => void;
   setOutlineTeam: (team: number) => void;
   triggerOutlineFlash: (options?: {
     killed?: boolean;

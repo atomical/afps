@@ -82,3 +82,18 @@ TEST_CASE("ParseArgs accepts --http") {
   CHECK(result.config.use_https == false);
   CHECK(result.config.auth_token == "secret");
 }
+
+TEST_CASE("ParseArgs accepts --character-manifest") {
+  const char *argv[] = {
+      "afps_server",
+      "--character-manifest",
+      "manifest.json",
+      "--auth-token",
+      "secret"};
+  const int argc = static_cast<int>(sizeof(argv) / sizeof(argv[0]));
+
+  const auto result = ParseArgs(argc, argv);
+
+  CHECK(result.errors.empty());
+  CHECK(result.config.character_manifest_path == "manifest.json");
+}
