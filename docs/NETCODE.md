@@ -2,6 +2,10 @@
 
 This document explains the current netcode flow: signaling, handshake, input, prediction, snapshots, and metrics.
 
+See also:
+- `docs/NETWORK_STACK.md` for transport/signaling stack details.
+- `docs/PROTOCOL.md` for message schemas and envelope format.
+
 ---
 
 ## Connection flow

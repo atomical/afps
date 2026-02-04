@@ -2,6 +2,13 @@
 
 Living spec: `docs/LIVING_SPEC.md`.
 
+## Docs
+
+- Engine stack overview: `docs/ENGINE_STACK.md`
+- Network stack overview: `docs/NETWORK_STACK.md`
+- Protocol reference: `docs/PROTOCOL.md`
+- Netcode flow: `docs/NETCODE.md`
+
 ## Client
 
 ```bash
