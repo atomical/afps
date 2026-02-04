@@ -86,28 +86,33 @@ weaponSlot():number {
   return offset ? this.bb!.readInt32(this.bb_pos + offset) : 0;
 }
 
-dashCooldown():number {
+ammoInMag():number {
   const offset = this.bb!.__offset(this.bb_pos, 28);
-  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
+  return offset ? this.bb!.readInt32(this.bb_pos + offset) : 0;
 }
 
-health():number {
+dashCooldown():number {
   const offset = this.bb!.__offset(this.bb_pos, 30);
   return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
 }
 
-kills():number {
+health():number {
   const offset = this.bb!.__offset(this.bb_pos, 32);
-  return offset ? this.bb!.readInt32(this.bb_pos + offset) : 0;
+  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
 }
 
-deaths():number {
+kills():number {
   const offset = this.bb!.__offset(this.bb_pos, 34);
   return offset ? this.bb!.readInt32(this.bb_pos + offset) : 0;
 }
 
+deaths():number {
+  const offset = this.bb!.__offset(this.bb_pos, 36);
+  return offset ? this.bb!.readInt32(this.bb_pos + offset) : 0;
+}
+
 static startStateSnapshotDelta(builder:flatbuffers.Builder) {
-  builder.startObject(16);
+  builder.startObject(17);
 }
 
 static addServerTick(builder:flatbuffers.Builder, serverTick:number) {
@@ -158,20 +163,24 @@ static addWeaponSlot(builder:flatbuffers.Builder, weaponSlot:number) {
   builder.addFieldInt32(11, weaponSlot, 0);
 }
 
+static addAmmoInMag(builder:flatbuffers.Builder, ammoInMag:number) {
+  builder.addFieldInt32(12, ammoInMag, 0);
+}
+
 static addDashCooldown(builder:flatbuffers.Builder, dashCooldown:number) {
-  builder.addFieldFloat64(12, dashCooldown, 0.0);
+  builder.addFieldFloat64(13, dashCooldown, 0.0);
 }
 
 static addHealth(builder:flatbuffers.Builder, health:number) {
-  builder.addFieldFloat64(13, health, 0.0);
+  builder.addFieldFloat64(14, health, 0.0);
 }
 
 static addKills(builder:flatbuffers.Builder, kills:number) {
-  builder.addFieldInt32(14, kills, 0);
+  builder.addFieldInt32(15, kills, 0);
 }
 
 static addDeaths(builder:flatbuffers.Builder, deaths:number) {
-  builder.addFieldInt32(15, deaths, 0);
+  builder.addFieldInt32(16, deaths, 0);
 }
 
 static endStateSnapshotDelta(builder:flatbuffers.Builder):flatbuffers.Offset {
@@ -179,7 +188,7 @@ static endStateSnapshotDelta(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createStateSnapshotDelta(builder:flatbuffers.Builder, serverTick:number, baseTick:number, lastProcessedInputSeq:number, mask:number, clientIdOffset:flatbuffers.Offset, posX:number, posY:number, posZ:number, velX:number, velY:number, velZ:number, weaponSlot:number, dashCooldown:number, health:number, kills:number, deaths:number):flatbuffers.Offset {
+static createStateSnapshotDelta(builder:flatbuffers.Builder, serverTick:number, baseTick:number, lastProcessedInputSeq:number, mask:number, clientIdOffset:flatbuffers.Offset, posX:number, posY:number, posZ:number, velX:number, velY:number, velZ:number, weaponSlot:number, ammoInMag:number, dashCooldown:number, health:number, kills:number, deaths:number):flatbuffers.Offset {
   StateSnapshotDelta.startStateSnapshotDelta(builder);
   StateSnapshotDelta.addServerTick(builder, serverTick);
   StateSnapshotDelta.addBaseTick(builder, baseTick);
@@ -193,6 +202,7 @@ static createStateSnapshotDelta(builder:flatbuffers.Builder, serverTick:number, 
   StateSnapshotDelta.addVelY(builder, velY);
   StateSnapshotDelta.addVelZ(builder, velZ);
   StateSnapshotDelta.addWeaponSlot(builder, weaponSlot);
+  StateSnapshotDelta.addAmmoInMag(builder, ammoInMag);
   StateSnapshotDelta.addDashCooldown(builder, dashCooldown);
   StateSnapshotDelta.addHealth(builder, health);
   StateSnapshotDelta.addKills(builder, kills);
@@ -214,6 +224,7 @@ unpack(): StateSnapshotDeltaT {
     this.velY(),
     this.velZ(),
     this.weaponSlot(),
+    this.ammoInMag(),
     this.dashCooldown(),
     this.health(),
     this.kills(),
@@ -235,6 +246,7 @@ unpackTo(_o: StateSnapshotDeltaT): void {
   _o.velY = this.velY();
   _o.velZ = this.velZ();
   _o.weaponSlot = this.weaponSlot();
+  _o.ammoInMag = this.ammoInMag();
   _o.dashCooldown = this.dashCooldown();
   _o.health = this.health();
   _o.kills = this.kills();
@@ -256,6 +268,7 @@ constructor(
   public velY: number = 0.0,
   public velZ: number = 0.0,
   public weaponSlot: number = 0,
+  public ammoInMag: number = 0,
   public dashCooldown: number = 0.0,
   public health: number = 0.0,
   public kills: number = 0,
@@ -279,6 +292,7 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
     this.velY,
     this.velZ,
     this.weaponSlot,
+    this.ammoInMag,
     this.dashCooldown,
     this.health,
     this.kills,

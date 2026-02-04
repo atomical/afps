@@ -5,6 +5,7 @@
 export { ClientHello, ClientHelloT } from './protocol/client-hello.js';
 export { Disconnect, DisconnectT } from './protocol/disconnect.js';
 export { Error, ErrorT } from './protocol/error.js';
+export { FireWeaponRequest, FireWeaponRequestT } from './protocol/fire-weapon-request.js';
 export { GameEvent, GameEventT } from './protocol/game-event.js';
 export { GameEventType } from './protocol/game-event-type.js';
 export { InputCmd, InputCmdT } from './protocol/input-cmd.js';
@@ -18,3 +19,5 @@ export { SchemaVersion } from './protocol/schema-version.js';
 export { ServerHello, ServerHelloT } from './protocol/server-hello.js';
 export { StateSnapshot, StateSnapshotT } from './protocol/state-snapshot.js';
 export { StateSnapshotDelta, StateSnapshotDeltaT } from './protocol/state-snapshot-delta.js';
+export { WeaponFiredEvent, WeaponFiredEventT } from './protocol/weapon-fired-event.js';
+export { WeaponReloadEvent, WeaponReloadEventT } from './protocol/weapon-reload-event.js';

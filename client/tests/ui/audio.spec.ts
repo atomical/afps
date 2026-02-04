@@ -8,7 +8,7 @@ test('audio debug hooks preload and play', async ({ page }) => {
     const audio = (window as { __afpsAudio?: { preload: () => Promise<void>; play: (key: string) => boolean } })
       .__afpsAudio;
     await audio?.preload();
-    return audio?.play('weaponFire') ?? false;
+    return audio?.play('impact') ?? false;
   });
 
   expect(played).toBe(true);

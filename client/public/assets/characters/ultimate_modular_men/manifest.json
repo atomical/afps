@@ -4,7 +4,7 @@
     {
       "id": "adventurer",
       "displayName": "Adventurer",
-      "modelUrl": "/assets/characters/ultimate_modular_men/models/Adventurer.glb",
+      "modelUrl": "assets/characters/ultimate_modular_men/models/Adventurer.glb",
       "handBone": "Wrist.R",
       "weaponOffset": {
         "position": [
@@ -16,14 +16,13 @@
           0.0,
           1.57,
           0.0
-        ],
-        "scale": 0.6
+        ]
       }
     },
     {
       "id": "beach",
       "displayName": "Beach",
-      "modelUrl": "/assets/characters/ultimate_modular_men/models/Beach.glb",
+      "modelUrl": "assets/characters/ultimate_modular_men/models/Beach.glb",
       "handBone": "Wrist.R",
       "weaponOffset": {
         "position": [
@@ -35,14 +34,13 @@
           0.0,
           1.57,
           0.0
-        ],
-        "scale": 0.6
+        ]
       }
     },
     {
       "id": "casual_2",
       "displayName": "Casual 2",
-      "modelUrl": "/assets/characters/ultimate_modular_men/models/Casual_2.glb",
+      "modelUrl": "assets/characters/ultimate_modular_men/models/Casual_2.glb",
       "handBone": "Wrist.R",
       "weaponOffset": {
         "position": [
@@ -54,14 +52,13 @@
           0.0,
           1.57,
           0.0
-        ],
-        "scale": 0.6
+        ]
       }
     },
     {
       "id": "casual_hoodie",
       "displayName": "Casual Hoodie",
-      "modelUrl": "/assets/characters/ultimate_modular_men/models/Casual_Hoodie.glb",
+      "modelUrl": "assets/characters/ultimate_modular_men/models/Casual_Hoodie.glb",
       "handBone": "Wrist.R",
       "weaponOffset": {
         "position": [
@@ -73,14 +70,13 @@
           0.0,
           1.57,
           0.0
-        ],
-        "scale": 0.6
+        ]
       }
     },
     {
       "id": "farmer",
       "displayName": "Farmer",
-      "modelUrl": "/assets/characters/ultimate_modular_men/models/Farmer.glb",
+      "modelUrl": "assets/characters/ultimate_modular_men/models/Farmer.glb",
       "handBone": "Wrist.R",
       "weaponOffset": {
         "position": [
@@ -92,14 +88,13 @@
           0.0,
           1.57,
           0.0
-        ],
-        "scale": 0.6
+        ]
       }
     },
     {
       "id": "king",
       "displayName": "King",
-      "modelUrl": "/assets/characters/ultimate_modular_men/models/King.glb",
+      "modelUrl": "assets/characters/ultimate_modular_men/models/King.glb",
       "handBone": "Wrist.R",
       "weaponOffset": {
         "position": [
@@ -111,14 +106,13 @@
           0.0,
           1.57,
           0.0
-        ],
-        "scale": 0.6
+        ]
       }
     },
     {
       "id": "punk",
       "displayName": "Punk",
-      "modelUrl": "/assets/characters/ultimate_modular_men/models/Punk.glb",
+      "modelUrl": "assets/characters/ultimate_modular_men/models/Punk.glb",
       "handBone": "Wrist.R",
       "weaponOffset": {
         "position": [
@@ -130,14 +124,13 @@
           0.0,
           1.57,
           0.0
-        ],
-        "scale": 0.6
+        ]
       }
     },
     {
       "id": "spacesuit",
       "displayName": "Spacesuit",
-      "modelUrl": "/assets/characters/ultimate_modular_men/models/Spacesuit.glb",
+      "modelUrl": "assets/characters/ultimate_modular_men/models/Spacesuit.glb",
       "handBone": "Wrist.R",
       "weaponOffset": {
         "position": [
@@ -149,14 +142,13 @@
           0.0,
           1.57,
           0.0
-        ],
-        "scale": 0.6
+        ]
       }
     },
     {
       "id": "suit",
       "displayName": "Suit",
-      "modelUrl": "/assets/characters/ultimate_modular_men/models/Suit.glb",
+      "modelUrl": "assets/characters/ultimate_modular_men/models/Suit.glb",
       "handBone": "Wrist.R",
       "weaponOffset": {
         "position": [
@@ -168,14 +160,13 @@
           0.0,
           1.57,
           0.0
-        ],
-        "scale": 0.6
+        ]
       }
     },
     {
       "id": "swat",
       "displayName": "Swat",
-      "modelUrl": "/assets/characters/ultimate_modular_men/models/Swat.glb",
+      "modelUrl": "assets/characters/ultimate_modular_men/models/Swat.glb",
       "handBone": "Wrist.R",
       "weaponOffset": {
         "position": [
@@ -187,14 +178,13 @@
           0.0,
           1.57,
           0.0
-        ],
-        "scale": 0.6
+        ]
       }
     },
     {
       "id": "worker",
       "displayName": "Worker",
-      "modelUrl": "/assets/characters/ultimate_modular_men/models/Worker.glb",
+      "modelUrl": "assets/characters/ultimate_modular_men/models/Worker.glb",
       "handBone": "Wrist.R",
       "weaponOffset": {
         "position": [
@@ -206,8 +196,7 @@
           0.0,
           1.57,
           0.0
-        ],
-        "scale": 0.6
+        ]
       }
     }
   ]

@@ -326,6 +326,7 @@ export const createApp = ({
     const geometry = new three.BoxGeometry(0.32, 0.18, 0.8);
     const material = new three.MeshToonMaterial({ color: 0x2f2f2f, gradientMap: toonRamp });
     const mesh = new three.Mesh(geometry, material);
+    mesh.visible = false;
     mesh.position.set(0.4, -0.34, -0.85);
     mesh.rotation.y = Math.PI;
     return mesh as unknown as Object3DLike;
@@ -430,29 +431,13 @@ export const createApp = ({
     return Math.min(maxSlot, Math.max(0, Math.floor(slot)));
   };
 
-  const getWeaponDef = (slot: number) => WEAPON_DEFS[clampWeaponSlot(slot)];
-
-  const computeDirection = (yaw: number, pitch: number) => {
-    const safeYaw = Number.isFinite(yaw) ? yaw : 0;
-    const safePitch = Number.isFinite(pitch) ? pitch : 0;
-    const cosPitch = Math.cos(safePitch);
-    let x = Math.sin(safeYaw) * cosPitch;
-    let y = Math.sin(safePitch);
-    let z = -Math.cos(safeYaw) * cosPitch;
-    const len = Math.hypot(x, y, z) || 1;
-    x /= len;
-    y /= len;
-    z /= len;
-    return { x, y, z };
-  };
-
-  const spawnProjectile = (
-    origin: { x: number; y: number; z: number },
-    dir: { x: number; y: number; z: number },
-    speed: number
-  ) => {
-    const velocity = { x: dir.x * speed, y: dir.y * speed, z: dir.z * speed };
-    spawnProjectileWithVelocity(origin, velocity, DEFAULTS.projectileTtl);
+  const directionToAngles = (dir: { x: number; y: number; z: number }) => {
+    const safeX = Number.isFinite(dir.x) ? dir.x : 0;
+    const safeY = Number.isFinite(dir.y) ? dir.y : 0;
+    const safeZ = Number.isFinite(dir.z) ? dir.z : -1;
+    const yaw = Math.atan2(safeX, -safeZ);
+    const pitch = Math.asin(Math.max(-1, Math.min(1, safeY)));
+    return { yaw, pitch };
   };
 
   const removeProjectile = (projectile: ProjectileVfx) => {
@@ -539,34 +524,15 @@ export const createApp = ({
 
   const recordInput = (cmd: InputCmd) => {
     prediction.recordInput(cmd);
-    if (!cmd.fire) {
+  };
+
+  const recordWeaponFired = (slot: number, cooldownSeconds: number) => {
+    if (!Number.isFinite(cooldownSeconds) || cooldownSeconds <= 0) {
       return;
     }
-    const weapon = getWeaponDef(cmd.weaponSlot);
-    if (!weapon) {
-      return;
-    }
-    const fireRate = weapon.fireRate;
-    if (!Number.isFinite(fireRate) || fireRate <= 0) {
-      return;
-    }
-    const slot = clampWeaponSlot(cmd.weaponSlot);
-    const cooldown = fireCooldowns.get(slot) ?? 0;
-    if (cooldown > 0) {
-      return;
-    }
-    const dir = computeDirection(cmd.viewYaw, cmd.viewPitch);
-    const origin = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
-    if (weapon.kind === 'projectile') {
-      const speed = weapon.projectileSpeed;
-      if (!Number.isFinite(speed) || speed <= 0) {
-        return;
-      }
-      spawnProjectile(origin, dir, speed);
-    } else {
-      spawnTracer(origin, dir, cmd.viewYaw, cmd.viewPitch, weapon.range);
-    }
-    fireCooldowns.set(slot, 1 / fireRate);
+    const safeSlot = clampWeaponSlot(slot);
+    const current = fireCooldowns.get(safeSlot) ?? 0;
+    fireCooldowns.set(safeSlot, Math.max(current, cooldownSeconds));
   };
 
   const getWeaponCooldown = (slot: number) => fireCooldowns.get(clampWeaponSlot(slot)) ?? 0;
@@ -598,6 +564,27 @@ export const createApp = ({
     if (index >= 0) {
       projectiles.splice(index, 1);
     }
+  };
+
+  const spawnTracerVfx = (payload: {
+    origin: { x: number; y: number; z: number };
+    dir: { x: number; y: number; z: number };
+    length?: number;
+  }) => {
+    if (
+      !Number.isFinite(payload.origin.x) ||
+      !Number.isFinite(payload.origin.y) ||
+      !Number.isFinite(payload.origin.z)
+    ) {
+      return;
+    }
+    const safeDir = {
+      x: Number.isFinite(payload.dir.x) ? payload.dir.x : 0,
+      y: Number.isFinite(payload.dir.y) ? payload.dir.y : 0,
+      z: Number.isFinite(payload.dir.z) ? payload.dir.z : -1
+    };
+    const angles = directionToAngles(safeDir);
+    spawnTracer(payload.origin, safeDir, angles.yaw, angles.pitch, payload.length ?? DEFAULTS.tracerLength);
   };
 
   const setTickRate = (tickRate: number) => {
@@ -727,8 +714,10 @@ export const createApp = ({
     ingestSnapshot,
     setSnapshotRate,
     recordInput,
+    recordWeaponFired,
     spawnProjectileVfx,
     removeProjectileVfx,
+    spawnTracerVfx,
     getWeaponCooldown,
     getAbilityCooldowns,
     setWeaponViewmodel,

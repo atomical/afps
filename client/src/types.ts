@@ -102,6 +102,15 @@ export interface ThreeLike {
   Scene: new () => SceneLike;
   PerspectiveCamera: new (fov: number, aspect: number, near: number, far: number) => CameraLike;
   WebGLRenderer: new (options: { canvas: HTMLCanvasElement; antialias: boolean }) => RendererLike;
+  Object3D?: new () => Object3DLike;
+  Vector3?: new (x?: number, y?: number, z?: number) => Vector3Like;
+  Box3?: new () => {
+    min: Vector3Like;
+    max: Vector3Like;
+    setFromObject: (object: Object3DLike) => unknown;
+    getSize: (target: Vector3Like) => void;
+    getCenter: (target: Vector3Like) => void;
+  };
   BoxGeometry: new (width: number, height: number, depth: number) => GeometryLike;
   PlaneGeometry: new (width: number, height: number) => GeometryLike;
   MeshStandardMaterial: new (params: { color: number }) => MaterialLike;
@@ -157,6 +166,7 @@ export interface NetworkSnapshot {
   velY: number;
   velZ: number;
   weaponSlot: number;
+  ammoInMag: number;
   dashCooldown: number;
   health: number;
   kills: number;
@@ -204,6 +214,7 @@ export interface App {
     shield: boolean;
     shockwave: boolean;
   }) => void;
+  recordWeaponFired: (slot: number, cooldownSeconds: number) => void;
   spawnProjectileVfx: (payload: {
     origin: { x: number; y: number; z: number };
     velocity: { x: number; y: number; z: number };
@@ -211,6 +222,11 @@ export interface App {
     projectileId?: number;
   }) => void;
   removeProjectileVfx: (projectileId: number) => void;
+  spawnTracerVfx: (payload: {
+    origin: { x: number; y: number; z: number };
+    dir: { x: number; y: number; z: number };
+    length?: number;
+  }) => void;
   getWeaponCooldown: (slot: number) => number;
   getAbilityCooldowns: () => AbilityCooldowns;
   setWeaponViewmodel: (weaponId?: string) => void;

@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-constexpr int kProtocolVersion = 4;
+constexpr int kProtocolVersion = 5;
 constexpr int kServerTickRate = 60;
 constexpr int kSnapshotRate = 20;
 constexpr int kSnapshotKeyframeInterval = 5;
@@ -25,10 +25,11 @@ constexpr int kSnapshotMaskHealth = 1 << 7;
 constexpr int kSnapshotMaskKills = 1 << 8;
 constexpr int kSnapshotMaskDeaths = 1 << 9;
 constexpr int kSnapshotMaskWeaponSlot = 1 << 10;
+constexpr int kSnapshotMaskAmmoInMag = 1 << 11;
 constexpr int kSnapshotMaskAll = kSnapshotMaskPosX | kSnapshotMaskPosY | kSnapshotMaskPosZ |
                                  kSnapshotMaskVelX | kSnapshotMaskVelY | kSnapshotMaskVelZ |
                                  kSnapshotMaskDashCooldown | kSnapshotMaskHealth | kSnapshotMaskKills |
-                                 kSnapshotMaskDeaths | kSnapshotMaskWeaponSlot;
+                                 kSnapshotMaskDeaths | kSnapshotMaskWeaponSlot | kSnapshotMaskAmmoInMag;
 
 struct ClientHello {
   int protocol_version = 0;
@@ -68,6 +69,18 @@ struct InputCmd {
   bool shockwave = false;
 };
 
+struct FireWeaponRequest {
+  int client_shot_seq = 0;
+  std::string weapon_id;
+  int weapon_slot = 0;
+  double origin_x = 0.0;
+  double origin_y = 0.0;
+  double origin_z = 0.0;
+  double dir_x = 0.0;
+  double dir_y = 0.0;
+  double dir_z = 0.0;
+};
+
 struct Ping {
   double client_time_ms = 0.0;
 };
@@ -92,6 +105,43 @@ struct GameEvent {
   double ttl = 0.0;
 };
 
+struct WeaponFiredEvent {
+  std::string shooter_id;
+  std::string weapon_id;
+  int weapon_slot = 0;
+  int server_tick = 0;
+  int shot_seq = 0;
+  double muzzle_pos_x = 0.0;
+  double muzzle_pos_y = 0.0;
+  double muzzle_pos_z = 0.0;
+  double dir_x = 0.0;
+  double dir_y = 0.0;
+  double dir_z = 0.0;
+  bool dry_fire = false;
+  bool casing_enabled = false;
+  double casing_pos_x = 0.0;
+  double casing_pos_y = 0.0;
+  double casing_pos_z = 0.0;
+  double casing_rot_x = 0.0;
+  double casing_rot_y = 0.0;
+  double casing_rot_z = 0.0;
+  double casing_vel_x = 0.0;
+  double casing_vel_y = 0.0;
+  double casing_vel_z = 0.0;
+  double casing_ang_x = 0.0;
+  double casing_ang_y = 0.0;
+  double casing_ang_z = 0.0;
+  uint32_t casing_seed = 0;
+};
+
+struct WeaponReloadEvent {
+  std::string shooter_id;
+  std::string weapon_id;
+  int weapon_slot = 0;
+  int server_tick = 0;
+  double reload_seconds = 0.0;
+};
+
 struct StateSnapshot {
   int server_tick = 0;
   int last_processed_input_seq = -1;
@@ -103,6 +153,7 @@ struct StateSnapshot {
   double vel_y = 0.0;
   double vel_z = 0.0;
   int weapon_slot = 0;
+  int ammo_in_mag = 0;
   double dash_cooldown = 0.0;
   double health = 100.0;
   int kills = 0;
@@ -122,6 +173,7 @@ struct StateSnapshotDelta {
   double vel_y = 0.0;
   double vel_z = 0.0;
   int weapon_slot = 0;
+  int ammo_in_mag = 0;
   double dash_cooldown = 0.0;
   double health = 0.0;
   int kills = 0;
@@ -147,7 +199,10 @@ enum class MessageType : uint16_t {
   Pong = 10,
   PlayerProfile = 11,
   Error = 12,
-  Disconnect = 13
+  Disconnect = 13,
+  FireWeaponRequest = 14,
+  WeaponFiredEvent = 15,
+  WeaponReloadEvent = 16
 };
 
 struct MessageHeader {
@@ -170,12 +225,18 @@ std::vector<uint8_t> EncodeEnvelope(MessageType type, const uint8_t *payload, si
 
 bool ParseClientHelloPayload(const std::vector<uint8_t> &payload, ClientHello &out, std::string &error);
 bool ParseInputCmdPayload(const std::vector<uint8_t> &payload, InputCmd &out, std::string &error);
+bool ParseFireWeaponRequestPayload(const std::vector<uint8_t> &payload, FireWeaponRequest &out,
+                                   std::string &error);
 bool ParsePingPayload(const std::vector<uint8_t> &payload, Ping &out, std::string &error);
 std::vector<uint8_t> BuildServerHello(const ServerHello &hello, uint32_t msg_seq, uint32_t server_seq_ack);
 std::vector<uint8_t> BuildProtocolError(const std::string &code, const std::string &message,
                                         uint32_t msg_seq, uint32_t server_seq_ack);
 std::vector<uint8_t> BuildPong(const Pong &pong, uint32_t msg_seq, uint32_t server_seq_ack);
 std::vector<uint8_t> BuildGameEvent(const GameEvent &event, uint32_t msg_seq, uint32_t server_seq_ack);
+std::vector<uint8_t> BuildWeaponFiredEvent(const WeaponFiredEvent &event, uint32_t msg_seq,
+                                           uint32_t server_seq_ack);
+std::vector<uint8_t> BuildWeaponReloadEvent(const WeaponReloadEvent &event, uint32_t msg_seq,
+                                            uint32_t server_seq_ack);
 std::vector<uint8_t> BuildStateSnapshot(const StateSnapshot &snapshot, uint32_t msg_seq, uint32_t server_seq_ack);
 std::vector<uint8_t> BuildStateSnapshotDelta(const StateSnapshotDelta &delta, uint32_t msg_seq,
                                              uint32_t server_seq_ack);

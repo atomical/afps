@@ -15,5 +15,8 @@ export enum MessageType {
   Pong = 10,
   PlayerProfile = 11,
   Error = 12,
-  Disconnect = 13
+  Disconnect = 13,
+  FireWeaponRequest = 14,
+  WeaponFiredEvent = 15,
+  WeaponReloadEvent = 16
 }

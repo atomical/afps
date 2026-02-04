@@ -43,6 +43,17 @@ public:
   void Stop();
 
 private:
+  struct WeaponSlotState {
+    int ammo_in_mag = 0;
+    double cooldown = 0.0;
+    double reload_timer = 0.0;
+  };
+
+  struct PlayerWeaponState {
+    std::vector<WeaponSlotState> slots;
+    int shot_seq = 0;
+  };
+
   void Run();
   void Step();
 
@@ -56,12 +67,13 @@ private:
   std::unordered_map<std::string, int> last_input_server_tick_;
   std::unordered_map<std::string, StateSnapshot> last_full_snapshots_;
   std::unordered_map<std::string, int> snapshot_sequence_;
-  std::unordered_map<std::string, double> fire_cooldowns_;
+  std::unordered_map<std::string, PlayerWeaponState> weapon_states_;
   std::unordered_map<std::string, afps::combat::PoseHistory> pose_histories_;
   std::unordered_map<std::string, afps::combat::CombatState> combat_states_;
   std::vector<afps::combat::ProjectileState> projectiles_;
   int next_projectile_id_ = 1;
   afps::sim::SimConfig sim_config_ = afps::sim::kDefaultSimConfig;
+  afps::weapons::WeaponConfig weapon_config_ = afps::weapons::BuildDefaultWeaponConfig();
   int server_tick_ = 0;
   int snapshot_keyframe_interval_ = kSnapshotKeyframeInterval;
   double snapshot_accumulator_ = 0.0;

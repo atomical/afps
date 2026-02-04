@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <random>
 #include <unordered_set>
 #include <vector>
 
@@ -47,6 +48,7 @@ bool TickAccumulator::initialized() const {
 
 #ifdef AFPS_ENABLE_WEBRTC
 #include "protocol.h"
+#include "weapon_config.h"
 
 #include <chrono>
 #include <iostream>
@@ -80,6 +82,12 @@ TickLoop::TickLoop(SignalingStore &store, int tick_rate, int snapshot_keyframe_i
       accumulator_(tick_rate),
       snapshot_keyframe_interval_(snapshot_keyframe_interval) {
   pose_history_limit_ = std::max(1, accumulator_.tick_rate() * 2);
+  std::string weapon_error;
+  weapon_config_ = afps::weapons::LoadWeaponConfig(afps::weapons::ResolveWeaponConfigPath(),
+                                                   weapon_error);
+  if (!weapon_error.empty()) {
+    std::cerr << "[warn] " << weapon_error << "\n";
+  }
 }
 
 TickLoop::~TickLoop() {
@@ -150,16 +158,13 @@ void TickLoop::Step() {
   prune(last_input_server_tick_);
   prune(last_full_snapshots_);
   prune(snapshot_sequence_);
-  prune(fire_cooldowns_);
+  prune(weapon_states_);
   prune(pose_histories_);
   prune(combat_states_);
 
   struct FireEvent {
     std::string connection_id;
-    int input_seq = -1;
-    double view_yaw = 0.0;
-    double view_pitch = 0.0;
-    int weapon_slot = 0;
+    FireWeaponRequest request;
   };
   std::vector<FireEvent> fire_events;
   struct ShockwaveEvent {
@@ -189,12 +194,37 @@ void TickLoop::Step() {
     return afps::combat::IsShieldFacing(target_pos, view, source_pos);
   };
 
+  const size_t slot_count = weapon_config_.slots.empty() ? 1 : weapon_config_.slots.size();
+  auto init_weapon_state = [&](PlayerWeaponState &state) {
+    state.slots.clear();
+    state.slots.resize(slot_count);
+    for (size_t i = 0; i < slot_count; ++i) {
+      const auto *weapon = afps::weapons::ResolveWeaponSlot(weapon_config_, static_cast<int>(i));
+      if (weapon) {
+        state.slots[i].ammo_in_mag = weapon->max_ammo_in_mag;
+      } else {
+        state.slots[i].ammo_in_mag = 0;
+      }
+      state.slots[i].cooldown = 0.0;
+      state.slots[i].reload_timer = 0.0;
+    }
+    state.shot_seq = 0;
+  };
+
   for (const auto &connection_id : active_ids) {
     if (combat_states_.find(connection_id) == combat_states_.end()) {
       combat_states_[connection_id] = afps::combat::CreateCombatState();
       players_[connection_id] = MakeSpawnState(connection_id, sim_config_);
     } else if (players_.find(connection_id) == players_.end()) {
       players_[connection_id] = MakeSpawnState(connection_id, sim_config_);
+    }
+    auto weapon_iter = weapon_states_.find(connection_id);
+    if (weapon_iter == weapon_states_.end()) {
+      PlayerWeaponState state;
+      init_weapon_state(state);
+      weapon_states_[connection_id] = std::move(state);
+    } else if (weapon_iter->second.slots.size() != slot_count) {
+      init_weapon_state(weapon_iter->second);
     }
   }
 
@@ -203,22 +233,20 @@ void TickLoop::Step() {
     ++batch_count_;
     input_count_ += batch.inputs.size();
     int max_seq = -1;
-    const InputCmd *last_fire = nullptr;
     for (const auto &cmd : batch.inputs) {
       max_seq = std::max(max_seq, cmd.input_seq);
-      if (cmd.fire) {
-        last_fire = &cmd;
-      }
     }
     if (max_seq >= 0) {
       last_input_seq_[batch.connection_id] = max_seq;
       last_input_server_tick_[batch.connection_id] = server_tick_;
       last_inputs_[batch.connection_id] = batch.inputs.back();
     }
-    if (last_fire) {
-      fire_events.push_back(
-          {batch.connection_id, last_fire->input_seq, last_fire->view_yaw, last_fire->view_pitch,
-           last_fire->weapon_slot});
+  }
+
+  auto fire_batches = store_.DrainAllFireRequests();
+  for (const auto &batch : fire_batches) {
+    for (const auto &request : batch.requests) {
+      fire_events.push_back({batch.connection_id, request});
     }
   }
 
@@ -265,12 +293,27 @@ void TickLoop::Step() {
     }
     if (afps::combat::UpdateRespawn(combat_state, dt)) {
       state = MakeSpawnState(connection_id, sim_config_);
+      auto weapon_iter = weapon_states_.find(connection_id);
+      if (weapon_iter != weapon_states_.end()) {
+        init_weapon_state(weapon_iter->second);
+      }
     }
   }
 
-  for (auto &entry : fire_cooldowns_) {
-    if (entry.second > 0.0) {
-      entry.second = std::max(0.0, entry.second - dt);
+  for (auto &entry : weapon_states_) {
+    auto &state = entry.second;
+    for (size_t i = 0; i < state.slots.size(); ++i) {
+      auto &slot_state = state.slots[i];
+      if (slot_state.cooldown > 0.0) {
+        slot_state.cooldown = std::max(0.0, slot_state.cooldown - dt);
+      }
+      if (slot_state.reload_timer > 0.0) {
+        slot_state.reload_timer = std::max(0.0, slot_state.reload_timer - dt);
+        if (slot_state.reload_timer <= 0.0) {
+          const auto *weapon = afps::weapons::ResolveWeaponSlot(weapon_config_, static_cast<int>(i));
+          slot_state.ammo_in_mag = weapon ? weapon->max_ammo_in_mag : 0;
+        }
+      }
     }
   }
 
@@ -346,71 +389,167 @@ void TickLoop::Step() {
     }
   }
 
-  auto resolve_weapon_slot = [](int slot) -> size_t {
-    const size_t max_index = afps::weapons::kDefaultWeaponDefs.size() == 0
-                                 ? 0
-                                 : (afps::weapons::kDefaultWeaponDefs.size() - 1);
+  auto resolve_active_slot = [&](const std::string &connection_id, int requested_slot) -> int {
+    int slot = requested_slot;
+    auto input_iter = last_inputs_.find(connection_id);
+    if (input_iter != last_inputs_.end()) {
+      slot = input_iter->second.weapon_slot;
+    }
     if (slot < 0) {
+      slot = 0;
+    }
+    if (weapon_config_.slots.empty()) {
       return 0;
     }
-    const size_t index = static_cast<size_t>(slot);
-    return std::min(index, max_index);
+    const int max_slot = static_cast<int>(weapon_config_.slots.size() - 1);
+    return std::min(slot, max_slot);
+  };
+
+  auto normalize = [](const afps::combat::Vec3 &value) {
+    const double len = std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
+    if (!std::isfinite(len) || len <= 1e-6) {
+      return afps::combat::Vec3{0.0, -1.0, 0.0};
+    }
+    return afps::combat::Vec3{value.x / len, value.y / len, value.z / len};
+  };
+
+  auto cross = [](const afps::combat::Vec3 &a, const afps::combat::Vec3 &b) {
+    return afps::combat::Vec3{a.y * b.z - a.z * b.y,
+                              a.z * b.x - a.x * b.z,
+                              a.x * b.y - a.y * b.x};
+  };
+
+  auto transform_local = [](const afps::combat::Vec3 &local,
+                            const afps::combat::Vec3 &right,
+                            const afps::combat::Vec3 &forward,
+                            const afps::combat::Vec3 &up) {
+    return afps::combat::Vec3{
+        right.x * local.x + forward.x * local.y + up.x * local.z,
+        right.y * local.x + forward.y * local.y + up.y * local.z,
+        right.z * local.x + forward.z * local.y + up.z * local.z};
   };
 
   for (const auto &event : fire_events) {
-    const auto &weapon = afps::weapons::kDefaultWeaponDefs[resolve_weapon_slot(event.weapon_slot)];
-    const double weapon_cooldown =
-        (weapon.fire_rate > 0.0 && std::isfinite(weapon.fire_rate)) ? (1.0 / weapon.fire_rate) : 0.0;
-    if (weapon_cooldown <= 0.0) {
-      continue;
-    }
     auto shooter_iter = combat_states_.find(event.connection_id);
     if (shooter_iter == combat_states_.end() || !shooter_iter->second.alive) {
       continue;
     }
-    auto &cooldown = fire_cooldowns_[event.connection_id];
-    if (cooldown > 0.0) {
+    auto state_iter = players_.find(event.connection_id);
+    if (state_iter == players_.end()) {
       continue;
     }
-    int estimated_tick = server_tick_;
-    auto seq_iter = last_input_seq_.find(event.connection_id);
-    auto tick_iter = last_input_server_tick_.find(event.connection_id);
-    if (seq_iter != last_input_seq_.end() && tick_iter != last_input_server_tick_.end()) {
-      int delta = seq_iter->second - event.input_seq;
-      if (delta < 0) {
-        delta = 0;
+    auto weapon_state_iter = weapon_states_.find(event.connection_id);
+    if (weapon_state_iter == weapon_states_.end()) {
+      continue;
+    }
+    const int active_slot = resolve_active_slot(event.connection_id, event.request.weapon_slot);
+    if (active_slot < 0 || weapon_config_.slots.empty() ||
+        static_cast<size_t>(active_slot) >= weapon_state_iter->second.slots.size()) {
+      continue;
+    }
+    const auto *weapon = afps::weapons::ResolveWeaponSlot(weapon_config_, active_slot);
+    if (!weapon) {
+      continue;
+    }
+    auto &slot_state = weapon_state_iter->second.slots[active_slot];
+    if (slot_state.reload_timer > 0.0) {
+      continue;
+    }
+    if (slot_state.cooldown > 0.0) {
+      continue;
+    }
+
+    const auto view = resolve_view(event.connection_id);
+    const auto dir = afps::combat::ViewDirection(view);
+    afps::combat::Vec3 muzzle{state_iter->second.x,
+                              state_iter->second.y,
+                              state_iter->second.z + afps::combat::kPlayerEyeHeight};
+    muzzle.x += dir.x * 0.2;
+    muzzle.y += dir.y * 0.2;
+    muzzle.z += dir.z * 0.2;
+
+    weapon_state_iter->second.shot_seq += 1;
+    const int shot_seq = weapon_state_iter->second.shot_seq;
+    const double weapon_cooldown = weapon->cooldown_seconds;
+
+    auto send_weapon_fired = [&](const WeaponFiredEvent &event_data) {
+      for (const auto &connection_id : active_ids) {
+        store_.SendUnreliable(
+            connection_id,
+            BuildWeaponFiredEvent(event_data,
+                                  store_.NextServerMessageSeq(connection_id),
+                                  store_.LastClientMessageSeq(connection_id)));
       }
-      estimated_tick = tick_iter->second - delta;
+    };
+
+    if (slot_state.ammo_in_mag <= 0) {
+      slot_state.cooldown = weapon_cooldown;
+      WeaponFiredEvent fired;
+      fired.shooter_id = event.connection_id;
+      fired.weapon_id = weapon->id;
+      fired.weapon_slot = active_slot;
+      fired.server_tick = server_tick_;
+      fired.shot_seq = shot_seq;
+      fired.muzzle_pos_x = muzzle.x;
+      fired.muzzle_pos_y = muzzle.y;
+      fired.muzzle_pos_z = muzzle.z;
+      fired.dir_x = dir.x;
+      fired.dir_y = dir.y;
+      fired.dir_z = dir.z;
+      fired.dry_fire = true;
+      fired.casing_enabled = false;
+      send_weapon_fired(fired);
+
+      if (weapon->reload_seconds > 0.0) {
+        slot_state.reload_timer = weapon->reload_seconds;
+        WeaponReloadEvent reload;
+        reload.shooter_id = event.connection_id;
+        reload.weapon_id = weapon->id;
+        reload.weapon_slot = active_slot;
+        reload.server_tick = server_tick_;
+        reload.reload_seconds = weapon->reload_seconds;
+        for (const auto &connection_id : active_ids) {
+          store_.SendUnreliable(
+              connection_id,
+              BuildWeaponReloadEvent(reload,
+                                     store_.NextServerMessageSeq(connection_id),
+                                     store_.LastClientMessageSeq(connection_id)));
+        }
+      }
+      continue;
+    }
+
+    slot_state.ammo_in_mag = std::max(0, slot_state.ammo_in_mag - 1);
+    slot_state.cooldown = weapon_cooldown;
+
+    int estimated_tick = server_tick_;
+    auto tick_iter = last_input_server_tick_.find(event.connection_id);
+    if (tick_iter != last_input_server_tick_.end()) {
+      estimated_tick = tick_iter->second;
     }
     if (pose_history_limit_ > 0) {
       const int min_tick = server_tick_ - pose_history_limit_ + 1;
       estimated_tick = std::max(min_tick, std::min(server_tick_, estimated_tick));
     }
 
-    if (weapon.kind == afps::weapons::WeaponKind::kHitscan) {
+    if (weapon->kind == afps::weapons::WeaponKind::kHitscan) {
       const auto result = afps::combat::ResolveHitscan(
-          event.connection_id, pose_histories_, estimated_tick, {event.view_yaw, event.view_pitch}, sim_config_,
-          weapon.range);
+          event.connection_id, pose_histories_, estimated_tick, view, sim_config_, weapon->range);
       if (result.hit) {
         auto target_iter = combat_states_.find(result.target_id);
         bool killed = false;
         if (target_iter != combat_states_.end()) {
           bool shield_active = false;
           bool shield_facing = true;
-          auto state_iter = players_.find(result.target_id);
-          if (state_iter != players_.end()) {
-            shield_active = state_iter->second.shield_active;
+          auto target_state_iter = players_.find(result.target_id);
+          if (target_state_iter != players_.end()) {
+            shield_active = target_state_iter->second.shield_active;
           }
           if (shield_active) {
-            auto shooter_state_iter = players_.find(event.connection_id);
-            if (shooter_state_iter != players_.end()) {
-              const afps::combat::Vec3 source{shooter_state_iter->second.x,
-                                              shooter_state_iter->second.y,
-                                              shooter_state_iter->second.z + afps::combat::kPlayerEyeHeight};
-              shield_facing = resolve_shield_facing(result.target_id, source);
-            }
+            const afps::combat::Vec3 source{muzzle.x, muzzle.y, muzzle.z};
+            shield_facing = resolve_shield_facing(result.target_id, source);
           }
-          killed = afps::combat::ApplyDamageWithShield(target_iter->second, &shooter_iter->second, weapon.damage,
+          killed = afps::combat::ApplyDamageWithShield(target_iter->second, &shooter_iter->second, weapon->damage,
                                                        shield_active && shield_facing,
                                                        sim_config_.shield_damage_multiplier);
           if (killed) {
@@ -424,7 +563,7 @@ void TickLoop::Step() {
         GameEvent hit_event;
         hit_event.event = "HitConfirmed";
         hit_event.target_id = result.target_id;
-        hit_event.damage = weapon.damage;
+        hit_event.damage = weapon->damage;
         hit_event.killed = killed;
         store_.SendUnreliable(
             event.connection_id,
@@ -434,50 +573,128 @@ void TickLoop::Step() {
         std::cout << "[shot] shooter=" << event.connection_id << " target=" << result.target_id
                   << " dist=" << result.distance << " tick=" << estimated_tick << "\n";
       }
-    } else if (weapon.kind == afps::weapons::WeaponKind::kProjectile) {
-      auto state_iter = players_.find(event.connection_id);
-      if (state_iter != players_.end() && weapon.projectile_speed > 0.0 &&
-          std::isfinite(weapon.projectile_speed)) {
-        const auto view = afps::combat::SanitizeViewAngles(event.view_yaw, event.view_pitch);
-        const auto dir = afps::combat::ViewDirection(view);
-        if (std::isfinite(dir.x) && std::isfinite(dir.y) && std::isfinite(dir.z)) {
-          afps::combat::ProjectileState projectile;
-          projectile.id = next_projectile_id_++;
-          projectile.owner_id = event.connection_id;
-          projectile.position = {state_iter->second.x, state_iter->second.y,
-                                 state_iter->second.z + afps::combat::kPlayerEyeHeight};
-          projectile.velocity = {dir.x * weapon.projectile_speed, dir.y * weapon.projectile_speed,
-                                 dir.z * weapon.projectile_speed};
-          projectile.ttl = kProjectileTtlSeconds;
-          projectile.radius = kProjectileRadius;
-          projectile.damage = weapon.damage;
-          projectile.explosion_radius =
-              (weapon.explosion_radius > 0.0 && std::isfinite(weapon.explosion_radius))
-                  ? weapon.explosion_radius
-                  : 0.0;
-          projectiles_.push_back(projectile);
-          GameEvent spawn_event;
-          spawn_event.event = "ProjectileSpawn";
-          spawn_event.owner_id = event.connection_id;
-          spawn_event.projectile_id = projectile.id;
-          spawn_event.pos_x = projectile.position.x;
-          spawn_event.pos_y = projectile.position.y;
-          spawn_event.pos_z = projectile.position.z;
-          spawn_event.vel_x = projectile.velocity.x;
-          spawn_event.vel_y = projectile.velocity.y;
-          spawn_event.vel_z = projectile.velocity.z;
-          spawn_event.ttl = projectile.ttl;
-          for (const auto &connection_id : active_ids) {
-            store_.SendUnreliable(
-                connection_id,
-                BuildGameEvent(spawn_event,
-                               store_.NextServerMessageSeq(connection_id),
-                               store_.LastClientMessageSeq(connection_id)));
-          }
+    } else if (weapon->kind == afps::weapons::WeaponKind::kProjectile) {
+      if (weapon->projectile_speed > 0.0 && std::isfinite(weapon->projectile_speed)) {
+        afps::combat::ProjectileState projectile;
+        projectile.id = next_projectile_id_++;
+        projectile.owner_id = event.connection_id;
+        projectile.position = {muzzle.x, muzzle.y, muzzle.z};
+        projectile.velocity = {dir.x * weapon->projectile_speed, dir.y * weapon->projectile_speed,
+                               dir.z * weapon->projectile_speed};
+        projectile.ttl = kProjectileTtlSeconds;
+        projectile.radius = kProjectileRadius;
+        projectile.damage = weapon->damage;
+        projectile.explosion_radius =
+            (weapon->explosion_radius > 0.0 && std::isfinite(weapon->explosion_radius))
+                ? weapon->explosion_radius
+                : 0.0;
+        projectiles_.push_back(projectile);
+        GameEvent spawn_event;
+        spawn_event.event = "ProjectileSpawn";
+        spawn_event.owner_id = event.connection_id;
+        spawn_event.projectile_id = projectile.id;
+        spawn_event.pos_x = projectile.position.x;
+        spawn_event.pos_y = projectile.position.y;
+        spawn_event.pos_z = projectile.position.z;
+        spawn_event.vel_x = projectile.velocity.x;
+        spawn_event.vel_y = projectile.velocity.y;
+        spawn_event.vel_z = projectile.velocity.z;
+        spawn_event.ttl = projectile.ttl;
+        for (const auto &connection_id : active_ids) {
+          store_.SendUnreliable(
+              connection_id,
+              BuildGameEvent(spawn_event,
+                             store_.NextServerMessageSeq(connection_id),
+                             store_.LastClientMessageSeq(connection_id)));
         }
       }
     }
-    cooldown = weapon_cooldown;
+
+    WeaponFiredEvent fired;
+    fired.shooter_id = event.connection_id;
+    fired.weapon_id = weapon->id;
+    fired.weapon_slot = active_slot;
+    fired.server_tick = server_tick_;
+    fired.shot_seq = shot_seq;
+    fired.muzzle_pos_x = muzzle.x;
+    fired.muzzle_pos_y = muzzle.y;
+    fired.muzzle_pos_z = muzzle.z;
+    fired.dir_x = dir.x;
+    fired.dir_y = dir.y;
+    fired.dir_z = dir.z;
+    fired.dry_fire = false;
+
+    if (weapon->eject_shells_while_firing) {
+      const uint32_t seed =
+          static_cast<uint32_t>(server_tick_) ^
+          static_cast<uint32_t>(shot_seq * 2654435761u) ^
+          static_cast<uint32_t>(std::hash<std::string>{}(event.connection_id));
+      std::mt19937 rng(seed);
+      std::uniform_real_distribution<double> dist(0.0, 1.0);
+      auto rand_range = [&](double min_value, double max_value) {
+        return min_value + (max_value - min_value) * dist(rng);
+      };
+      const afps::combat::Vec3 forward = normalize(dir);
+      afps::combat::Vec3 up{0.0, 0.0, 1.0};
+      afps::combat::Vec3 right = cross(forward, up);
+      right = normalize(right);
+      up = cross(right, forward);
+      const auto local_offset = weapon->casing.local_offset;
+      const afps::combat::Vec3 world_offset =
+          transform_local({local_offset.x, local_offset.y, local_offset.z}, right, forward, up);
+      const afps::combat::Vec3 local_vel{
+          rand_range(weapon->casing.velocity_min.x, weapon->casing.velocity_max.x),
+          rand_range(weapon->casing.velocity_min.y, weapon->casing.velocity_max.y),
+          rand_range(weapon->casing.velocity_min.z, weapon->casing.velocity_max.z)};
+      const afps::combat::Vec3 local_ang{
+          rand_range(weapon->casing.angular_velocity_min.x, weapon->casing.angular_velocity_max.x),
+          rand_range(weapon->casing.angular_velocity_min.y, weapon->casing.angular_velocity_max.y),
+          rand_range(weapon->casing.angular_velocity_min.z, weapon->casing.angular_velocity_max.z)};
+      const afps::combat::Vec3 world_vel = transform_local(local_vel, right, forward, up);
+      const afps::combat::Vec3 world_ang = transform_local(local_ang, right, forward, up);
+
+      fired.casing_enabled = true;
+      fired.casing_pos_x = muzzle.x + world_offset.x;
+      fired.casing_pos_y = muzzle.y + world_offset.y;
+      fired.casing_pos_z = muzzle.z + world_offset.z;
+      fired.casing_rot_x = weapon->casing.local_rotation.x + view.pitch;
+      fired.casing_rot_y = weapon->casing.local_rotation.y;
+      fired.casing_rot_z = weapon->casing.local_rotation.z + view.yaw;
+      fired.casing_vel_x = world_vel.x;
+      fired.casing_vel_y = world_vel.y;
+      fired.casing_vel_z = world_vel.z;
+      fired.casing_ang_x = world_ang.x;
+      fired.casing_ang_y = world_ang.y;
+      fired.casing_ang_z = world_ang.z;
+      fired.casing_seed = seed;
+    } else {
+      fired.casing_enabled = false;
+    }
+
+    for (const auto &connection_id : active_ids) {
+      store_.SendUnreliable(
+          connection_id,
+          BuildWeaponFiredEvent(fired,
+                                store_.NextServerMessageSeq(connection_id),
+                                store_.LastClientMessageSeq(connection_id)));
+    }
+
+    if (slot_state.ammo_in_mag <= 0 && weapon->reload_seconds > 0.0) {
+      slot_state.reload_timer = weapon->reload_seconds;
+      WeaponReloadEvent reload;
+      reload.shooter_id = event.connection_id;
+      reload.weapon_id = weapon->id;
+      reload.weapon_slot = active_slot;
+      reload.server_tick = server_tick_;
+      reload.reload_seconds = weapon->reload_seconds;
+      for (const auto &connection_id : active_ids) {
+        store_.SendUnreliable(
+            connection_id,
+            BuildWeaponReloadEvent(reload,
+                                   store_.NextServerMessageSeq(connection_id),
+                                   store_.LastClientMessageSeq(connection_id)));
+      }
+    }
   }
 
   if (!projectiles_.empty()) {
@@ -582,6 +799,16 @@ void TickLoop::Step() {
       snapshot.last_processed_input_seq = (seq_iter == last_input_seq_.end()) ? -1 : seq_iter->second;
       auto input_iter = last_inputs_.find(connection_id);
       snapshot.weapon_slot = (input_iter == last_inputs_.end()) ? 0 : input_iter->second.weapon_slot;
+      if (!weapon_config_.slots.empty()) {
+        const int max_slot = static_cast<int>(weapon_config_.slots.size() - 1);
+        snapshot.weapon_slot = std::min(snapshot.weapon_slot, max_slot);
+      }
+      auto weapon_state_iter = weapon_states_.find(connection_id);
+      if (weapon_state_iter != weapon_states_.end() &&
+          snapshot.weapon_slot >= 0 &&
+          static_cast<size_t>(snapshot.weapon_slot) < weapon_state_iter->second.slots.size()) {
+        snapshot.ammo_in_mag = weapon_state_iter->second.slots[snapshot.weapon_slot].ammo_in_mag;
+      }
       auto state_iter = players_.find(connection_id);
       if (state_iter != players_.end()) {
         snapshot.pos_x = state_iter->second.x;
@@ -653,6 +880,10 @@ void TickLoop::Step() {
       if (snapshot.weapon_slot != baseline.weapon_slot) {
         delta.mask |= kSnapshotMaskWeaponSlot;
         delta.weapon_slot = snapshot.weapon_slot;
+      }
+      if (snapshot.ammo_in_mag != baseline.ammo_in_mag) {
+        delta.mask |= kSnapshotMaskAmmoInMag;
+        delta.ammo_in_mag = snapshot.ammo_in_mag;
       }
       if (snapshot.dash_cooldown != baseline.dash_cooldown) {
         delta.mask |= kSnapshotMaskDashCooldown;

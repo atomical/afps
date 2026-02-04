@@ -98,6 +98,7 @@ describe('perf budgets', () => {
             velY: 0,
             velZ: 0,
             weaponSlot: 0,
+            ammoInMag: 30,
             dashCooldown: 0,
             health: 100,
             kills: 0,

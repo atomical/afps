@@ -50,6 +50,7 @@ set(AFPS_SERVER_SOURCES
   src/rate_limiter.cpp
   src/security_headers.cpp
   src/tick.cpp
+  src/weapon_config.cpp
   src/usage.cpp
 )
 

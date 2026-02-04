@@ -17,7 +17,10 @@ enum MessageType:ushort {
   Pong = 10,
   PlayerProfile = 11,
   Error = 12,
-  Disconnect = 13
+  Disconnect = 13,
+  FireWeaponRequest = 14,
+  WeaponFiredEvent = 15,
+  WeaponReloadEvent = 16
 }
 
 enum GameEventType:byte {
@@ -73,6 +76,55 @@ table InputCmd {
   shockwave:bool;
 }
 
+table FireWeaponRequest {
+  client_shot_seq:int;
+  weapon_id:string;
+  weapon_slot:int;
+  origin_x:double;
+  origin_y:double;
+  origin_z:double;
+  dir_x:double;
+  dir_y:double;
+  dir_z:double;
+}
+
+table WeaponFiredEvent {
+  shooter_id:string;
+  weapon_id:string;
+  weapon_slot:int;
+  server_tick:int;
+  shot_seq:int;
+  muzzle_pos_x:double;
+  muzzle_pos_y:double;
+  muzzle_pos_z:double;
+  dir_x:double;
+  dir_y:double;
+  dir_z:double;
+  dry_fire:bool;
+  casing_enabled:bool;
+  casing_pos_x:double;
+  casing_pos_y:double;
+  casing_pos_z:double;
+  casing_rot_x:double;
+  casing_rot_y:double;
+  casing_rot_z:double;
+  casing_vel_x:double;
+  casing_vel_y:double;
+  casing_vel_z:double;
+  casing_ang_x:double;
+  casing_ang_y:double;
+  casing_ang_z:double;
+  casing_seed:uint;
+}
+
+table WeaponReloadEvent {
+  shooter_id:string;
+  weapon_id:string;
+  weapon_slot:int;
+  server_tick:int;
+  reload_seconds:double;
+}
+
 table StateSnapshot {
   server_tick:int;
   last_processed_input_seq:int;
@@ -84,6 +136,7 @@ table StateSnapshot {
   vel_y:double;
   vel_z:double;
   weapon_slot:int;
+  ammo_in_mag:int;
   dash_cooldown:double;
   health:double;
   kills:int;
@@ -103,6 +156,7 @@ table StateSnapshotDelta {
   vel_y:double;
   vel_z:double;
   weapon_slot:int;
+  ammo_in_mag:int;
   dash_cooldown:double;
   health:double;
   kills:int;

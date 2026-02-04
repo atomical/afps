@@ -173,6 +173,7 @@ TEST_CASE("BuildStateSnapshot emits expected fields") {
   snapshot.vel_y = -1.25;
   snapshot.vel_z = 0.5;
   snapshot.weapon_slot = 1;
+  snapshot.ammo_in_mag = 24;
   snapshot.dash_cooldown = 0.4;
   snapshot.health = 75.0;
   snapshot.kills = 2;
@@ -196,6 +197,7 @@ TEST_CASE("BuildStateSnapshot emits expected fields") {
   CHECK(parsed->vel_x() == doctest::Approx(0.75));
   CHECK(parsed->vel_y() == doctest::Approx(-1.25));
   CHECK(parsed->vel_z() == doctest::Approx(0.5));
+  CHECK(parsed->ammo_in_mag() == 24);
   CHECK(parsed->dash_cooldown() == doctest::Approx(0.4));
   CHECK(parsed->health() == doctest::Approx(75.0));
   CHECK(parsed->kills() == 2);
@@ -208,10 +210,11 @@ TEST_CASE("BuildStateSnapshotDelta emits expected fields") {
   delta.base_tick = 40;
   delta.last_processed_input_seq = 9;
   delta.client_id = "client-1";
-  delta.mask = kSnapshotMaskPosX | kSnapshotMaskVelY | kSnapshotMaskDashCooldown |
+  delta.mask = kSnapshotMaskPosX | kSnapshotMaskVelY | kSnapshotMaskAmmoInMag | kSnapshotMaskDashCooldown |
                kSnapshotMaskHealth | kSnapshotMaskKills | kSnapshotMaskDeaths;
   delta.pos_x = 1.75;
   delta.vel_y = -0.5;
+  delta.ammo_in_mag = 15;
   delta.dash_cooldown = 0.25;
   delta.health = 50.0;
   delta.kills = 3;
@@ -233,6 +236,7 @@ TEST_CASE("BuildStateSnapshotDelta emits expected fields") {
   CHECK(parsed->client_id()->str() == "client-1");
   CHECK(parsed->pos_x() == doctest::Approx(1.75));
   CHECK(parsed->vel_y() == doctest::Approx(-0.5));
+  CHECK(parsed->ammo_in_mag() == 15);
   CHECK(parsed->dash_cooldown() == doctest::Approx(0.25));
   CHECK(parsed->health() == doctest::Approx(50.0));
   CHECK(parsed->kills() == 3);

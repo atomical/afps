@@ -10,57 +10,109 @@ vi.mock('../src/environment/weapon_viewmodel', () => ({
   attachWeaponViewmodel: (...args: unknown[]) => attachWeaponViewmodelMock(...args)
 }));
 vi.mock('../src/weapons/config', () => ({
-  WEAPON_DEFS: [
-    {
-      id: 'rifle',
-      name: 'Rifle',
-      kind: 'hitscan',
-      damage: 12,
-      fireRate: 8,
-      spreadDeg: 1.5,
-      range: 60,
-      projectileSpeed: 0,
-      explosionRadius: 0
-    },
-    {
-      id: 'launcher',
-      name: 'Launcher',
-      kind: 'projectile',
-      damage: 80,
-      fireRate: 1,
-      spreadDeg: 0,
-      range: 0,
-      projectileSpeed: 22,
-      explosionRadius: 4.5
-    },
-    {
-      id: 'slowpoke',
-      name: 'Slowpoke',
-      kind: 'projectile',
-      damage: 10,
-      fireRate: 2,
-      spreadDeg: 0,
-      range: 0,
-      projectileSpeed: 0,
-      explosionRadius: 2
-    },
-    {
-      id: 'jammer',
-      name: 'Jammer',
-      kind: 'projectile',
-      damage: 5,
-      fireRate: 0,
-      spreadDeg: 0,
-      range: 0,
-      projectileSpeed: 10,
-      explosionRadius: 2
-    }
-  ]
+  WEAPON_DEFS: (() => {
+    const baseCasing = {
+      localOffset: [0, 0, 0] as [number, number, number],
+      localRotation: [0, 0, 0] as [number, number, number],
+      velocityMin: [0, 0, 0] as [number, number, number],
+      velocityMax: [0, 0, 0] as [number, number, number],
+      angularVelocityMin: [0, 0, 0] as [number, number, number],
+      angularVelocityMax: [0, 0, 0] as [number, number, number],
+      lifetimeSeconds: 2
+    };
+    const baseSounds = (id: string) => ({
+      fire: `weapon:${id}:fire`,
+      dryFire: `weapon:${id}:dry`,
+      reload: `weapon:${id}:reload`
+    });
+    return [
+      {
+        id: 'rifle',
+        displayName: 'Rifle',
+        kind: 'hitscan',
+        damage: 12,
+        spreadDeg: 1.5,
+        range: 60,
+        projectileSpeed: 0,
+        explosionRadius: 0,
+        maxAmmoInMag: 30,
+        cooldownSeconds: 0.125,
+        fireMode: 'FULL_AUTO',
+        ejectShellsWhileFiring: true,
+        reloadSeconds: 0.9,
+        sfxProfile: 'AR_556',
+        casingEject: baseCasing,
+        sounds: baseSounds('rifle')
+      },
+      {
+        id: 'launcher',
+        displayName: 'Launcher',
+        kind: 'projectile',
+        damage: 80,
+        spreadDeg: 0,
+        range: 0,
+        projectileSpeed: 22,
+        explosionRadius: 4.5,
+        maxAmmoInMag: 6,
+        cooldownSeconds: 1,
+        fireMode: 'SEMI',
+        ejectShellsWhileFiring: false,
+        reloadSeconds: 1.1,
+        sfxProfile: 'GRENADE_LAUNCHER',
+        casingEject: baseCasing,
+        sounds: baseSounds('launcher')
+      },
+      {
+        id: 'slowpoke',
+        displayName: 'Slowpoke',
+        kind: 'projectile',
+        damage: 10,
+        spreadDeg: 0,
+        range: 0,
+        projectileSpeed: 4,
+        explosionRadius: 2,
+        maxAmmoInMag: 5,
+        cooldownSeconds: 0.6,
+        fireMode: 'SEMI',
+        ejectShellsWhileFiring: true,
+        reloadSeconds: 0.8,
+        sfxProfile: 'PISTOL_9MM',
+        casingEject: baseCasing,
+        sounds: baseSounds('slowpoke')
+      },
+      {
+        id: 'jammer',
+        displayName: 'Jammer',
+        kind: 'projectile',
+        damage: 5,
+        spreadDeg: 0,
+        range: 0,
+        projectileSpeed: 10,
+        explosionRadius: 2,
+        maxAmmoInMag: 3,
+        cooldownSeconds: 0.4,
+        fireMode: 'SEMI',
+        ejectShellsWhileFiring: true,
+        reloadSeconds: 0.7,
+        sfxProfile: 'PISTOL_9MM',
+        casingEject: baseCasing,
+        sounds: baseSounds('jammer')
+      }
+    ];
+  })()
 }));
 import { createApp } from '../src/app';
 import { WEAPON_DEFS } from '../src/weapons/config';
 import { SIM_CONFIG } from '../src/sim/config';
-import { createFakeThree, FakeCamera, FakeEffectComposer, FakeOutlinePass, FakeRenderer, FakeScene } from './fakeThree';
+import {
+  createFakeThree,
+  FakeCamera,
+  FakeEffectComposer,
+  FakeOutlinePass,
+  FakeRenderer,
+  FakeScene,
+  FakeMesh
+} from './fakeThree';
 
 describe('createApp', () => {
   beforeEach(() => {
@@ -285,6 +337,7 @@ describe('createApp', () => {
         velY: 0,
         velZ: 0,
         weaponSlot: 0,
+        ammoInMag: 30,
         dashCooldown: 0,
         health: 100,
         kills: 0,
@@ -304,6 +357,7 @@ describe('createApp', () => {
         velY: 0,
         velZ: 0,
         weaponSlot: 0,
+        ammoInMag: 28,
         dashCooldown: 0,
         health: 100,
         kills: 0,
@@ -351,57 +405,23 @@ describe('createApp', () => {
     expect(app.state.camera.position.x).toBeCloseTo(expected);
   });
 
-  it('spawns projectile VFX for projectile weapon fire', () => {
+  it('records and decays weapon cooldowns', () => {
     const three = createFakeThree();
     const canvas = document.createElement('canvas');
     const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
-    const scene = app.state.scene as FakeScene;
 
-    expect(scene.children.length).toBe(4);
-    app.recordInput({
-      type: 'InputCmd',
-      inputSeq: 1,
-      moveX: 0,
-      moveY: 0,
-      lookDeltaX: 0,
-      lookDeltaY: 0,
-      viewYaw: 0,
-      viewPitch: 0,
-      weaponSlot: 1,
-      jump: false,
-      fire: true,
-      sprint: false,
-      dash: false,
-      grapple: false, shield: false, shockwave: false
-    });
-
-    expect(scene.children.length).toBe(5);
-    expect(app.getWeaponCooldown(1)).toBeCloseTo(1);
-    app.recordInput({
-      type: 'InputCmd',
-      inputSeq: 2,
-      moveX: 0,
-      moveY: 0,
-      lookDeltaX: 0,
-      lookDeltaY: 0,
-      viewYaw: 0,
-      viewPitch: 0,
-      weaponSlot: 1,
-      jump: false,
-      fire: true,
-      sprint: false,
-      dash: false,
-      grapple: false, shield: false, shockwave: false
-    });
-    expect(scene.children.length).toBe(5);
-
-    app.renderFrame(0.5, 1000);
-    expect(scene.children.length).toBe(5);
-    expect(app.getWeaponCooldown(1)).toBeCloseTo(0.5);
-    app.renderFrame(2, 1500);
-    expect(scene.children.length).toBe(4);
     expect(app.getWeaponCooldown(1)).toBe(0);
-    app.renderFrame(0.1, 1700);
+    app.recordWeaponFired(1, 1.2);
+    expect(app.getWeaponCooldown(1)).toBeCloseTo(1.2);
+    app.recordWeaponFired(1, 0.4);
+    expect(app.getWeaponCooldown(1)).toBeCloseTo(1.2);
+
+    app.renderFrame(0.4, 1000);
+    expect(app.getWeaponCooldown(1)).toBeCloseTo(0.8);
+    app.renderFrame(1, 2000);
+    expect(app.getWeaponCooldown(1)).toBe(0);
+    app.renderFrame(0.2, 2200);
+    expect(app.getWeaponCooldown(1)).toBe(0);
   });
 
   it('spawns projectile VFX for server projectile events', () => {
@@ -423,6 +443,43 @@ describe('createApp', () => {
     expect(scene.children.length).toBe(4);
     app.renderFrame(0.6, 1000);
     expect(scene.children.length).toBe(4);
+  });
+
+  it('expires projectile VFX during renderFrame', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+
+    app.spawnProjectileVfx({
+      origin: { x: 1, y: 2, z: 3 },
+      velocity: { x: 0, y: 0, z: 0 },
+      ttl: 0.05,
+      projectileId: 42
+    });
+
+    expect(scene.children.length).toBe(5);
+    app.renderFrame(0.1, 1000);
+    expect(scene.children.length).toBe(4);
+  });
+
+  it('updates projectile VFX positions while active', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+
+    app.spawnProjectileVfx({
+      origin: { x: 0, y: 0, z: 0 },
+      velocity: { x: 2, y: 0, z: 0 },
+      ttl: 1,
+      projectileId: 77
+    });
+
+    const projectile = scene.children[scene.children.length - 1] as FakeMesh;
+    const startX = projectile.position.x;
+    app.renderFrame(0.1, 1000);
+    expect(projectile.position.x).toBeGreaterThan(startX);
   });
 
   it('exposes ability cooldowns from prediction sim', () => {
@@ -516,113 +573,53 @@ describe('createApp', () => {
     expect(scene.children.includes(firstProjectile)).toBe(false);
   });
 
-  it('ignores projectile VFX for hitscan weapon fire', () => {
+  it('spawns tracer VFX and expires them', () => {
     const three = createFakeThree();
     const canvas = document.createElement('canvas');
     const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
     const scene = app.state.scene as FakeScene;
 
-    app.recordInput({
-      type: 'InputCmd',
-      inputSeq: 1,
-      moveX: 0,
-      moveY: 0,
-      lookDeltaX: 0,
-      lookDeltaY: 0,
-      viewYaw: 0,
-      viewPitch: 0,
-      weaponSlot: Number.NaN,
-      jump: false,
-      fire: true,
-      sprint: false,
-      dash: false,
-      grapple: false, shield: false, shockwave: false
+    expect(scene.children.length).toBe(4);
+    app.spawnTracerVfx({
+      origin: { x: 0, y: 0, z: 0 },
+      dir: { x: 1, y: 0, z: 0 },
+      length: 10
     });
-
     expect(scene.children.length).toBe(5);
     app.renderFrame(0.1, 1000);
     expect(scene.children.length).toBe(4);
   });
 
-  it('skips projectile VFX when projectile speed is invalid', () => {
+  it('ignores tracer VFX when origin is invalid', () => {
     const three = createFakeThree();
     const canvas = document.createElement('canvas');
     const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
     const scene = app.state.scene as FakeScene;
 
-    app.recordInput({
-      type: 'InputCmd',
-      inputSeq: 1,
-      moveX: 0,
-      moveY: 0,
-      lookDeltaX: 0,
-      lookDeltaY: 0,
-      viewYaw: 0,
-      viewPitch: 0,
-      weaponSlot: 2,
-      jump: false,
-      fire: true,
-      sprint: false,
-      dash: false,
-      grapple: false, shield: false, shockwave: false
-    });
-
-    expect(scene.children.length).toBe(4);
-    app.renderFrame(0.1, 1000);
-  });
-
-  it('skips projectile VFX when fire rate is invalid', () => {
-    const three = createFakeThree();
-    const canvas = document.createElement('canvas');
-    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
-    const scene = app.state.scene as FakeScene;
-
-    app.recordInput({
-      type: 'InputCmd',
-      inputSeq: 1,
-      moveX: 0,
-      moveY: 0,
-      lookDeltaX: 0,
-      lookDeltaY: 0,
-      viewYaw: 0,
-      viewPitch: 0,
-      weaponSlot: 3,
-      jump: false,
-      fire: true,
-      sprint: false,
-      dash: false,
-      grapple: false, shield: false, shockwave: false
+    app.spawnTracerVfx({
+      origin: { x: Number.NaN, y: 0, z: 0 },
+      dir: { x: 1, y: 0, z: 0 }
     });
 
     expect(scene.children.length).toBe(4);
   });
 
-  it('skips VFX when no weapons are configured', () => {
+  it('ignores invalid weapon cooldowns', () => {
     const three = createFakeThree();
     const canvas = document.createElement('canvas');
     const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
-    const scene = app.state.scene as FakeScene;
-    const saved = WEAPON_DEFS.splice(0, WEAPON_DEFS.length);
 
-    app.recordInput({
-      type: 'InputCmd',
-      inputSeq: 1,
-      moveX: 0,
-      moveY: 0,
-      lookDeltaX: 0,
-      lookDeltaY: 0,
-      viewYaw: 0,
-      viewPitch: 0,
-      weaponSlot: 0,
-      jump: false,
-      fire: true,
-      sprint: false,
-      dash: false,
-      grapple: false, shield: false, shockwave: false
-    });
+    app.recordWeaponFired(0, -1);
+    expect(app.getWeaponCooldown(0)).toBe(0);
+  });
 
-    expect(scene.children.length).toBe(4);
-    WEAPON_DEFS.push(...saved);
+  it('clamps non-finite weapon slots', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+
+    app.recordWeaponFired(Number.NaN, 0.5);
+    expect(app.getWeaponCooldown(0)).toBeCloseTo(0.5);
   });
 
   it('applies predicted vertical offset on jump', () => {
@@ -826,6 +823,7 @@ describe('createApp', () => {
         velY: 0,
         velZ: 0,
         weaponSlot: 0,
+        ammoInMag: 30,
         dashCooldown: 0,
         health: 100,
         kills: 0,
@@ -845,6 +843,7 @@ describe('createApp', () => {
         velY: 0,
         velZ: 0,
         weaponSlot: 0,
+        ammoInMag: 25,
         dashCooldown: 0,
         health: 90,
         kills: 1,

@@ -29,6 +29,7 @@ type RemoteAvatar = {
   handBone?: string;
   weaponModelKey?: string;
   weaponLoadToken?: number;
+  weaponLoadFailures?: number;
   // Tracks the currently applied GLB model URL (not just the desired one).
   modelUrl?: string;
   // Tracks which characterId/skin the currently loaded model represents.
@@ -98,10 +99,69 @@ const DEFAULT_WEAPON_MODEL = {
   scale: 0.6
 };
 const WEAPON_MODELS_BY_ID: Record<string, { file: string; scale: number }> = {
-  rifle: DEFAULT_WEAPON_MODEL,
+  rifle: {
+    file: `${WEAPON_MODEL_ROOT}blaster-d.glb`,
+    scale: 0.62
+  },
+  AR_556: {
+    file: `${WEAPON_MODEL_ROOT}blaster-d.glb`,
+    scale: 0.62
+  },
   launcher: {
     file: `${WEAPON_MODEL_ROOT}blaster-f.glb`,
     scale: 0.6
+  },
+  PISTOL_9MM: {
+    file: `${WEAPON_MODEL_ROOT}blaster-a.glb`,
+    scale: 0.58
+  },
+  PISTOL_45: {
+    file: `${WEAPON_MODEL_ROOT}blaster-b.glb`,
+    scale: 0.58
+  },
+  REVOLVER_357: {
+    file: `${WEAPON_MODEL_ROOT}blaster-b.glb`,
+    scale: 0.6
+  },
+  SMG_9MM: {
+    file: `${WEAPON_MODEL_ROOT}blaster-c.glb`,
+    scale: 0.62
+  },
+  CARBINE_762: {
+    file: `${WEAPON_MODEL_ROOT}blaster-e.glb`,
+    scale: 0.64
+  },
+  DMR_762: {
+    file: `${WEAPON_MODEL_ROOT}blaster-e.glb`,
+    scale: 0.66
+  },
+  LMG_556: {
+    file: `${WEAPON_MODEL_ROOT}blaster-h.glb`,
+    scale: 0.7
+  },
+  SHOTGUN_PUMP: {
+    file: `${WEAPON_MODEL_ROOT}blaster-g.glb`,
+    scale: 0.66
+  },
+  SHOTGUN_AUTO: {
+    file: `${WEAPON_MODEL_ROOT}blaster-g.glb`,
+    scale: 0.66
+  },
+  SNIPER_BOLT: {
+    file: `${WEAPON_MODEL_ROOT}blaster-g.glb`,
+    scale: 0.68
+  },
+  GRENADE_LAUNCHER: {
+    file: `${WEAPON_MODEL_ROOT}blaster-f.glb`,
+    scale: 0.6
+  },
+  ROCKET_LAUNCHER: {
+    file: `${WEAPON_MODEL_ROOT}blaster-f.glb`,
+    scale: 0.6
+  },
+  ENERGY_RIFLE: {
+    file: `${WEAPON_MODEL_ROOT}blaster-a.glb`,
+    scale: 0.62
   }
 };
 
@@ -130,6 +190,7 @@ export const createRemoteAvatarManager = ({
   const modelCache = new Map<string, Promise<{ root: Object3DLike; animations: unknown[] } | null>>();
   const animationCache = new Map<string, Promise<unknown[]>>();
   const weaponModelCache = new Map<string, Promise<Object3DLike | null>>();
+  const weaponModelFailures = new Set<string>();
   let gltfLoaderPromise: Promise<{ load: Function } | null> | null = null;
   let skeletonClonePromise: Promise<((root: Object3DLike) => Object3DLike) | null> | null = null;
 
@@ -174,6 +235,59 @@ export const createRemoteAvatarManager = ({
     });
   };
 
+  const resolveModelUrlCandidates = (url: string) => {
+    const candidates = new Set<string>();
+    const add = (value: string | null | undefined) => {
+      if (value && value.length > 0) {
+        candidates.add(value);
+      }
+    };
+
+    add(url);
+    if (url.startsWith('./')) {
+      add(url.slice(1));
+    }
+    if (url.startsWith('/')) {
+      add(`.${url}`);
+    }
+
+    if (NORMALIZED_BASE.startsWith('/') && NORMALIZED_BASE !== '/' && url.startsWith(NORMALIZED_BASE)) {
+      add(`/${url.slice(NORMALIZED_BASE.length)}`);
+    }
+
+    return Array.from(candidates);
+  };
+
+  const resolveFallbackModelUrl = (url: string) => {
+    if (url.includes('/Models/')) {
+      return null;
+    }
+    // Support both Vite `public/assets/...` layouts and the raw Kenney archive layout checked into `assets/`.
+    return url.replace(
+      '/kenney_blaster_kit/',
+      '/kenney_blaster_kit/Models/GLB%20format/'
+    );
+  };
+
+  const loadModelRoot = async (url: string) => {
+    const candidates = resolveModelUrlCandidates(url);
+    for (const candidate of candidates) {
+      const primary = await loadGltf(candidate);
+      if (primary?.root) {
+        return primary.root;
+      }
+      const fallback = resolveFallbackModelUrl(candidate);
+      if (!fallback || fallback === candidate) {
+        continue;
+      }
+      const secondary = await loadGltf(fallback);
+      if (secondary?.root) {
+        return secondary.root;
+      }
+    }
+    return null;
+  };
+
   const resolveWeaponModelSpec = (slot: number) => {
     const weaponId = WEAPON_DEFS[slot]?.id;
     if (weaponId && WEAPON_MODELS_BY_ID[weaponId]) {
@@ -196,22 +310,40 @@ export const createRemoteAvatarManager = ({
     const spec = resolveWeaponModelSpec(slot);
     let promise = weaponModelCache.get(spec.file);
     if (!promise) {
-      promise = loadGltf(spec.file).then((gltf) => (gltf ? gltf.root : null));
+      promise = loadModelRoot(spec.file)
+        .then((root) => {
+          if (!root) {
+            weaponModelCache.delete(spec.file);
+          }
+          return root;
+        });
       weaponModelCache.set(spec.file, promise);
     }
     const base = await promise;
     if (!base) {
+      if (!weaponModelFailures.has(spec.file)) {
+        weaponModelFailures.add(spec.file);
+        console.warn(`weapon model failed: ${spec.file}`);
+      }
       return null;
     }
     let instance = cloneObject(base);
     let root: Object3DLike = instance;
-    if (three.Object3D) {
-      const container = new three.Object3D() as unknown as Object3DLike;
+    const containerCtor =
+      three.Object3D ??
+      (three as unknown as { Group?: new () => Object3DLike }).Group;
+    if (containerCtor) {
+      const container = new containerCtor() as unknown as Object3DLike;
       container.add?.(instance);
       root = container;
     }
     if (root.scale?.set) {
       root.scale.set(spec.scale, spec.scale, spec.scale);
+      (root as unknown as { __afpsBaseScale?: { x: number; y: number; z: number } }).__afpsBaseScale = {
+        x: spec.scale,
+        y: spec.scale,
+        z: spec.scale
+      };
     }
     return { root, key: spec.file };
   };
@@ -336,24 +468,39 @@ export const createRemoteAvatarManager = ({
 
   const applyWeaponOffset = (weapon: Object3DLike, offset?: WeaponOffset) => {
     if (offset?.position) {
-      weapon.position.set(offset.position[0], offset.position[1], offset.position[2]);
+      weapon.position.set(
+        (weapon.position.x ?? 0) + offset.position[0],
+        (weapon.position.y ?? 0) + offset.position[1],
+        (weapon.position.z ?? 0) + offset.position[2]
+      );
     }
     if (offset?.rotation) {
-      weapon.rotation.x = offset.rotation[0];
-      weapon.rotation.y = offset.rotation[1];
-      weapon.rotation.z = offset.rotation[2];
+      weapon.rotation.x += offset.rotation[0];
+      weapon.rotation.y += offset.rotation[1];
+      weapon.rotation.z += offset.rotation[2];
     }
     if (weapon.scale && offset?.scale && offset.scale > 0) {
-      weapon.scale.set(offset.scale, offset.scale, offset.scale);
+      const tagged = weapon as unknown as { __afpsBaseScale?: { x: number; y: number; z: number } };
+      if (!tagged.__afpsBaseScale) {
+        tagged.__afpsBaseScale = {
+          x: weapon.scale.x ?? 1,
+          y: weapon.scale.y ?? 1,
+          z: weapon.scale.z ?? 1
+        };
+      }
+      weapon.scale.set(
+        tagged.__afpsBaseScale.x * offset.scale,
+        tagged.__afpsBaseScale.y * offset.scale,
+        tagged.__afpsBaseScale.z * offset.scale
+      );
     }
   };
 
   const applyDefaultWeaponTransform = (weapon: Object3DLike) => {
     weapon.position.set(0.35, 0.4, 0.15);
+    weapon.rotation.x = 0;
     weapon.rotation.y = Math.PI;
-    if (weapon.scale) {
-      weapon.scale.set(1, 1, 1);
-    }
+    weapon.rotation.z = 0;
   };
 
   const applyHandWeaponTransform = (weapon: Object3DLike) => {
@@ -363,15 +510,23 @@ export const createRemoteAvatarManager = ({
       weapon.rotation.y = HAND_DEFAULT_OFFSET.rotation[1];
       weapon.rotation.z = HAND_DEFAULT_OFFSET.rotation[2];
     }
-    if (weapon.scale && HAND_DEFAULT_OFFSET.scale && HAND_DEFAULT_OFFSET.scale > 0) {
-      weapon.scale.set(HAND_DEFAULT_OFFSET.scale, HAND_DEFAULT_OFFSET.scale, HAND_DEFAULT_OFFSET.scale);
-    }
   };
 
   const createWeaponMesh = (slot: number, offset?: WeaponOffset) => {
+    const containerCtor =
+      three.Object3D ??
+      (three as unknown as { Group?: new () => Object3DLike }).Group;
+    if (containerCtor) {
+      const placeholder = new containerCtor() as unknown as Object3DLike;
+      applyDefaultWeaponTransform(placeholder);
+      applyWeaponOffset(placeholder, offset);
+      return placeholder;
+    }
     const { length, thickness } = weaponScaleForSlot(slot);
     const geometry = new three.BoxGeometry(thickness, thickness, length);
     const mesh = new three.Mesh(geometry, weaponMaterial);
+    // Prefer an invisible placeholder over a visible box so missing models are obvious.
+    mesh.visible = false;
     applyDefaultWeaponTransform(mesh);
     applyWeaponOffset(mesh, offset);
     return mesh as unknown as Object3DLike;
@@ -429,6 +584,12 @@ export const createRemoteAvatarManager = ({
       applyHandWeaponTransform(weapon);
     } else {
       applyDefaultWeaponTransform(weapon);
+    }
+    if (weapon.scale?.set) {
+      const base = (weapon as unknown as { __afpsBaseScale?: { x: number; y: number; z: number } }).__afpsBaseScale;
+      if (base) {
+        weapon.scale.set(base.x, base.y, base.z);
+      }
     }
     applyWeaponOffset(weapon, offset);
     return parent;
@@ -616,8 +777,22 @@ export const createRemoteAvatarManager = ({
     const loaded = await loadWeaponModel(slot);
     const current = avatars.get(avatar.id);
     if (!loaded || !current || current.weaponLoadToken !== token) {
+      if (current && current.weaponLoadToken === token && !loaded) {
+        const failures = (current.weaponLoadFailures ?? 0) + 1;
+        current.weaponLoadFailures = failures;
+        if (failures < 3) {
+          window.setTimeout(() => {
+            const retry = avatars.get(current.id);
+            if (!retry || retry.weaponSlot !== slot) {
+              return;
+            }
+            void requestWeaponModel(retry, slot);
+          }, 1500);
+        }
+      }
       return;
     }
+    current.weaponLoadFailures = 0;
     if (current.weaponModelKey === loaded.key) {
       return;
     }
@@ -756,8 +931,11 @@ export const createRemoteAvatarManager = ({
       avatar.characterId = profile.characterId;
       avatar.handBone = entry?.handBone;
       avatar.weaponOffset = entry?.weaponOffset;
-      applyDefaultWeaponTransform(avatar.weapon);
-      applyWeaponOffset(avatar.weapon, avatar.weaponOffset);
+      detachWeapon(avatar);
+      avatar.weaponParent = attachWeapon(avatar.root, avatar.weapon, avatar.weaponOffset, avatar.handBone);
+      if (!avatar.weaponModelKey) {
+        void requestWeaponModel(avatar, avatar.weaponSlot);
+      }
       if (!avatar.nameplate) {
         const nameplate = createNameplate(profile.nickname);
         if (nameplate) {
@@ -780,8 +958,11 @@ export const createRemoteAvatarManager = ({
       const entry = resolveCharacterEntry(next, profile.characterId);
       avatar.weaponOffset = entry.weaponOffset;
       avatar.handBone = entry.handBone;
-      applyDefaultWeaponTransform(avatar.weapon);
-      applyWeaponOffset(avatar.weapon, avatar.weaponOffset);
+      detachWeapon(avatar);
+      avatar.weaponParent = attachWeapon(avatar.root, avatar.weapon, avatar.weaponOffset, avatar.handBone);
+      if (!avatar.weaponModelKey) {
+        void requestWeaponModel(avatar, avatar.weaponSlot);
+      }
       const desiredCharacterId = profile.characterId;
       const desiredModelUrl = entry.modelUrl;
       const needsModel =

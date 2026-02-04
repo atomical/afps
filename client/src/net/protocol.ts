@@ -1,6 +1,7 @@
 import * as flatbuffers from 'flatbuffers';
 import { ClientHello } from './fbs/afps/protocol/client-hello';
 import { Error as ProtocolError } from './fbs/afps/protocol/error';
+import { FireWeaponRequestT } from './fbs/afps/protocol/fire-weapon-request';
 import { GameEvent as GameEventFbs } from './fbs/afps/protocol/game-event';
 import { GameEventType } from './fbs/afps/protocol/game-event-type';
 import { InputCmdT } from './fbs/afps/protocol/input-cmd';
@@ -10,10 +11,12 @@ import { Pong } from './fbs/afps/protocol/pong';
 import { ServerHello as ServerHelloFbs } from './fbs/afps/protocol/server-hello';
 import { StateSnapshot as StateSnapshotFbs } from './fbs/afps/protocol/state-snapshot';
 import { StateSnapshotDelta as StateSnapshotDeltaFbs } from './fbs/afps/protocol/state-snapshot-delta';
+import { WeaponFiredEvent as WeaponFiredEventFbs } from './fbs/afps/protocol/weapon-fired-event';
+import { WeaponReloadEvent as WeaponReloadEventFbs } from './fbs/afps/protocol/weapon-reload-event';
 import { MessageType } from './fbs/afps/protocol/message-type';
 import type { InputCmd } from './input_cmd';
 
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 export const SNAPSHOT_MASK_POS_X = 1 << 0;
 export const SNAPSHOT_MASK_POS_Y = 1 << 1;
 export const SNAPSHOT_MASK_POS_Z = 1 << 2;
@@ -25,6 +28,7 @@ export const SNAPSHOT_MASK_HEALTH = 1 << 7;
 export const SNAPSHOT_MASK_KILLS = 1 << 8;
 export const SNAPSHOT_MASK_DEATHS = 1 << 9;
 export const SNAPSHOT_MASK_WEAPON_SLOT = 1 << 10;
+export const SNAPSHOT_MASK_AMMO_IN_MAG = 1 << 11;
 const SNAPSHOT_MASK_ALL =
   SNAPSHOT_MASK_POS_X |
   SNAPSHOT_MASK_POS_Y |
@@ -36,7 +40,8 @@ const SNAPSHOT_MASK_ALL =
   SNAPSHOT_MASK_HEALTH |
   SNAPSHOT_MASK_KILLS |
   SNAPSHOT_MASK_DEATHS |
-  SNAPSHOT_MASK_WEAPON_SLOT;
+  SNAPSHOT_MASK_WEAPON_SLOT |
+  SNAPSHOT_MASK_AMMO_IN_MAG;
 
 const MAGIC = new Uint8Array([0x41, 0x46, 0x50, 0x53]);
 const HEADER_BYTES = 20;
@@ -87,6 +92,7 @@ export interface StateSnapshot {
   velY: number;
   velZ: number;
   weaponSlot: number;
+  ammoInMag: number;
   dashCooldown: number;
   health: number;
   kills: number;
@@ -107,11 +113,25 @@ export interface StateSnapshotDelta {
   velY?: number;
   velZ?: number;
   weaponSlot?: number;
+  ammoInMag?: number;
   dashCooldown?: number;
   health?: number;
   kills?: number;
   deaths?: number;
   clientId?: string;
+}
+
+export interface FireWeaponRequestMessage {
+  type: 'FireWeaponRequest';
+  clientShotSeq: number;
+  weaponId?: string;
+  weaponSlot: number;
+  originX: number;
+  originY: number;
+  originZ: number;
+  dirX: number;
+  dirY: number;
+  dirZ: number;
 }
 
 export interface PingMessage {
@@ -170,6 +190,45 @@ export interface ProjectileRemoveEvent {
 
 export type GameEvent = HitConfirmedEvent | ProjectileSpawnEvent | ProjectileRemoveEvent;
 
+export interface WeaponFiredEvent {
+  type: 'WeaponFiredEvent';
+  shooterId: string;
+  weaponId: string;
+  weaponSlot: number;
+  serverTick: number;
+  shotSeq: number;
+  muzzlePosX: number;
+  muzzlePosY: number;
+  muzzlePosZ: number;
+  dirX: number;
+  dirY: number;
+  dirZ: number;
+  dryFire: boolean;
+  casingEnabled: boolean;
+  casingPosX: number;
+  casingPosY: number;
+  casingPosZ: number;
+  casingRotX: number;
+  casingRotY: number;
+  casingRotZ: number;
+  casingVelX: number;
+  casingVelY: number;
+  casingVelZ: number;
+  casingAngX: number;
+  casingAngY: number;
+  casingAngZ: number;
+  casingSeed: number;
+}
+
+export interface WeaponReloadEvent {
+  type: 'WeaponReloadEvent';
+  shooterId: string;
+  weaponId: string;
+  weaponSlot: number;
+  serverTick: number;
+  reloadSeconds: number;
+}
+
 export type SnapshotMessage = StateSnapshot | StateSnapshotDelta;
 
 const isFiniteNumber = (value: number) => Number.isFinite(value);
@@ -178,7 +237,7 @@ const toUint8Array = (data: ArrayBuffer | Uint8Array) =>
   data instanceof Uint8Array ? data : new Uint8Array(data);
 
 const isMessageType = (value: number): value is MessageType =>
-  value >= MessageType.ClientHello && value <= MessageType.Disconnect;
+  value >= MessageType.ClientHello && value <= MessageType.WeaponReloadEvent;
 
 export const decodeEnvelope = (data: ArrayBuffer | Uint8Array): DecodedEnvelope | null => {
   const bytes = toUint8Array(data);
@@ -286,6 +345,27 @@ export const encodeInputCmd = (cmd: InputCmd, msgSeq = 1, serverSeqAck = 0) => {
   return encodeEnvelope(MessageType.InputCmd, builder.asUint8Array(), msgSeq, serverSeqAck);
 };
 
+export const encodeFireWeaponRequest = (
+  request: FireWeaponRequestMessage,
+  msgSeq = 1,
+  serverSeqAck = 0
+) => {
+  const builder = new flatbuffers.Builder(256);
+  const payload = new FireWeaponRequestT(
+    request.clientShotSeq,
+    request.weaponId ?? null,
+    request.weaponSlot,
+    request.originX,
+    request.originY,
+    request.originZ,
+    request.dirX,
+    request.dirY,
+    request.dirZ
+  ).pack(builder);
+  builder.finish(payload);
+  return encodeEnvelope(MessageType.FireWeaponRequest, builder.asUint8Array(), msgSeq, serverSeqAck);
+};
+
 export const buildPing = (clientTimeMs: number, msgSeq = 1, serverSeqAck = 0) => {
   const builder = new flatbuffers.Builder(64);
   const payload = Ping.createPing(builder, Number.isFinite(clientTimeMs) ? clientTimeMs : 0);
@@ -363,6 +443,7 @@ export const parseStateSnapshotPayload = (payload: Uint8Array): StateSnapshot | 
   const velZ = message.velZ();
   const dashCooldown = message.dashCooldown();
   const health = message.health();
+  const ammoInMag = message.ammoInMag();
   if (![posX, posY, posZ, velX, velY, velZ, dashCooldown, health].every(isFiniteNumber)) {
     return null;
   }
@@ -377,6 +458,7 @@ export const parseStateSnapshotPayload = (payload: Uint8Array): StateSnapshot | 
     velY,
     velZ,
     weaponSlot: message.weaponSlot(),
+    ammoInMag,
     dashCooldown,
     health,
     kills: message.kills(),
@@ -420,6 +502,7 @@ export const parseStateSnapshotDeltaPayload = (payload: Uint8Array): StateSnapsh
   if (mask & SNAPSHOT_MASK_VEL_Y) snapshot.velY = message.velY();
   if (mask & SNAPSHOT_MASK_VEL_Z) snapshot.velZ = message.velZ();
   if (mask & SNAPSHOT_MASK_WEAPON_SLOT) snapshot.weaponSlot = message.weaponSlot();
+  if (mask & SNAPSHOT_MASK_AMMO_IN_MAG) snapshot.ammoInMag = message.ammoInMag();
   if (mask & SNAPSHOT_MASK_DASH_COOLDOWN) snapshot.dashCooldown = message.dashCooldown();
   if (mask & SNAPSHOT_MASK_HEALTH) snapshot.health = message.health();
   if (mask & SNAPSHOT_MASK_KILLS) snapshot.kills = message.kills();
@@ -432,6 +515,7 @@ export const parseStateSnapshotDeltaPayload = (payload: Uint8Array): StateSnapsh
     snapshot.velX,
     snapshot.velY,
     snapshot.velZ,
+    snapshot.ammoInMag,
     snapshot.dashCooldown,
     snapshot.health
   ].filter((value) => typeof value === 'number') as number[];
@@ -439,6 +523,63 @@ export const parseStateSnapshotDeltaPayload = (payload: Uint8Array): StateSnapsh
     return null;
   }
   return snapshot;
+};
+
+export const parseWeaponFiredEventPayload = (payload: Uint8Array): WeaponFiredEvent | null => {
+  const bb = new flatbuffers.ByteBuffer(payload);
+  const message = WeaponFiredEventFbs.getRootAsWeaponFiredEvent(bb);
+  const shooterId = message.shooterId();
+  const weaponId = message.weaponId();
+  if (!shooterId || !weaponId) {
+    return null;
+  }
+  return {
+    type: 'WeaponFiredEvent',
+    shooterId,
+    weaponId,
+    weaponSlot: message.weaponSlot(),
+    serverTick: message.serverTick(),
+    shotSeq: message.shotSeq(),
+    muzzlePosX: message.muzzlePosX(),
+    muzzlePosY: message.muzzlePosY(),
+    muzzlePosZ: message.muzzlePosZ(),
+    dirX: message.dirX(),
+    dirY: message.dirY(),
+    dirZ: message.dirZ(),
+    dryFire: message.dryFire(),
+    casingEnabled: message.casingEnabled(),
+    casingPosX: message.casingPosX(),
+    casingPosY: message.casingPosY(),
+    casingPosZ: message.casingPosZ(),
+    casingRotX: message.casingRotX(),
+    casingRotY: message.casingRotY(),
+    casingRotZ: message.casingRotZ(),
+    casingVelX: message.casingVelX(),
+    casingVelY: message.casingVelY(),
+    casingVelZ: message.casingVelZ(),
+    casingAngX: message.casingAngX(),
+    casingAngY: message.casingAngY(),
+    casingAngZ: message.casingAngZ(),
+    casingSeed: message.casingSeed()
+  };
+};
+
+export const parseWeaponReloadEventPayload = (payload: Uint8Array): WeaponReloadEvent | null => {
+  const bb = new flatbuffers.ByteBuffer(payload);
+  const message = WeaponReloadEventFbs.getRootAsWeaponReloadEvent(bb);
+  const shooterId = message.shooterId();
+  const weaponId = message.weaponId();
+  if (!shooterId || !weaponId) {
+    return null;
+  }
+  return {
+    type: 'WeaponReloadEvent',
+    shooterId,
+    weaponId,
+    weaponSlot: message.weaponSlot(),
+    serverTick: message.serverTick(),
+    reloadSeconds: message.reloadSeconds()
+  };
 };
 
 export const parseGameEventPayload = (payload: Uint8Array): GameEvent | null => {

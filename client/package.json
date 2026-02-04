@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "bash ../tools/sync_weapon_assets.sh",
+    "prebuild": "bash ../tools/sync_weapon_assets.sh",
+    "pretest": "bash ../tools/sync_weapon_assets.sh",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",

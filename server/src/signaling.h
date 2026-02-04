@@ -44,6 +44,11 @@ struct InputBatch {
   std::vector<InputCmd> inputs;
 };
 
+struct FireRequestBatch {
+  std::string connection_id;
+  std::vector<FireWeaponRequest> requests;
+};
+
 enum class SignalingError {
   None,
   SessionNotFound,
@@ -90,6 +95,7 @@ public:
   SignalingResult<std::vector<InputCmd>> DrainInputs(const std::string &session_token,
                                                      const std::string &connection_id);
   std::vector<InputBatch> DrainAllInputs();
+  std::vector<FireRequestBatch> DrainAllFireRequests();
   std::vector<std::string> ReadyConnectionIds();
   bool SendUnreliable(const std::string &connection_id, const std::vector<uint8_t> &message);
   uint32_t NextServerMessageSeq(const std::string &connection_id);
@@ -119,6 +125,7 @@ private:
     std::string character_id;
     std::string connection_nonce;
     std::vector<InputCmd> pending_inputs;
+    std::vector<FireWeaponRequest> pending_fire_requests;
     int last_input_seq = -1;
     uint32_t last_client_msg_seq = 0;
     uint32_t last_client_seq_ack = 0;

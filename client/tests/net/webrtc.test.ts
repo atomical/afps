@@ -7,7 +7,8 @@ import {
   MessageType,
   PROTOCOL_VERSION,
   SNAPSHOT_MASK_POS_X,
-  SNAPSHOT_MASK_VEL_Y
+  SNAPSHOT_MASK_VEL_Y,
+  SNAPSHOT_MASK_AMMO_IN_MAG
 } from '../../src/net/protocol';
 import { FakeDataChannel, FakePeerConnection, FakePeerConnectionFactory, FakeSignalingClient } from './fakes';
 import { ClientHello } from '../../src/net/fbs/afps/protocol/client-hello';
@@ -18,6 +19,8 @@ import { Pong } from '../../src/net/fbs/afps/protocol/pong';
 import { ServerHello } from '../../src/net/fbs/afps/protocol/server-hello';
 import { StateSnapshot } from '../../src/net/fbs/afps/protocol/state-snapshot';
 import { StateSnapshotDelta } from '../../src/net/fbs/afps/protocol/state-snapshot-delta';
+import { WeaponFiredEvent as WeaponFiredEventFbs } from '../../src/net/fbs/afps/protocol/weapon-fired-event';
+import { WeaponReloadEvent as WeaponReloadEventFbs } from '../../src/net/fbs/afps/protocol/weapon-reload-event';
 
 const createTimers = () => ({
   setInterval: (callback: () => void, ms: number) => window.setInterval(callback, ms),
@@ -80,6 +83,7 @@ const buildStateSnapshot = (snapshot: {
   velY: number;
   velZ: number;
   weaponSlot: number;
+  ammoInMag?: number;
   dashCooldown: number;
   health: number;
   kills: number;
@@ -100,6 +104,7 @@ const buildStateSnapshot = (snapshot: {
     snapshot.velY,
     snapshot.velZ,
     snapshot.weaponSlot,
+    snapshot.ammoInMag ?? 0,
     snapshot.dashCooldown,
     snapshot.health,
     snapshot.kills,
@@ -121,6 +126,7 @@ const buildStateSnapshotDelta = (delta: {
   velY?: number;
   velZ?: number;
   weaponSlot?: number;
+  ammoInMag?: number;
   dashCooldown?: number;
   health?: number;
   kills?: number;
@@ -143,6 +149,7 @@ const buildStateSnapshotDelta = (delta: {
     delta.velY ?? 0,
     delta.velZ ?? 0,
     delta.weaponSlot ?? 0,
+    delta.ammoInMag ?? 0,
     delta.dashCooldown ?? 0,
     delta.health ?? 0,
     delta.kills ?? 0,
@@ -212,6 +219,52 @@ const buildPong = (clientTimeMs: number, msgSeq = 5) => {
   const offset = Pong.createPong(builder, clientTimeMs);
   builder.finish(offset);
   return encodeEnvelope(MessageType.Pong, builder.asUint8Array(), msgSeq, 0);
+};
+
+const buildWeaponFiredEvent = (msgSeq = 7) => {
+  const builder = new flatbuffers.Builder(256);
+  const shooter = builder.createString('shooter');
+  const weapon = builder.createString('rifle');
+  const offset = WeaponFiredEventFbs.createWeaponFiredEvent(
+    builder,
+    shooter,
+    weapon,
+    0,
+    10,
+    2,
+    1,
+    2,
+    3,
+    0.1,
+    0.2,
+    0.3,
+    false,
+    false,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  );
+  builder.finish(offset);
+  return encodeEnvelope(MessageType.WeaponFiredEvent, builder.asUint8Array(), msgSeq, 0);
+};
+
+const buildWeaponReloadEvent = (msgSeq = 8) => {
+  const builder = new flatbuffers.Builder(128);
+  const shooter = builder.createString('shooter');
+  const weapon = builder.createString('rifle');
+  const offset = WeaponReloadEventFbs.createWeaponReloadEvent(builder, shooter, weapon, 0, 10, 0.9);
+  builder.finish(offset);
+  return encodeEnvelope(MessageType.WeaponReloadEvent, builder.asUint8Array(), msgSeq, 0);
 };
 
 describe('webrtc connector', () => {
@@ -344,6 +397,7 @@ describe('webrtc connector', () => {
       velY: 0,
       velZ: 0,
       weaponSlot: 0,
+      ammoInMag: 30,
       dashCooldown: 0,
       health: 100,
       kills: 0,
@@ -375,6 +429,7 @@ describe('webrtc connector', () => {
       velY: -0.5,
       velZ: 0,
       weaponSlot: 0,
+      ammoInMag: 30,
       dashCooldown: 0,
       health: 100,
       kills: 0,
@@ -685,6 +740,7 @@ describe('webrtc connector', () => {
       velY: 0,
       velZ: 0,
       weaponSlot: 0,
+      ammoInMag: 30,
       dashCooldown: 0,
       health: 100,
       kills: 0,
@@ -734,6 +790,49 @@ describe('webrtc connector', () => {
       damage: 5.5,
       killed: true
     });
+    session.close();
+    vi.useRealTimers();
+  });
+
+  it('forwards weapon events from unreliable channel', async () => {
+    vi.useFakeTimers();
+    const signaling = new FakeSignalingClient();
+    const rtcFactory = new FakePeerConnectionFactory();
+    const onWeaponFired = vi.fn();
+    const onWeaponReload = vi.fn();
+    const connector = createWebRtcConnector({
+      signaling,
+      rtcFactory,
+      logger: silentLogger,
+      pollIntervalMs: 100,
+      connectTimeoutMs: 1000,
+      timers: createTimers(),
+      onWeaponFired,
+      onWeaponReload
+    });
+
+    const connectPromise = connector.connect();
+    const pc = await waitForPeer(rtcFactory);
+
+    const reliable = new FakeDataChannel('afps_reliable');
+    const unreliable = new FakeDataChannel('afps_unreliable');
+    pc.emitDataChannel(reliable);
+    pc.emitDataChannel(unreliable);
+    reliable.open();
+    unreliable.open();
+    await Promise.resolve();
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
+
+    const session = await connectPromise;
+
+    unreliable.emitMessage(buildWeaponFiredEvent());
+    unreliable.emitMessage(buildWeaponReloadEvent());
+
+    expect(onWeaponFired).toHaveBeenCalledWith(expect.objectContaining({ type: 'WeaponFiredEvent', weaponId: 'rifle' }));
+    expect(onWeaponReload).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'WeaponReloadEvent', weaponId: 'rifle' })
+    );
+
     session.close();
     vi.useRealTimers();
   });

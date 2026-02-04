@@ -26,6 +26,7 @@ TEST_CASE("Snapshot bandwidth stays within budget") {
   snapshot.vel_y = 0.0;
   snapshot.vel_z = 0.0;
   snapshot.weapon_slot = 1;
+  snapshot.ammo_in_mag = 30;
   snapshot.dash_cooldown = 0.2;
   snapshot.health = 85.0;
   snapshot.kills = 2;
@@ -44,6 +45,7 @@ TEST_CASE("Snapshot bandwidth stays within budget") {
   delta.vel_y = 0.1;
   delta.vel_z = 0.0;
   delta.weapon_slot = 1;
+  delta.ammo_in_mag = 28;
   delta.dash_cooldown = 0.1;
   delta.health = 85.0;
   delta.kills = 2;

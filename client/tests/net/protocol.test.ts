@@ -20,6 +20,9 @@ import {
   parseStateSnapshotPayload,
   parseStateSnapshotDelta,
   parseStateSnapshotDeltaPayload,
+  parseWeaponFiredEventPayload,
+  parseWeaponReloadEventPayload,
+  encodeFireWeaponRequest,
   MessageType,
   PROTOCOL_VERSION,
   __test,
@@ -33,7 +36,8 @@ import {
   SNAPSHOT_MASK_HEALTH,
   SNAPSHOT_MASK_KILLS,
   SNAPSHOT_MASK_DEATHS,
-  SNAPSHOT_MASK_WEAPON_SLOT
+  SNAPSHOT_MASK_WEAPON_SLOT,
+  SNAPSHOT_MASK_AMMO_IN_MAG
 } from '../../src/net/protocol';
 import { ClientHello } from '../../src/net/fbs/afps/protocol/client-hello';
 import { Error as ErrorMessage } from '../../src/net/fbs/afps/protocol/error';
@@ -44,6 +48,9 @@ import { Pong } from '../../src/net/fbs/afps/protocol/pong';
 import { ServerHello } from '../../src/net/fbs/afps/protocol/server-hello';
 import { StateSnapshot } from '../../src/net/fbs/afps/protocol/state-snapshot';
 import { StateSnapshotDelta } from '../../src/net/fbs/afps/protocol/state-snapshot-delta';
+import { FireWeaponRequest } from '../../src/net/fbs/afps/protocol/fire-weapon-request';
+import { WeaponFiredEvent as WeaponFiredEventFbs } from '../../src/net/fbs/afps/protocol/weapon-fired-event';
+import { WeaponReloadEvent as WeaponReloadEventFbs } from '../../src/net/fbs/afps/protocol/weapon-reload-event';
 
 describe('protocol helpers', () => {
   it('builds ClientHello envelope', () => {
@@ -137,6 +144,7 @@ describe('protocol helpers', () => {
       -0.25,
       0.1,
       1,
+      24,
       0.4,
       75,
       2,
@@ -156,6 +164,7 @@ describe('protocol helpers', () => {
       velY: -0.25,
       velZ: 0.1,
       weaponSlot: 1,
+      ammoInMag: 24,
       dashCooldown: 0.4,
       health: 75,
       kills: 2,
@@ -170,6 +179,7 @@ describe('protocol helpers', () => {
     const mask =
       SNAPSHOT_MASK_POS_X |
       SNAPSHOT_MASK_VEL_Y |
+      SNAPSHOT_MASK_AMMO_IN_MAG |
       SNAPSHOT_MASK_DASH_COOLDOWN |
       SNAPSHOT_MASK_HEALTH |
       SNAPSHOT_MASK_KILLS |
@@ -188,6 +198,7 @@ describe('protocol helpers', () => {
       -0.5,
       0,
       0,
+      19,
       0.25,
       50,
       3,
@@ -204,6 +215,7 @@ describe('protocol helpers', () => {
       mask,
       posX: 1.75,
       velY: -0.5,
+      ammoInMag: 19,
       dashCooldown: 0.25,
       health: 50,
       kills: 3,
@@ -223,6 +235,7 @@ describe('protocol helpers', () => {
       SNAPSHOT_MASK_VEL_Y |
       SNAPSHOT_MASK_VEL_Z |
       SNAPSHOT_MASK_WEAPON_SLOT |
+      SNAPSHOT_MASK_AMMO_IN_MAG |
       SNAPSHOT_MASK_DASH_COOLDOWN |
       SNAPSHOT_MASK_HEALTH |
       SNAPSHOT_MASK_KILLS |
@@ -241,6 +254,7 @@ describe('protocol helpers', () => {
       5,
       6,
       2,
+      21,
       0.5,
       80,
       4,
@@ -261,6 +275,7 @@ describe('protocol helpers', () => {
       velY: 5,
       velZ: 6,
       weaponSlot: 2,
+      ammoInMag: 21,
       dashCooldown: 0.5,
       health: 80,
       kills: 4,
@@ -508,6 +523,7 @@ describe('protocol helpers', () => {
       0,
       0,
       0,
+      30,
       0,
       100,
       0,
@@ -528,6 +544,7 @@ describe('protocol helpers', () => {
       SNAPSHOT_MASK_POS_X,
       deltaClientId,
       1,
+      0,
       0,
       0,
       0,
@@ -559,6 +576,7 @@ describe('protocol helpers', () => {
       0,
       0,
       0,
+      30,
       0,
       100,
       0,
@@ -649,6 +667,7 @@ describe('protocol helpers', () => {
       0,
       0,
       0,
+      25,
       0,
       100,
       0,
@@ -671,6 +690,7 @@ describe('protocol helpers', () => {
       0,
       0,
       0,
+      20,
       0,
       100,
       0,
@@ -689,6 +709,7 @@ describe('protocol helpers', () => {
       0,
       invalidMask,
       deltaClient,
+      0,
       0,
       0,
       0,
@@ -722,6 +743,7 @@ describe('protocol helpers', () => {
       0,
       0,
       0,
+      0,
       0
     );
     badDeltaBuilder.finish(badDeltaOffset);
@@ -736,6 +758,7 @@ describe('protocol helpers', () => {
       SNAPSHOT_MASK_POS_X,
       0,
       Number.NaN,
+      0,
       0,
       0,
       0,
@@ -815,6 +838,205 @@ describe('protocol helpers', () => {
     const errorOffset = ErrorMessage.createError(errorBuilder, 0, 0);
     errorBuilder.finish(errorOffset);
     expect(parseErrorPayload(errorBuilder.asUint8Array())).toBeNull();
+  });
+
+  it('builds FireWeaponRequest envelopes', () => {
+    const envelope = encodeFireWeaponRequest(
+      {
+        type: 'FireWeaponRequest',
+        clientShotSeq: 7,
+        weaponId: 'rifle',
+        weaponSlot: 1,
+        originX: 1,
+        originY: 2,
+        originZ: 3,
+        dirX: 0.1,
+        dirY: 0.2,
+        dirZ: 0.3
+      },
+      12,
+      3
+    );
+    const decoded = decodeEnvelope(envelope);
+    expect(decoded?.header.msgType).toBe(MessageType.FireWeaponRequest);
+    const message = FireWeaponRequest.getRootAsFireWeaponRequest(new flatbuffers.ByteBuffer(decoded!.payload));
+    expect(message.clientShotSeq()).toBe(7);
+    expect(message.weaponId()).toBe('rifle');
+    expect(message.weaponSlot()).toBe(1);
+    expect(message.originX()).toBeCloseTo(1);
+    expect(message.originY()).toBeCloseTo(2);
+    expect(message.originZ()).toBeCloseTo(3);
+  });
+
+  it('parses WeaponFiredEvent payloads', () => {
+    const builder = new flatbuffers.Builder(256);
+    const shooter = builder.createString('shooter');
+    const weapon = builder.createString('rifle');
+    const offset = WeaponFiredEventFbs.createWeaponFiredEvent(
+      builder,
+      shooter,
+      weapon,
+      0,
+      10,
+      3,
+      1,
+      2,
+      3,
+      0.1,
+      0.2,
+      0.3,
+      false,
+      true,
+      1.1,
+      1.2,
+      1.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      1.0,
+      1.1,
+      1.2,
+      123
+    );
+    builder.finish(offset);
+    const parsed = parseWeaponFiredEventPayload(builder.asUint8Array());
+    expect(parsed).toEqual({
+      type: 'WeaponFiredEvent',
+      shooterId: 'shooter',
+      weaponId: 'rifle',
+      weaponSlot: 0,
+      serverTick: 10,
+      shotSeq: 3,
+      muzzlePosX: 1,
+      muzzlePosY: 2,
+      muzzlePosZ: 3,
+      dirX: 0.1,
+      dirY: 0.2,
+      dirZ: 0.3,
+      dryFire: false,
+      casingEnabled: true,
+      casingPosX: 1.1,
+      casingPosY: 1.2,
+      casingPosZ: 1.3,
+      casingRotX: 0.4,
+      casingRotY: 0.5,
+      casingRotZ: 0.6,
+      casingVelX: 0.7,
+      casingVelY: 0.8,
+      casingVelZ: 0.9,
+      casingAngX: 1.0,
+      casingAngY: 1.1,
+      casingAngZ: 1.2,
+      casingSeed: 123
+    });
+  });
+
+  it('rejects WeaponFiredEvent payloads missing ids', () => {
+    const builder = new flatbuffers.Builder(256);
+    const empty = builder.createString('');
+    const weapon = builder.createString('rifle');
+    const offset = WeaponFiredEventFbs.createWeaponFiredEvent(
+      builder,
+      empty,
+      weapon,
+      0,
+      10,
+      3,
+      1,
+      2,
+      3,
+      0.1,
+      0.2,
+      0.3,
+      false,
+      false,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    );
+    builder.finish(offset);
+    expect(parseWeaponFiredEventPayload(builder.asUint8Array())).toBeNull();
+
+    const builder2 = new flatbuffers.Builder(256);
+    const shooter = builder2.createString('shooter');
+    const emptyWeapon = builder2.createString('');
+    const offset2 = WeaponFiredEventFbs.createWeaponFiredEvent(
+      builder2,
+      shooter,
+      emptyWeapon,
+      0,
+      10,
+      3,
+      1,
+      2,
+      3,
+      0.1,
+      0.2,
+      0.3,
+      false,
+      false,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    );
+    builder2.finish(offset2);
+    expect(parseWeaponFiredEventPayload(builder2.asUint8Array())).toBeNull();
+  });
+
+  it('parses WeaponReloadEvent payloads', () => {
+    const builder = new flatbuffers.Builder(128);
+    const shooter = builder.createString('shooter');
+    const weapon = builder.createString('launcher');
+    const offset = WeaponReloadEventFbs.createWeaponReloadEvent(builder, shooter, weapon, 1, 20, 0.9);
+    builder.finish(offset);
+    const parsed = parseWeaponReloadEventPayload(builder.asUint8Array());
+    expect(parsed).toEqual({
+      type: 'WeaponReloadEvent',
+      shooterId: 'shooter',
+      weaponId: 'launcher',
+      weaponSlot: 1,
+      serverTick: 20,
+      reloadSeconds: 0.9
+    });
+  });
+
+  it('rejects WeaponReloadEvent payloads missing ids', () => {
+    const builder = new flatbuffers.Builder(128);
+    const empty = builder.createString('');
+    const weapon = builder.createString('launcher');
+    const offset = WeaponReloadEventFbs.createWeaponReloadEvent(builder, empty, weapon, 1, 20, 0.9);
+    builder.finish(offset);
+    expect(parseWeaponReloadEventPayload(builder.asUint8Array())).toBeNull();
+
+    const builder2 = new flatbuffers.Builder(128);
+    const shooter = builder2.createString('shooter');
+    const emptyWeapon = builder2.createString('');
+    const offset2 = WeaponReloadEventFbs.createWeaponReloadEvent(builder2, shooter, emptyWeapon, 1, 20, 0.9);
+    builder2.finish(offset2);
+    expect(parseWeaponReloadEventPayload(builder2.asUint8Array())).toBeNull();
   });
 
   it('parses protocol error payloads', () => {

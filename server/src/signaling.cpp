@@ -17,6 +17,7 @@
 namespace {
 constexpr int kMaxClientHelloAttempts = 3;
 constexpr size_t kMaxPendingInputs = 128;
+constexpr size_t kMaxPendingFireRequests = 128;
 
 std::string TrimWhitespace(const std::string &value) {
   const auto start = value.find_first_not_of(" \t\r\n");
@@ -477,6 +478,34 @@ std::vector<InputBatch> SignalingStore::DrainAllInputs() {
       }
       batch.connection_id = connection->id;
       batch.inputs.swap(connection->pending_inputs);
+    }
+    batches.push_back(std::move(batch));
+  }
+
+  return batches;
+}
+
+std::vector<FireRequestBatch> SignalingStore::DrainAllFireRequests() {
+  std::vector<std::shared_ptr<ConnectionState>> connections;
+  {
+    std::scoped_lock lock(mutex_);
+    PruneExpiredSessionsLocked();
+    connections.reserve(connections_.size());
+    for (const auto &entry : connections_) {
+      connections.push_back(entry.second);
+    }
+  }
+
+  std::vector<FireRequestBatch> batches;
+  for (const auto &connection : connections) {
+    FireRequestBatch batch;
+    {
+      std::scoped_lock lock(connection->mutex);
+      if (connection->pending_fire_requests.empty()) {
+        continue;
+      }
+      batch.connection_id = connection->id;
+      batch.requests.swap(connection->pending_fire_requests);
     }
     batches.push_back(std::move(batch));
   }
@@ -1027,6 +1056,23 @@ void SignalingStore::HandleClientMessage(const std::shared_ptr<ConnectionState> 
     const auto seq = NextServerMessageSeq(connection->id);
     const auto ack = LastClientMessageSeq(connection->id);
     connection->peer->SendOn(kUnreliableChannelLabel, ToRtcBinary(BuildPong(pong, seq, ack)));
+    return;
+  }
+
+  if (envelope.header.msg_type == MessageType::FireWeaponRequest) {
+    FireWeaponRequest request;
+    std::string error;
+    if (!ParseFireWeaponRequestPayload(envelope.payload, request, error)) {
+      record_invalid("invalid_fire_weapon_request");
+      return;
+    }
+    {
+      std::scoped_lock lock(connection->mutex);
+      if (connection->pending_fire_requests.size() >= kMaxPendingFireRequests) {
+        connection->pending_fire_requests.erase(connection->pending_fire_requests.begin());
+      }
+      connection->pending_fire_requests.push_back(std::move(request));
+    }
     return;
   }
 

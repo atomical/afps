@@ -15,7 +15,11 @@ export interface GainNodeLike extends AudioNodeLike {
   gain: AudioParamLike;
 }
 
-export interface AudioBufferLike {}
+export interface AudioBufferLike {
+  getChannelData?: (channel: number) => Float32Array;
+  length?: number;
+  sampleRate?: number;
+}
 
 export interface AudioBufferSourceLike extends AudioNodeLike {
   buffer: AudioBufferLike | null;
@@ -56,11 +60,13 @@ export interface AudioListenerLike {
 export interface AudioContextLike {
   state: 'suspended' | 'running' | 'closed';
   currentTime: number;
+  sampleRate: number;
   destination: AudioNodeLike;
   listener: AudioListenerLike;
   createGain: () => GainNodeLike;
   createBufferSource: () => AudioBufferSourceLike;
   createPanner: () => PannerNodeLike;
+  createBuffer: (channels: number, length: number, sampleRate: number) => AudioBufferLike;
   decodeAudioData: (data: ArrayBuffer) => Promise<AudioBufferLike>;
   resume: () => Promise<void>;
   close: () => Promise<void>;
@@ -84,6 +90,9 @@ export interface AudioManager {
   setMuted: (muted: boolean) => void;
   setVolume: (group: AudioGroup, value: number) => void;
   getSettings: () => AudioSettings;
+  createBuffer: (channels: number, length: number, sampleRate?: number) => AudioBufferLike | null;
+  registerBuffer: (key: string, buffer: AudioBufferLike) => void;
+  hasBuffer: (key: string) => boolean;
   load: (key: string, url: string) => Promise<AudioBufferLike | null>;
   preload: (entries: Record<string, string>) => Promise<Record<string, AudioBufferLike | null>>;
   play: (key: string, options?: { group?: AudioGroup; volume?: number }) => boolean;
@@ -128,6 +137,9 @@ export const createAudioManager = (options: AudioManagerOptions = {}): AudioMana
       setMuted: () => {},
       setVolume: () => {},
       getSettings: () => idleSettings,
+      createBuffer: () => null,
+      registerBuffer: () => {},
+      hasBuffer: () => false,
       load: async () => null,
       preload: async () => ({}),
       play: () => false,
@@ -197,6 +209,8 @@ export const createAudioManager = (options: AudioManagerOptions = {}): AudioMana
     );
     return results;
   };
+
+  const hasBuffer = (key: string) => buffers.has(key);
 
   const resolveGroupGain = (group?: AudioGroup) => {
     switch (group) {
@@ -336,6 +350,22 @@ export const createAudioManager = (options: AudioManagerOptions = {}): AudioMana
 
   const getSettings = () => ({ ...settings });
 
+  const createBuffer = (channels: number, length: number, sampleRate = context.sampleRate) => {
+    if (!Number.isFinite(length) || length <= 0) {
+      return null;
+    }
+    const safeChannels = Math.max(1, Math.floor(channels));
+    const safeSampleRate = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : context.sampleRate;
+    return context.createBuffer(safeChannels, Math.floor(length), safeSampleRate);
+  };
+
+  const registerBuffer = (key: string, buffer: AudioBufferLike) => {
+    if (!key || !buffer) {
+      return;
+    }
+    buffers.set(key, buffer);
+  };
+
   const dispose = async () => {
     if (context.state !== 'closed') {
       await context.close();
@@ -351,6 +381,9 @@ export const createAudioManager = (options: AudioManagerOptions = {}): AudioMana
     setMuted,
     setVolume,
     getSettings,
+    createBuffer,
+    registerBuffer,
+    hasBuffer,
     load,
     preload,
     play,

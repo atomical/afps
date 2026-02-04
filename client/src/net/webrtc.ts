@@ -2,6 +2,8 @@ import {
   buildClientHello as buildClientHelloMessage,
   decodeEnvelope,
   parseGameEventPayload,
+  parseWeaponFiredEventPayload,
+  parseWeaponReloadEventPayload,
   parsePlayerProfilePayload,
   parsePongPayload,
   parseServerHelloPayload,
@@ -10,6 +12,8 @@ import {
   MessageType,
   PROTOCOL_VERSION,
   type GameEvent,
+  type WeaponFiredEvent,
+  type WeaponReloadEvent,
   type PlayerProfile,
   type PongMessage,
   type StateSnapshot
@@ -44,6 +48,8 @@ interface WebRtcConnectOptions {
   onSnapshot?: (snapshot: StateSnapshot) => void;
   onPong?: (pong: PongMessage) => void;
   onGameEvent?: (event: GameEvent) => void;
+  onWeaponFired?: (event: WeaponFiredEvent) => void;
+  onWeaponReload?: (event: WeaponReloadEvent) => void;
   onPlayerProfile?: (profile: PlayerProfile) => void;
 }
 
@@ -156,6 +162,8 @@ export const createWebRtcConnector = ({
   onSnapshot,
   onPong,
   onGameEvent,
+  onWeaponFired,
+  onWeaponReload,
   onPlayerProfile
 }: WebRtcConnectOptions) => {
   const connect = async (): Promise<WebRtcSession> => {
@@ -252,6 +260,20 @@ export const createWebRtcConnector = ({
         const gameEvent = parseGameEventPayload(envelope.payload);
         if (gameEvent) {
           onGameEvent?.(gameEvent);
+        }
+        return;
+      }
+      if (envelope.header.msgType === MessageType.WeaponFiredEvent) {
+        const firedEvent = parseWeaponFiredEventPayload(envelope.payload);
+        if (firedEvent) {
+          onWeaponFired?.(firedEvent);
+        }
+        return;
+      }
+      if (envelope.header.msgType === MessageType.WeaponReloadEvent) {
+        const reloadEvent = parseWeaponReloadEventPayload(envelope.payload);
+        if (reloadEvent) {
+          onWeaponReload?.(reloadEvent);
         }
         return;
       }

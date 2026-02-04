@@ -1,4 +1,11 @@
-import type { GameEvent, PlayerProfile, PongMessage, StateSnapshot } from './protocol';
+import type {
+  GameEvent,
+  WeaponFiredEvent,
+  WeaponReloadEvent,
+  PlayerProfile,
+  PongMessage,
+  StateSnapshot
+} from './protocol';
 import type { Logger, PeerConnectionFactory, SignalingClient, TimerLike, WebRtcSession } from './types';
 import { createSignalingClient } from './signaling';
 import { createWebRtcConnector, defaultPeerConnectionFactory } from './webrtc';
@@ -20,6 +27,8 @@ export interface NetworkRuntimeConfig {
   onSnapshot?: (snapshot: StateSnapshot) => void;
   onPong?: (pong: PongMessage) => void;
   onGameEvent?: (event: GameEvent) => void;
+  onWeaponFired?: (event: WeaponFiredEvent) => void;
+  onWeaponReload?: (event: WeaponReloadEvent) => void;
   onPlayerProfile?: (profile: PlayerProfile) => void;
 }
 
@@ -47,6 +56,8 @@ interface RuntimeDependencies {
     onSnapshot?: (snapshot: StateSnapshot) => void;
     onPong?: (pong: PongMessage) => void;
     onGameEvent?: (event: GameEvent) => void;
+    onWeaponFired?: (event: WeaponFiredEvent) => void;
+    onWeaponReload?: (event: WeaponReloadEvent) => void;
     onPlayerProfile?: (profile: PlayerProfile) => void;
   }) => { connect: () => Promise<WebRtcSession> };
   fetcher?: typeof fetch;
@@ -81,6 +92,8 @@ export const connectIfConfigured = async (
     onSnapshot: config.onSnapshot,
     onPong: config.onPong,
     onGameEvent: config.onGameEvent,
+    onWeaponFired: config.onWeaponFired,
+    onWeaponReload: config.onWeaponReload,
     onPlayerProfile: config.onPlayerProfile
   });
 

@@ -80,6 +80,8 @@ const createDeps = () => {
     onSnapshot?: unknown;
     onPong?: unknown;
     onGameEvent?: unknown;
+    onWeaponFired?: unknown;
+    onWeaponReload?: unknown;
     onPlayerProfile?: unknown;
     buildClientHello?: unknown;
   } | null = null;
@@ -93,6 +95,8 @@ const createDeps = () => {
     onSnapshot?: unknown;
     onPong?: unknown;
     onGameEvent?: unknown;
+    onWeaponFired?: unknown;
+    onWeaponReload?: unknown;
     onPlayerProfile?: unknown;
     buildClientHello?: unknown;
   }) => {

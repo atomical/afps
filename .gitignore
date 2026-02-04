@@ -5,6 +5,7 @@ client/node_modules
 client/dist
 client/public/wasm
 client/coverage/**
+client/public/assets/weapons/cc0/kenney_blaster_kit/bullet-foam.glb
 
 # Server
 server/build
@@ -16,6 +17,9 @@ shared/wasm/dist
 
 # Logs
 *.log
+
+# Coverage
+coverage/
 
 # Misc
 kenney_city-kit-suburban_20

@@ -45,7 +45,7 @@ void WriteU32(uint8_t *data, uint32_t value) {
 
 bool IsValidMessageType(uint16_t value) {
   return value >= static_cast<uint16_t>(MessageType::ClientHello) &&
-         value <= static_cast<uint16_t>(MessageType::Disconnect);
+         value <= static_cast<uint16_t>(MessageType::WeaponReloadEvent);
 }
 
 template <typename T>
@@ -224,6 +224,38 @@ bool ParseInputCmdPayload(const std::vector<uint8_t> &payload, InputCmd &out, st
   return true;
 }
 
+bool ParseFireWeaponRequestPayload(const std::vector<uint8_t> &payload, FireWeaponRequest &out, std::string &error) {
+  const auto *req = VerifyPayload<afps::protocol::FireWeaponRequest>(payload, error);
+  if (!req) {
+    return false;
+  }
+  out.client_shot_seq = req->client_shot_seq();
+  if (out.client_shot_seq < 0) {
+    error = "invalid_field: clientShotSeq";
+    return false;
+  }
+  if (const auto *weapon_id = req->weapon_id()) {
+    out.weapon_id = weapon_id->str();
+  }
+  out.weapon_slot = req->weapon_slot();
+  if (out.weapon_slot < 0) {
+    error = "invalid_field: weaponSlot";
+    return false;
+  }
+  out.origin_x = req->origin_x();
+  out.origin_y = req->origin_y();
+  out.origin_z = req->origin_z();
+  out.dir_x = req->dir_x();
+  out.dir_y = req->dir_y();
+  out.dir_z = req->dir_z();
+  if (!IsFinite(out.origin_x) || !IsFinite(out.origin_y) || !IsFinite(out.origin_z) ||
+      !IsFinite(out.dir_x) || !IsFinite(out.dir_y) || !IsFinite(out.dir_z)) {
+    error = "invalid_field: origin_dir";
+    return false;
+  }
+  return true;
+}
+
 bool ParsePingPayload(const std::vector<uint8_t> &payload, Ping &out, std::string &error) {
   const auto *ping = VerifyPayload<afps::protocol::Ping>(payload, error);
   if (!ping) {
@@ -298,6 +330,61 @@ std::vector<uint8_t> BuildGameEvent(const GameEvent &event, uint32_t msg_seq, ui
   return EncodeEnvelope(MessageType::GameEvent, builder.GetBufferPointer(), builder.GetSize(), msg_seq, server_seq_ack);
 }
 
+std::vector<uint8_t> BuildWeaponFiredEvent(const WeaponFiredEvent &event, uint32_t msg_seq,
+                                           uint32_t server_seq_ack) {
+  flatbuffers::FlatBufferBuilder builder(256);
+  const auto shooter_id = builder.CreateString(event.shooter_id);
+  const auto weapon_id = builder.CreateString(event.weapon_id);
+  const auto offset = afps::protocol::CreateWeaponFiredEvent(
+      builder,
+      shooter_id,
+      weapon_id,
+      event.weapon_slot,
+      event.server_tick,
+      event.shot_seq,
+      event.muzzle_pos_x,
+      event.muzzle_pos_y,
+      event.muzzle_pos_z,
+      event.dir_x,
+      event.dir_y,
+      event.dir_z,
+      event.dry_fire,
+      event.casing_enabled,
+      event.casing_pos_x,
+      event.casing_pos_y,
+      event.casing_pos_z,
+      event.casing_rot_x,
+      event.casing_rot_y,
+      event.casing_rot_z,
+      event.casing_vel_x,
+      event.casing_vel_y,
+      event.casing_vel_z,
+      event.casing_ang_x,
+      event.casing_ang_y,
+      event.casing_ang_z,
+      event.casing_seed);
+  builder.Finish(offset);
+  return EncodeEnvelope(MessageType::WeaponFiredEvent, builder.GetBufferPointer(), builder.GetSize(), msg_seq,
+                        server_seq_ack);
+}
+
+std::vector<uint8_t> BuildWeaponReloadEvent(const WeaponReloadEvent &event, uint32_t msg_seq,
+                                            uint32_t server_seq_ack) {
+  flatbuffers::FlatBufferBuilder builder(128);
+  const auto shooter_id = builder.CreateString(event.shooter_id);
+  const auto weapon_id = builder.CreateString(event.weapon_id);
+  const auto offset = afps::protocol::CreateWeaponReloadEvent(
+      builder,
+      shooter_id,
+      weapon_id,
+      event.weapon_slot,
+      event.server_tick,
+      event.reload_seconds);
+  builder.Finish(offset);
+  return EncodeEnvelope(MessageType::WeaponReloadEvent, builder.GetBufferPointer(), builder.GetSize(), msg_seq,
+                        server_seq_ack);
+}
+
 std::vector<uint8_t> BuildStateSnapshot(const StateSnapshot &snapshot, uint32_t msg_seq,
                                         uint32_t server_seq_ack) {
   flatbuffers::FlatBufferBuilder builder(256);
@@ -314,6 +401,7 @@ std::vector<uint8_t> BuildStateSnapshot(const StateSnapshot &snapshot, uint32_t 
       snapshot.vel_y,
       snapshot.vel_z,
       snapshot.weapon_slot,
+      snapshot.ammo_in_mag,
       snapshot.dash_cooldown,
       snapshot.health,
       snapshot.kills,
@@ -341,6 +429,7 @@ std::vector<uint8_t> BuildStateSnapshotDelta(const StateSnapshotDelta &delta, ui
       delta.vel_y,
       delta.vel_z,
       delta.weapon_slot,
+      delta.ammo_in_mag,
       delta.dash_cooldown,
       delta.health,
       delta.kills,

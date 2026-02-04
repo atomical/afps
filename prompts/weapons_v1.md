@@ -27,24 +27,24 @@ ABSOLUTE REQUIREMENTS (do not violate):
    - If some weapons have no prior data, use the “Default balancing table” below exactly (real numbers provided) and ensure they are used.
 
 CONTEXT DISCOVERY (first thing you do):
-- [ ] A) Identify the project type and networking layer by scanning repository:
+- [x] A) Identify the project type and networking layer by scanning repository:
    - Unity? Look for Assets/, ProjectSettings/, Packages/manifest.json.
    - Unreal? Look for .uproject, Source/.
    - Godot? Look for project.godot.
    - Web? Look for package.json + src/ + a server folder.
    - Roblox? Look for .rbxl, Luau, ReplicatedStorage/ etc.
-- [ ] B) Determine current weapon firing flow:
+- [x] B) Determine current weapon firing flow:
    - Where input triggers “TryFire()”
    - Where ammo is stored
    - Where projectiles/traces are spawned
    - Where server authority lives
-- [ ] C) Determine how the project already replicates shooting (if it does):
+- [x] C) Determine how the project already replicates shooting (if it does):
    - existing RPC/event types
    - existing “spawn VFX” message pattern
 You MUST integrate into the existing patterns and style of the repo (naming, folder structure, networking abstraction).
 
 DESIGN TO IMPLEMENT (must be clean + scalable):
-- [ ] 1) WeaponDefinition + Registry
+- [x] 1) WeaponDefinition + Registry
    - Create a central WeaponDatabase/WeaponRegistry that maps WeaponId → WeaponDefinition.
    - WeaponDefinition must include:
      * id (stable string or enum)
@@ -69,7 +69,7 @@ DESIGN TO IMPLEMENT (must be clean + scalable):
      * (optional but recommended) reloadSeconds, reserveAmmoMax, pellets, etc — only if they exist in current game logic.
    - Add runtime validation (development builds): on startup, validate that every weapon in the project has a WeaponDefinition entry AND that every sound reference resolves AND that casing prefab resolves when ejectShellsWhileFiring is true. Fail loudly with actionable error.
 
-- [ ] 2) Server-authoritative fire + replicated cosmetic events
+- [x] 2) Server-authoritative fire + replicated cosmetic events
    - Implement/extend server-authoritative “FireWeapon” request handling (if already exists, modify it).
    - When server approves a shot:
      - Decrement ammo on server.
@@ -94,7 +94,7 @@ DESIGN TO IMPLEMENT (must be clean + scalable):
          - if casing enabled: spawn local casing visual with that initial velocity & spin
    - IMPORTANT: do NOT trust client to decide casing ejection. Clients may request fire, but server decides whether it happened.
 
-- [ ] 3) Shell/Casing prefab + pooling + local physics
+- [x] 3) Shell/Casing prefab + pooling + local physics
    - Create “Casing” prefab that uses the Blaster Kit bullet mesh/model:
      - Add collider + rigidbody (or equivalent physics component) appropriate to engine.
      - Use continuous collision if needed to avoid tunneling.
@@ -106,7 +106,7 @@ DESIGN TO IMPLEMENT (must be clean + scalable):
      - Rate-limit impacts per casing so it doesn’t spam on jittering contacts (e.g., min 0.08s between impacts, max 4 impacts).
    - Casing visual does not need to be identical physics across clients; only spawn timing and initial conditions must match.
 
-- [ ] 4) Sound generation (NO placeholders)
+- [x] 4) Sound generation (NO placeholders)
    - You must provide real audible sounds without downloading external assets.
    - Implement procedural audio synthesis that generates the needed clips at runtime OR generate actual .wav assets through an editor/tool script checked into the repo.
    - Choose the best approach based on engine:
@@ -230,21 +230,21 @@ Casing impacts:
   casing_impact_02: damped sine 2400 Hz, 45ms
 
 IMPLEMENTATION DETAILS (write real code, not pseudocode):
-- [ ] 1) Add/modify the weapon config layer:
+- [x] 1) Add/modify the weapon config layer:
    - If the project already has ScriptableObjects / JSON / YAML for weapons, extend it.
    - Else, create a WeaponDatabase asset or config file. MUST be loaded on server + client.
    - Ensure the server uses the same definitions as the client to decide casing behavior and to clamp fire cadence.
 
-- [ ] 2) Add WeaponId enumeration:
+- [x] 2) Add WeaponId enumeration:
    - Use stable identifiers. If weapons already exist (prefabs or item ids), use those ids.
    - Map each existing weapon to one of the above defaults by closest match (and document mapping in code comments).
 
-- [ ] 3) Update firing logic:
+- [x] 3) Update firing logic:
    - Semi: one shot per input press.
    - Full auto: repeated shots while input held, respecting cooldownSeconds.
    - Server authoritative rate limiting: server rejects fire requests faster than cooldownSeconds for that weapon.
 
-- [ ] 4) Networking integration:
+- [x] 4) Networking integration:
    - Use existing RPC/event system.
    - Add these messages if not present:
      - FireWeaponRequest (client→server) [weaponId, aim origin/dir, clientShotSeq]
@@ -254,7 +254,7 @@ IMPLEMENTATION DETAILS (write real code, not pseudocode):
      - WeaponFiredEvent should be UNRELIABLE if available (it’s cosmetic + frequent), but must be ordered per shooter if possible.
      - Reload events can be reliable.
 
-- [ ] 5) Casing spawn on clients:
+- [x] 5) Casing spawn on clients:
    - On WeaponFiredEvent:
      - if definition.ejectShellsWhileFiring:
        - spawn casing from pool at ejectPortWorldPos/Rot
@@ -264,13 +264,13 @@ IMPLEMENTATION DETAILS (write real code, not pseudocode):
      - Prefer an existing socket/transform on weapon viewmodel/worldmodel.
      - If none exists, create a reasonable offset relative to the muzzle/right side and store it in WeaponDefinition as a local offset (real numeric offsets; do not leave blank).
 
-- [ ] 6) “Blaster Kit bullet” casing asset:
+- [x] 6) “Blaster Kit bullet” casing asset:
    - Search for the bullet mesh/model in the project (by name “bullet”, “Bullet”, “ammo”, etc).
    - Create “Casing” prefab using that mesh:
      - Rotate/scale so it looks like a casing. If the bullet is pointy, make it look like a sci-fi cartridge by scaling Y and adding slight metallic material (using existing materials in repo, no placeholder).
    - If materials are required and none exist, create a basic metallic material in-engine (real values: color, smoothness/roughness).
 
-- [ ] 7) Sound system:
+- [x] 7) Sound system:
    - Create a WeaponSfxProvider that:
      - Given (weaponId, actionType, variantSeed) returns an AudioClip/AudioBuffer.
      - Caches generated clips.
@@ -283,7 +283,7 @@ IMPLEMENTATION DETAILS (write real code, not pseudocode):
      - Reload: replicate ReloadStartedEvent so others hear it.
    - Ensure volume rolloff/spatialization is configured so nearby players hear it and distant players don’t.
 
-- [ ] 8) QA / Validation:
+- [x] 8) QA / Validation:
    - Add a debug command (or dev UI) that lists all WeaponIds and prints their definition values.
    - Add an automated validation/test that fails if:
      - any weapon lacks definition
@@ -292,13 +292,13 @@ IMPLEMENTATION DETAILS (write real code, not pseudocode):
      - casing ejection enabled but casing prefab/mesh missing
 
 DELIVERABLES (what you must commit/change):
-- [ ] WeaponDefinition + WeaponDatabase/Registry
-- [ ] Complete weapon entries for ALL weapons found in repo (and at least the defaults above)
-- [ ] Updated weapon firing code to consume WeaponDefinition
-- [ ] Server-synced WeaponFiredEvent that drives client VFX + casing + fire sound
-- [ ] Casing prefab built from Blaster Kit bullet + pooling + collision impact sounds
-- [ ] Procedural SFX generator integrated and used by WeaponDefinition sounds
-- [ ] Minimal documentation in README or docs/WEAPONS.md describing:
+- [x] WeaponDefinition + WeaponDatabase/Registry
+- [x] Complete weapon entries for ALL weapons found in repo (and at least the defaults above)
+- [x] Updated weapon firing code to consume WeaponDefinition
+- [x] Server-synced WeaponFiredEvent that drives client VFX + casing + fire sound
+- [x] Casing prefab built from Blaster Kit bullet + pooling + collision impact sounds
+- [x] Procedural SFX generator integrated and used by WeaponDefinition sounds
+- [x] Minimal documentation in README or docs/WEAPONS.md describing:
   - how to add a new weapon definition
   - how casing replication works
   - how SFX generation works

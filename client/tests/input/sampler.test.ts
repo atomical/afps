@@ -12,6 +12,12 @@ const dispatchMove = (dx: number, dy: number) => {
   window.dispatchEvent(event);
 };
 
+const dispatchWheel = (deltaY: number) => {
+  const event = new Event('wheel') as unknown as WheelEvent;
+  Object.defineProperty(event, 'deltaY', { value: deltaY });
+  window.dispatchEvent(event);
+};
+
 const createRng = (seed: number) => {
   let state = seed >>> 0;
   return () => {
@@ -129,6 +135,42 @@ describe('input sampler', () => {
     const sample = sampler.sample();
 
     expect(sample.weaponSlot).toBe(0);
+
+    sampler.dispose();
+  });
+
+  it('cycles weapon slots with the mouse wheel', () => {
+    const sampler = createInputSampler({ target: window, weaponSlots: 4 });
+
+    dispatchWheel(-1);
+    expect(sampler.sample().weaponSlot).toBe(3);
+
+    dispatchWheel(1);
+    expect(sampler.sample().weaponSlot).toBe(0);
+
+    dispatchWheel(1);
+    expect(sampler.sample().weaponSlot).toBe(1);
+
+    sampler.dispose();
+  });
+
+  it('ignores wheel selection when only one slot is configured', () => {
+    const sampler = createInputSampler({ target: window, weaponSlots: 1 });
+
+    dispatchWheel(1);
+    expect(sampler.sample().weaponSlot).toBe(0);
+
+    sampler.dispose();
+  });
+
+  it('ignores zero and non-finite wheel deltas', () => {
+    const sampler = createInputSampler({ target: window, weaponSlots: 3 });
+
+    dispatchWheel(0);
+    expect(sampler.sample().weaponSlot).toBe(0);
+
+    dispatchWheel(Number.NaN);
+    expect(sampler.sample().weaponSlot).toBe(0);
 
     sampler.dispose();
   });

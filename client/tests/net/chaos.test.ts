@@ -63,6 +63,7 @@ const makeSnapshot = (serverTick: number) => ({
   velY: -0.05,
   velZ: 0,
   weaponSlot: 0,
+  ammoInMag: 30,
   dashCooldown: 0,
   health: 100,
   kills: 0,

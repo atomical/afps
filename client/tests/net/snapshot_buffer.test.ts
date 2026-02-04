@@ -11,6 +11,7 @@ const makeSnapshot = (
   velY = 0,
   velZ = 0,
   weaponSlot = 0,
+  ammoInMag = 30,
   dashCooldown = 0,
   health = 100,
   kills = 0,
@@ -26,6 +27,7 @@ const makeSnapshot = (
   velY,
   velZ,
   weaponSlot,
+  ammoInMag,
   dashCooldown,
   health,
   kills,
@@ -48,8 +50,8 @@ describe('SnapshotBuffer', () => {
 
   it('interpolates between snapshots', () => {
     const buffer = new SnapshotBuffer(10);
-    buffer.push(makeSnapshot(1, 0, 0, 0, 0, 2, 1, 0, 0.4, 100, 0, 0), 0);
-    buffer.push(makeSnapshot(2, 10, 0, 1, 10, 0, 3, 1, 0.2, 80, 1, 0), 100);
+    buffer.push(makeSnapshot(1, 0, 0, 0, 0, 2, 1, 0, 30, 0.4, 100, 0, 0), 0);
+    buffer.push(makeSnapshot(2, 10, 0, 1, 10, 0, 3, 1, 12, 0.2, 80, 1, 0), 100);
 
     const sample = buffer.sample(250);
     expect(sample).not.toBeNull();
@@ -58,6 +60,7 @@ describe('SnapshotBuffer', () => {
     expect(sample?.velY).toBeCloseTo(1);
     expect(sample?.posZ).toBeCloseTo(0.5);
     expect(sample?.velZ).toBeCloseTo(2);
+    expect(sample?.ammoInMag).toBe(12);
     expect(sample?.dashCooldown).toBeCloseTo(0.3);
     expect(sample?.health).toBe(80);
     expect(sample?.kills).toBe(1);

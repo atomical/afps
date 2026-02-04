@@ -12,8 +12,15 @@ import {
   getWasmSimParity,
   getWasmSimUrl
 } from './net/env';
-import { buildClientHello, buildPing } from './net/protocol';
-import type { GameEvent, PlayerProfile as NetPlayerProfile, PongMessage, StateSnapshot } from './net/protocol';
+import { buildClientHello, buildPing, encodeFireWeaponRequest } from './net/protocol';
+import type {
+  GameEvent,
+  PlayerProfile as NetPlayerProfile,
+  PongMessage,
+  StateSnapshot,
+  WeaponFiredEvent,
+  WeaponReloadEvent
+} from './net/protocol';
 import { createStatusOverlay } from './ui/status';
 import { createInputSampler } from './input/sampler';
 import { loadBindings, saveBindings } from './input/bindings';
@@ -30,7 +37,15 @@ import { loadAudioSettings, saveAudioSettings } from './audio/settings';
 import { loadWasmSimFromUrl } from './sim/wasm';
 import { createWasmPredictionSim } from './sim/wasm_adapter';
 import { runWasmParityCheck } from './sim/parity';
-import { WEAPON_DEFS } from './weapons/config';
+import { WEAPON_BY_ID, WEAPON_CONFIG, WEAPON_DEFS } from './weapons/config';
+import { exposeWeaponDebug } from './weapons/debug';
+import { generateWeaponSfx } from './weapons/sfx';
+import {
+  formatWeaponValidationErrors,
+  validateWeaponDefinitions,
+  validateWeaponSounds
+} from './weapons/validation';
+import { createCasingPool } from './weapons/casing_pool';
 import { loadCharacterCatalog } from './characters/catalog';
 import { createPrejoinOverlay } from './ui/prejoin';
 import type { LocalPlayerProfile } from './profile/types';
@@ -39,6 +54,7 @@ import { createRemoteAvatarManager } from './players/remote_avatars';
 
 const three = {
   ...THREE,
+  Object3D: THREE.Object3D,
   EffectComposer,
   RenderPass,
   OutlinePass,
@@ -49,7 +65,6 @@ const BASE_URL = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL 
 const NORMALIZED_BASE = BASE_URL.endsWith('/') ? BASE_URL : `${BASE_URL}/`;
 const AUDIO_ROOT = `${NORMALIZED_BASE}assets/audio/`;
 const AUDIO_ASSETS = {
-  weaponFire: `${AUDIO_ROOT}weapon_fire.wav`,
   impact: `${AUDIO_ROOT}impact.wav`,
   footstep: `${AUDIO_ROOT}footstep.wav`,
   uiClick: `${AUDIO_ROOT}ui_click.wav`
@@ -67,11 +82,33 @@ let currentBindings = loadBindings(window.localStorage);
 const savedAudioSettings = loadAudioSettings(window.localStorage);
 const audio = createAudioManager({ settings: savedAudioSettings });
 void audio.preload({
-  weaponFire: AUDIO_ASSETS.weaponFire,
   impact: AUDIO_ASSETS.impact,
   footstep: AUDIO_ASSETS.footstep,
   uiClick: AUDIO_ASSETS.uiClick
 });
+const isTestMode = (import.meta as { env?: { MODE?: string } }).env?.MODE === 'test';
+const shouldValidateWeapons = Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV) && !isTestMode;
+if (shouldValidateWeapons) {
+  exposeWeaponDebug(
+    typeof window !== 'undefined' ? (window as unknown as { afpsDebug?: Record<string, unknown> }) : null,
+    WEAPON_CONFIG.weapons
+  );
+  const definitionErrors = validateWeaponDefinitions(WEAPON_CONFIG.weapons);
+  if (definitionErrors.length > 0) {
+    const message = formatWeaponValidationErrors(definitionErrors);
+    console.error(message);
+    throw new Error(message);
+  }
+}
+generateWeaponSfx(audio, WEAPON_CONFIG.weapons);
+if (shouldValidateWeapons) {
+  const soundErrors = validateWeaponSounds(WEAPON_CONFIG.weapons, audio);
+  if (soundErrors.length > 0) {
+    const message = formatWeaponValidationErrors(soundErrors);
+    console.error(message);
+    throw new Error(message);
+  }
+}
 const { app, canvas } = startApp({ three, document, window, lookSensitivity, loadEnvironment: true });
 const debugAudio = (import.meta.env?.VITE_DEBUG_AUDIO ?? '') === 'true';
 if (debugAudio) {
@@ -79,7 +116,6 @@ if (debugAudio) {
     play: (key: keyof typeof AUDIO_ASSETS) => audio.play(key, { group: 'sfx' }),
     preload: () =>
       audio.preload({
-        weaponFire: AUDIO_ASSETS.weaponFire,
         impact: AUDIO_ASSETS.impact,
         footstep: AUDIO_ASSETS.footstep,
         uiClick: AUDIO_ASSETS.uiClick
@@ -89,6 +125,23 @@ if (debugAudio) {
   };
 }
 const remoteAvatars = createRemoteAvatarManager({ three, scene: app.state.scene });
+const casingPool = createCasingPool({
+  three,
+  scene: app.state.scene,
+  audio,
+  impactSounds: ['casing:impact:1', 'casing:impact:2']
+});
+if (shouldValidateWeapons) {
+  void casingPool.ready.then((ready) => {
+    if (!ready) {
+      const message = 'Weapon validation failed: casing model failed to load.';
+      console.error(message);
+      throw new Error(message);
+    }
+  });
+} else {
+  void casingPool.ready;
+}
 let remotePruneInterval: number | null = null;
 let localConnectionId: string | null = null;
 let localAvatarActive = false;
@@ -195,6 +248,7 @@ const updateLocalAvatar = (nowMs: number) => {
       velY,
       velZ,
       weaponSlot: currentWeaponSlot,
+      ammoInMag: WEAPON_DEFS[currentWeaponSlot]?.maxAmmoInMag ?? 0,
       dashCooldown: 0,
       health: 100,
       kills: 0,
@@ -231,6 +285,7 @@ const updateLocalAvatar = (nowMs: number) => {
 app.setBeforeRender((deltaSeconds, nowMs) => {
   updateLocalAvatar(nowMs);
   remoteAvatars.update(deltaSeconds);
+  casingPool.update(deltaSeconds);
   const cameraPos = app.state.camera?.position;
   if (cameraPos) {
     const angles = app.getLookAngles();
@@ -279,7 +334,7 @@ const resolveWeaponSlot = (slot: number) => {
   }
   return Math.min(maxSlot, Math.max(0, Math.floor(slot)));
 };
-const resolveWeaponLabel = (slot: number) => WEAPON_DEFS[slot]?.name ?? '--';
+const resolveWeaponLabel = (slot: number) => WEAPON_DEFS[slot]?.displayName ?? '--';
 const resolveTeamIndex = (connectionId: string | null) => {
   if (!connectionId) {
     return 0;
@@ -289,6 +344,15 @@ const resolveTeamIndex = (connectionId: string | null) => {
     hash = (hash + connectionId.charCodeAt(i)) % 2;
   }
   return hash;
+};
+const swapYZ = (vec: { x: number; y: number; z: number }) => ({ x: vec.x, y: vec.z, z: vec.y });
+const anglesToDirection = (angles: { yaw: number; pitch: number }) => {
+  const cosPitch = Math.cos(angles.pitch);
+  return {
+    x: Math.sin(angles.yaw) * cosPitch,
+    y: Math.sin(angles.pitch),
+    z: -Math.cos(angles.yaw) * cosPitch
+  };
 };
 let currentWeaponSlot = 0;
 let sampler: ReturnType<typeof createInputSampler> | null = null;
@@ -410,7 +474,10 @@ if (wasmSimUrl) {
 }
 
 hudStore.dispatch({ type: 'sensitivity', value: lookSensitivity });
-hudStore.dispatch({ type: 'vitals', value: { ammo: Infinity } });
+hudStore.dispatch({
+  type: 'vitals',
+  value: { ammo: WEAPON_DEFS[currentWeaponSlot]?.maxAmmoInMag }
+});
 hudStore.dispatch({ type: 'weapon', slot: currentWeaponSlot, name: resolveWeaponLabel(currentWeaponSlot) });
 hudStore.dispatch({ type: 'weaponCooldown', value: app.getWeaponCooldown(currentWeaponSlot) });
 hudStore.dispatch({ type: 'abilityCooldowns', value: app.getAbilityCooldowns() });
@@ -435,6 +502,7 @@ if (!signalingUrl) {
   status.setState('idle', 'Awaiting pre-join');
   const storedProfile = loadProfile(window.localStorage);
   const playerProfiles = new Map<string, NetPlayerProfile>();
+  const lastSnapshots = new Map<string, StateSnapshot>();
   const handlePlayerProfile = (profile: NetPlayerProfile) => {
     playerProfiles.set(profile.clientId, profile);
     remoteAvatars.setProfile(profile);
@@ -464,6 +532,9 @@ if (!signalingUrl) {
         Boolean(localConnectionId) &&
         Boolean(snapshot.clientId) &&
         snapshot.clientId === localConnectionId;
+      if (snapshot.clientId) {
+        lastSnapshots.set(snapshot.clientId, snapshot);
+      }
       if (snapshot.clientId && !isLocalSnapshot) {
         remoteAvatars.upsertSnapshot(snapshot, now);
       }
@@ -473,7 +544,7 @@ if (!signalingUrl) {
       lastSnapshotAt = now;
       lastPredictionError = app.ingestSnapshot(snapshot, now);
       updateMetrics();
-      hudStore.dispatch({ type: 'vitals', value: { health: snapshot.health, ammo: Infinity } });
+      hudStore.dispatch({ type: 'vitals', value: { health: snapshot.health, ammo: snapshot.ammoInMag } });
       hudStore.dispatch({ type: 'score', value: { kills: snapshot.kills, deaths: snapshot.deaths } });
     };
 
@@ -485,17 +556,11 @@ if (!signalingUrl) {
         return;
       }
       if (event.event === 'ProjectileSpawn') {
-        if (localConnectionId && event.ownerId === localConnectionId) {
-          return;
-        }
-        audio.playPositional('weaponFire', {
-          x: event.posX,
-          y: event.posZ,
-          z: event.posY
-        });
+        const origin = swapYZ({ x: event.posX, y: event.posY, z: event.posZ });
+        const velocity = swapYZ({ x: event.velX, y: event.velY, z: event.velZ });
         app.spawnProjectileVfx({
-          origin: { x: event.posX, y: event.posY, z: event.posZ },
-          velocity: { x: event.velX, y: event.velY, z: event.velZ },
+          origin,
+          velocity,
           ttl: event.ttl,
           projectileId: event.projectileId
         });
@@ -503,6 +568,77 @@ if (!signalingUrl) {
       }
       if (event.event === 'ProjectileRemove') {
         app.removeProjectileVfx(event.projectileId);
+      }
+    };
+
+    const resolveWeapon = (weaponId: string) => WEAPON_BY_ID[weaponId];
+    const resolveFireSound = (weapon: typeof WEAPON_DEFS[number], shotSeq: number) => {
+      if (weapon.sounds.fireVariant2) {
+        return shotSeq % 2 === 0 ? weapon.sounds.fire : weapon.sounds.fireVariant2;
+      }
+      return weapon.sounds.fire;
+    };
+
+    const resolveSnapshotPosition = (clientId?: string | null) => {
+      if (!clientId) {
+        return null;
+      }
+      const snapshot = lastSnapshots.get(clientId);
+      if (!snapshot) {
+        return null;
+      }
+      return swapYZ({ x: snapshot.posX, y: snapshot.posY, z: snapshot.posZ });
+    };
+
+    const onWeaponFired = (event: WeaponFiredEvent) => {
+      const weapon = resolveWeapon(event.weaponId);
+      if (!weapon) {
+        return;
+      }
+      const muzzlePos = swapYZ({ x: event.muzzlePosX, y: event.muzzlePosY, z: event.muzzlePosZ });
+      const dir = swapYZ({ x: event.dirX, y: event.dirY, z: event.dirZ });
+      if (event.dryFire) {
+        audio.playPositional(weapon.sounds.dryFire, muzzlePos, { group: 'sfx', volume: 0.55 });
+      } else {
+        const fireKey = resolveFireSound(weapon, event.shotSeq);
+        audio.playPositional(fireKey, muzzlePos, { group: 'sfx', volume: 0.85 });
+        if (weapon.kind === 'hitscan') {
+          app.spawnTracerVfx({
+            origin: muzzlePos,
+            dir,
+            length: weapon.range
+          });
+        }
+      }
+      if (event.casingEnabled) {
+        const rotation = swapYZ({ x: event.casingRotX, y: event.casingRotY, z: event.casingRotZ });
+        const velocity = swapYZ({ x: event.casingVelX, y: event.casingVelY, z: event.casingVelZ });
+        const angularVelocity = swapYZ({ x: event.casingAngX, y: event.casingAngY, z: event.casingAngZ });
+        casingPool.spawn({
+          position: swapYZ({ x: event.casingPosX, y: event.casingPosY, z: event.casingPosZ }),
+          rotation,
+          velocity,
+          angularVelocity,
+          lifetimeSeconds: weapon.casingEject.lifetimeSeconds,
+          seed: event.casingSeed
+        });
+      }
+      if (localConnectionId && event.shooterId === localConnectionId) {
+        app.recordWeaponFired(event.weaponSlot, weapon.cooldownSeconds);
+        hudStore.dispatch({ type: 'weaponCooldown', value: app.getWeaponCooldown(currentWeaponSlot) });
+      }
+    };
+
+    const onWeaponReload = (event: WeaponReloadEvent) => {
+      const weapon = resolveWeapon(event.weaponId);
+      if (!weapon) {
+        return;
+      }
+      const position = resolveSnapshotPosition(event.shooterId);
+      if (position) {
+        audio.playPositional(weapon.sounds.reload, position, { group: 'sfx', volume: 0.65 });
+      } else {
+        audio.play(weapon.sounds.reload, { group: 'sfx', volume: 0.65 });
       }
     };
 
@@ -533,6 +669,8 @@ if (!signalingUrl) {
       onSnapshot,
       onPong,
       onGameEvent,
+      onWeaponFired,
+      onWeaponReload,
       onPlayerProfile: handlePlayerProfile
     })
       .then((session) => {
@@ -563,7 +701,9 @@ if (!signalingUrl) {
         hudStore.dispatch({ type: 'weaponCooldown', value: app.getWeaponCooldown(currentWeaponSlot) });
         hudStore.dispatch({ type: 'abilityCooldowns', value: app.getAbilityCooldowns() });
 
-        sampler = createInputSampler({ target: window, bindings: currentBindings });
+        sampler = createInputSampler({ target: window, bindings: currentBindings, weaponSlots: WEAPON_DEFS.length });
+        const lastFireTimes = new Map<number, number>();
+        let clientShotSeq = 0;
         const sender = createInputSender({
           channel: session.unreliableChannel,
           sampler,
@@ -584,6 +724,7 @@ if (!signalingUrl) {
             cmd.viewPitch = angles.pitch;
             applyMovementYaw(cmd, cmd.viewYaw);
             const firePressed = cmd.fire && !lastFire;
+            const fireHeld = cmd.fire;
             lastFire = cmd.fire;
             const nextSlot = resolveWeaponSlot(cmd.weaponSlot);
             cmd.weaponSlot = nextSlot;
@@ -594,10 +735,51 @@ if (!signalingUrl) {
                 slot: currentWeaponSlot,
                 name: resolveWeaponLabel(currentWeaponSlot)
               });
-              app.setWeaponViewmodel(WEAPON_DEFS[currentWeaponSlot]?.id);
+              const equipped = WEAPON_DEFS[currentWeaponSlot];
+              app.setWeaponViewmodel(equipped?.id);
+              if (equipped?.sounds.equip) {
+                audio.play(equipped.sounds.equip, { group: 'sfx', volume: 0.6 });
+              }
             }
-            if (firePressed) {
-              audio.play('weaponFire', { group: 'sfx', volume: 0.9 });
+            const weapon = WEAPON_DEFS[currentWeaponSlot];
+            if (weapon) {
+              const shouldFire =
+                weapon.fireMode === 'FULL_AUTO' ? fireHeld : firePressed;
+              if (shouldFire) {
+                const now = window.performance.now();
+                const cooldownMs = weapon.cooldownSeconds * 1000;
+                const lastAt = lastFireTimes.get(currentWeaponSlot) ?? -Infinity;
+                if (now - lastAt >= cooldownMs) {
+                  lastFireTimes.set(currentWeaponSlot, now);
+                  clientShotSeq += 1;
+                  const cameraPos = app.state.camera?.position ?? { x: 0, y: 0, z: 0 };
+                  const originServer = swapYZ({
+                    x: cameraPos.x,
+                    y: cameraPos.y,
+                    z: cameraPos.z
+                  });
+                  const dirThree = anglesToDirection(angles);
+                  const dirServer = swapYZ(dirThree);
+                  session.unreliableChannel.send(
+                    encodeFireWeaponRequest(
+                      {
+                        type: 'FireWeaponRequest',
+                        clientShotSeq,
+                        weaponId: weapon.id,
+                        weaponSlot: currentWeaponSlot,
+                        originX: originServer.x,
+                        originY: originServer.y,
+                        originZ: originServer.z,
+                        dirX: dirServer.x,
+                        dirY: dirServer.y,
+                        dirZ: dirServer.z
+                      },
+                      session.nextClientMessageSeq(),
+                      session.getServerSeqAck()
+                    )
+                  );
+                }
+              }
             }
             hudStore.dispatch({ type: 'weaponCooldown', value: app.getWeaponCooldown(currentWeaponSlot) });
             app.recordInput(cmd);
@@ -629,6 +811,7 @@ if (!signalingUrl) {
             remotePruneInterval = null;
           }
           remoteAvatars.dispose();
+          casingPool.dispose();
           window.removeEventListener('beforeunload', cleanup);
         };
         window.addEventListener('beforeunload', cleanup);

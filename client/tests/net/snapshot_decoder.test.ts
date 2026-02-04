@@ -8,6 +8,7 @@ import {
   SNAPSHOT_MASK_VEL_Y,
   SNAPSHOT_MASK_VEL_Z,
   SNAPSHOT_MASK_WEAPON_SLOT,
+  SNAPSHOT_MASK_AMMO_IN_MAG,
   SNAPSHOT_MASK_DASH_COOLDOWN,
   SNAPSHOT_MASK_HEALTH,
   SNAPSHOT_MASK_KILLS,
@@ -28,6 +29,7 @@ describe('SnapshotDecoder', () => {
     velY: -0.2,
     velZ: 0.05,
     weaponSlot: 1,
+    ammoInMag: 30,
     dashCooldown: 0.4,
     health: 90,
     kills: 1,
@@ -91,6 +93,7 @@ describe('SnapshotDecoder', () => {
       velY: 1.0,
       velZ: 0.05,
       weaponSlot: 1,
+      ammoInMag: 30,
       dashCooldown: 0.4,
       health: 90,
       kills: 1,
@@ -123,6 +126,7 @@ describe('SnapshotDecoder', () => {
       velY: -0.2,
       velZ: 0.05,
       weaponSlot: 1,
+      ammoInMag: 30,
       dashCooldown: 0.4,
       health: 90,
       kills: 1,
@@ -164,6 +168,7 @@ describe('SnapshotDecoder', () => {
         SNAPSHOT_MASK_VEL_Y |
         SNAPSHOT_MASK_VEL_Z |
         SNAPSHOT_MASK_WEAPON_SLOT |
+        SNAPSHOT_MASK_AMMO_IN_MAG |
         SNAPSHOT_MASK_DASH_COOLDOWN |
         SNAPSHOT_MASK_HEALTH |
         SNAPSHOT_MASK_KILLS |
@@ -175,6 +180,7 @@ describe('SnapshotDecoder', () => {
       velY: -1,
       velZ: 0.4,
       weaponSlot: 2,
+      ammoInMag: 12,
       dashCooldown: 1.5,
       health: 72,
       kills: 3,
@@ -193,6 +199,7 @@ describe('SnapshotDecoder', () => {
       velY: -1,
       velZ: 0.4,
       weaponSlot: 2,
+      ammoInMag: 12,
       dashCooldown: 1.5,
       health: 72,
       kills: 3,
@@ -218,6 +225,7 @@ describe('SnapshotDecoder', () => {
         SNAPSHOT_MASK_VEL_Y |
         SNAPSHOT_MASK_VEL_Z |
         SNAPSHOT_MASK_WEAPON_SLOT |
+        SNAPSHOT_MASK_AMMO_IN_MAG |
         SNAPSHOT_MASK_DASH_COOLDOWN |
         SNAPSHOT_MASK_HEALTH |
         SNAPSHOT_MASK_KILLS |
@@ -235,6 +243,7 @@ describe('SnapshotDecoder', () => {
       velY: -0.2,
       velZ: 0.05,
       weaponSlot: 1,
+      ammoInMag: 30,
       dashCooldown: 0.4,
       health: 90,
       kills: 1,

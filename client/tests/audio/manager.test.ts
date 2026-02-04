@@ -48,9 +48,11 @@ const makeContext = () => {
   const context = {
     state: 'suspended' as const,
     currentTime: 0,
+    sampleRate: 44100,
     destination: new FakeNode(),
     listener: new FakeListener(),
     createGain: () => new FakeGainNode(),
+    createBuffer: () => ({ getChannelData: () => new Float32Array(1) }),
     createBufferSource: () => new FakeBufferSource(),
     createPanner: () => new FakePannerNode(),
     decodeAudioData: vi.fn(async () => ({ decoded: true })),
@@ -111,5 +113,13 @@ describe('audio manager', () => {
 
     await audio.resume();
     expect(context.state).toBe('running');
+  });
+
+  it('tracks registered buffers', () => {
+    const context = makeContext();
+    const audio = createAudioManager({ context });
+    expect(audio.hasBuffer('impact')).toBe(false);
+    audio.registerBuffer('impact', { getChannelData: () => new Float32Array(1) });
+    expect(audio.hasBuffer('impact')).toBe(true);
   });
 });

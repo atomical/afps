@@ -6,6 +6,7 @@ import {
   SNAPSHOT_MASK_VEL_Y,
   SNAPSHOT_MASK_VEL_Z,
   SNAPSHOT_MASK_WEAPON_SLOT,
+  SNAPSHOT_MASK_AMMO_IN_MAG,
   SNAPSHOT_MASK_DASH_COOLDOWN,
   SNAPSHOT_MASK_HEALTH,
   SNAPSHOT_MASK_KILLS,
@@ -57,6 +58,8 @@ export class SnapshotDecoder {
       velZ: mask & SNAPSHOT_MASK_VEL_Z ? (message.velZ ?? base.velZ) : base.velZ,
       weaponSlot:
         mask & SNAPSHOT_MASK_WEAPON_SLOT ? (message.weaponSlot ?? base.weaponSlot) : base.weaponSlot,
+      ammoInMag:
+        mask & SNAPSHOT_MASK_AMMO_IN_MAG ? (message.ammoInMag ?? base.ammoInMag) : base.ammoInMag,
       dashCooldown: mask & SNAPSHOT_MASK_DASH_COOLDOWN ? (message.dashCooldown ?? base.dashCooldown) : base.dashCooldown,
       health: mask & SNAPSHOT_MASK_HEALTH ? (message.health ?? base.health) : base.health,
       kills: mask & SNAPSHOT_MASK_KILLS ? (message.kills ?? base.kills) : base.kills,

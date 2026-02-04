@@ -15,8 +15,10 @@ const appInstance = {
   setSnapshotRate: vi.fn(),
   setBeforeRender: vi.fn(),
   recordInput: vi.fn(),
+  recordWeaponFired: vi.fn(),
   spawnProjectileVfx: vi.fn(),
   removeProjectileVfx: vi.fn(),
+  spawnTracerVfx: vi.fn(),
   getWeaponCooldown: vi.fn().mockReturnValue(0),
   getAbilityCooldowns: vi.fn().mockReturnValue({
     dash: 0,
@@ -34,7 +36,11 @@ const appInstance = {
   setLocalProxyVisible: vi.fn(),
   setOutlineTeam: vi.fn(),
   triggerOutlineFlash: vi.fn(),
-  state: { cube: { rotation: { x: 0 } }, scene: sceneMock }
+  state: {
+    cube: { rotation: { x: 0 } },
+    scene: sceneMock,
+    camera: { position: { x: 0, y: 0, z: 0 } }
+  }
 };
 const inputSenderInstance = {
   start: vi.fn(),
@@ -202,6 +208,11 @@ const audioManagerMock = {
   setMuted: vi.fn(),
   setVolume: vi.fn(),
   getSettings: vi.fn().mockReturnValue({ master: 0.5, sfx: 0.5, ui: 0.5, music: 0.5, muted: false }),
+  createBuffer: vi.fn().mockReturnValue({
+    getChannelData: () => new Float32Array(1)
+  }),
+  registerBuffer: vi.fn(),
+  hasBuffer: vi.fn().mockReturnValue(true),
   load: vi.fn(),
   preload: vi.fn(),
   play: vi.fn().mockReturnValue(true),
@@ -217,6 +228,21 @@ const audioSettingsMock = {
 
 vi.mock('../src/audio/manager', () => ({
   createAudioManager: () => audioManagerMock
+}));
+
+const casingPoolMock = {
+  ready: Promise.resolve(true),
+  spawn: vi.fn(),
+  update: vi.fn(),
+  dispose: vi.fn()
+};
+
+vi.mock('../src/weapons/sfx', () => ({
+  generateWeaponSfx: vi.fn()
+}));
+
+vi.mock('../src/weapons/casing_pool', () => ({
+  createCasingPool: () => casingPoolMock
 }));
 
 vi.mock('../src/audio/settings', () => ({
@@ -276,6 +302,7 @@ describe('main entry', () => {
     appInstance.ingestSnapshot.mockReset();
     appInstance.setSnapshotRate.mockReset();
     appInstance.recordInput.mockReset();
+    appInstance.recordWeaponFired.mockReset();
     appInstance.setTickRate.mockReset();
     appInstance.setPredictionSim.mockReset();
     appInstance.applyLookDelta.mockReset();
@@ -302,6 +329,10 @@ describe('main entry', () => {
     hudMock.dispose.mockReset();
     appInstance.spawnProjectileVfx.mockReset();
     appInstance.removeProjectileVfx.mockReset();
+    appInstance.spawnTracerVfx.mockReset();
+    casingPoolMock.spawn.mockReset();
+    casingPoolMock.update.mockReset();
+    casingPoolMock.dispose.mockReset();
     settingsMock.isVisible.mockReset();
     settingsMock.setVisible.mockReset();
     settingsMock.toggle.mockReset();
@@ -403,7 +434,7 @@ describe('main entry', () => {
     expect(statusMock.setState).toHaveBeenCalledWith('disabled', 'Set VITE_SIGNALING_URL');
     expect(statusMock.setMetricsVisible).toHaveBeenCalledWith(true);
     expect(hudMock.setSensitivity).toHaveBeenCalledWith(undefined);
-    expect(hudMock.setVitals).toHaveBeenCalledWith({ ammo: Infinity });
+    expect(hudMock.setVitals).toHaveBeenCalledWith({ ammo: 30 });
     expect(hudMock.setWeapon).toHaveBeenCalledWith(0, expect.any(String));
     expect(hudMock.setWeaponCooldown).toHaveBeenCalledWith(0);
     expect(hudMock.setAbilityCooldowns).toHaveBeenCalledWith({
@@ -549,6 +580,7 @@ describe('main entry', () => {
       velY: 0,
       velZ: 0,
       weaponSlot: 0,
+      ammoInMag: 12,
       dashCooldown: 0,
       health: 100,
       kills: 0,
@@ -617,13 +649,13 @@ describe('main entry', () => {
     expect(appInstance.setSnapshotRate).toHaveBeenCalledWith(20);
     expect(appInstance.setTickRate).toHaveBeenCalledWith(60);
     expect(appInstance.ingestSnapshot).toHaveBeenCalledWith(snapshot, expect.any(Number));
-    expect(hudMock.setVitals).toHaveBeenCalledWith({ health: 100, ammo: Infinity });
+    expect(hudMock.setVitals).toHaveBeenCalledWith({ health: 100, ammo: 12 });
     expect(hudMock.setScore).toHaveBeenCalledWith({ kills: 0, deaths: 0 });
     expect(hudMock.triggerHitmarker).toHaveBeenCalledWith(true);
     expect(appInstance.triggerOutlineFlash).toHaveBeenCalledWith({ killed: true });
     expect(appInstance.spawnProjectileVfx).toHaveBeenCalledWith({
-      origin: { x: 1, y: 2, z: 3 },
-      velocity: { x: 4, y: 5, z: 6 },
+      origin: { x: 1, y: 3, z: 2 },
+      velocity: { x: 4, y: 6, z: 5 },
       ttl: 0.5,
       projectileId: 7
     });
@@ -644,7 +676,7 @@ describe('main entry', () => {
       velZ: 0,
       ttl: 1
     });
-    expect(appInstance.spawnProjectileVfx).toHaveBeenCalledTimes(2);
+    expect(appInstance.spawnProjectileVfx).toHaveBeenCalledTimes(3);
     expect(sendPing).toHaveBeenCalled();
     expect(createInputSamplerMock).toHaveBeenCalledWith(
       expect.objectContaining({

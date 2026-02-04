@@ -15,7 +15,10 @@ const MESSAGE_TYPES = [
   MessageType.Pong,
   MessageType.Error,
   MessageType.Disconnect,
-  MessageType.PlayerProfile
+  MessageType.PlayerProfile,
+  MessageType.FireWeaponRequest,
+  MessageType.WeaponFiredEvent,
+  MessageType.WeaponReloadEvent
 ];
 
 describe('protocol envelope properties', () => {

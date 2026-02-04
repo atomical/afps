@@ -9,6 +9,8 @@ This project uses a shared, data-driven weapon configuration that is loaded by b
 2. **Add the weapon to `slots`** if it should be selectable by players.
 3. **Client viewmodel/worldmodel mapping**:
    - Update `client/src/environment/weapon_viewmodel.ts` and `client/src/players/remote_avatars.ts` to point the new `id` to a weapon model.
+   - The default project models come from Kenney Blaster Kit under `client/public/assets/weapons/cc0/kenney_blaster_kit/`.
+   - Remote avatars attach the worldmodel to the character `handBone` (from the character catalog) and apply `weaponOffset` as a local delta.
 4. **SFX profile**:
    - Pick an existing `sfxProfile` from `client/src/weapons/sfx.ts` or add a new profile there.
 5. **Run tests** to ensure validation passes.
@@ -19,6 +21,12 @@ When a shot is accepted by the server:
 - The server decrements ammo, applies gameplay effects (hitscan or projectile), and emits a `WeaponFiredEvent`.
 - That event includes a deterministic casing spawn payload (position, rotation, velocity, angular velocity, and seed).
 - Clients spawn a local casing instance from a pool using `client/src/weapons/casing_pool.ts` so every player sees the same ejection timing.
+
+### Casing Model Asset
+
+The casing pool uses Kenney Blaster Kit’s `bullet-foam.glb` model.
+
+To keep the runtime client assets minimal, the file is copied from the source asset archive into `client/public/` by `tools/sync_weapon_assets.sh` (run automatically by `client`’s `predev`/`pretest`/`prebuild` npm scripts).
 
 ## Procedural SFX Generation
 

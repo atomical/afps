@@ -57,15 +57,27 @@ const isAnyPressed = (keys: Set<string>, bindings: string[]) =>
 export interface InputSamplerOptions {
   target: Window;
   bindings?: InputBindings;
+  weaponSlots?: number;
 }
 
-export const createInputSampler = ({ target, bindings = DEFAULT_BINDINGS }: InputSamplerOptions): InputSampler => {
+export const createInputSampler = ({
+  target,
+  bindings = DEFAULT_BINDINGS,
+  weaponSlots = 2
+}: InputSamplerOptions): InputSampler => {
   const pressed = new Set<string>();
   let fire = false;
   let lookDeltaX = 0;
   let lookDeltaY = 0;
   let weaponSlot = 0;
   let currentBindings = bindings;
+  const weaponSlotCount =
+    typeof weaponSlots === 'number' && Number.isFinite(weaponSlots) ? Math.max(1, Math.floor(weaponSlots)) : 2;
+
+  const wrapWeaponSlot = (value: number) => {
+    const next = Math.floor(value);
+    return ((next % weaponSlotCount) + weaponSlotCount) % weaponSlotCount;
+  };
 
   const onKeyDown = (event: KeyboardEvent) => {
     pressed.add(event.code);
@@ -97,6 +109,18 @@ export const createInputSampler = ({ target, bindings = DEFAULT_BINDINGS }: Inpu
     lookDeltaY += safeNumber(event.movementY);
   };
 
+  const onWheel = (event: WheelEvent) => {
+    if (weaponSlotCount <= 1) {
+      return;
+    }
+    if (!Number.isFinite(event.deltaY) || event.deltaY === 0) {
+      return;
+    }
+    event.preventDefault();
+    const dir = event.deltaY > 0 ? 1 : -1;
+    weaponSlot = wrapWeaponSlot(weaponSlot + dir);
+  };
+
   const onBlur = () => {
     pressed.clear();
     fire = false;
@@ -109,6 +133,7 @@ export const createInputSampler = ({ target, bindings = DEFAULT_BINDINGS }: Inpu
   target.addEventListener('mousedown', onMouseDown);
   target.addEventListener('mouseup', onMouseUp);
   target.addEventListener('mousemove', onMouseMove);
+  target.addEventListener('wheel', onWheel, { passive: false });
   target.addEventListener('blur', onBlur);
 
   const sample = (): InputSample => {
@@ -153,6 +178,7 @@ export const createInputSampler = ({ target, bindings = DEFAULT_BINDINGS }: Inpu
     target.removeEventListener('mousedown', onMouseDown);
     target.removeEventListener('mouseup', onMouseUp);
     target.removeEventListener('mousemove', onMouseMove);
+    target.removeEventListener('wheel', onWheel);
     target.removeEventListener('blur', onBlur);
     pressed.clear();
     fire = false;
