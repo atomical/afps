@@ -136,6 +136,7 @@ const HAND_DEFAULT_OFFSET: WeaponOffset = {
   rotation: [0, Math.PI / 2, 0],
   scale: 1
 };
+const MODEL_YAW_OFFSET = Math.PI;
 const BASE_URL = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
 const NORMALIZED_BASE = BASE_URL.endsWith('/') ? BASE_URL : `${BASE_URL}/`;
 const WEAPON_MODEL_ROOT = `${NORMALIZED_BASE}assets/weapons/cc0/kenney_blaster_kit/`;
@@ -1000,7 +1001,7 @@ export const createRemoteAvatarManager = ({
     avatar.root.position.set(snapshot.posX, groundOffset + snapshot.posZ, snapshot.posY);
     const yaw = avatar.viewYaw ?? 0;
     if (avatar.root.rotation) {
-      avatar.root.rotation.y = -yaw;
+      avatar.root.rotation.y = MODEL_YAW_OFFSET - yaw;
     }
     if (desiredModelUrl && desiredCharacterId && avatar.characterId === desiredCharacterId) {
       const needsModel =
