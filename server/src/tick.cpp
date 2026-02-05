@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <random>
+#include <type_traits>
 #include <unordered_set>
 #include <vector>
 
@@ -57,6 +59,435 @@ namespace {
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kProjectileTtlSeconds = 3.0;
 constexpr double kProjectileRadius = 0.15;
+constexpr double kHitDistanceStepMeters = 0.01;
+constexpr double kProjectilePositionStepMeters = 0.01;
+constexpr double kProjectileVelocityStepMetersPerSecond = 0.01;
+constexpr double kProjectileTtlStepSeconds = 0.01;
+constexpr double kNearMissExtraRadius = 0.75;
+constexpr double kEnergyHeatPerShot = 0.06;
+constexpr double kEnergyCoolPerSecond = 0.25;
+constexpr double kEnergyVentCoolPerSecond = 0.6;
+constexpr double kEnergyVentSeconds = 1.5;
+constexpr double kTraceCullDistanceMeters = 85.0;
+
+constexpr uint8_t kPlayerFlagAds = 1 << 0;
+constexpr uint8_t kPlayerFlagSprint = 1 << 1;
+constexpr uint8_t kPlayerFlagReloading = 1 << 2;
+constexpr uint8_t kPlayerFlagShieldActive = 1 << 3;
+constexpr uint8_t kPlayerFlagOverheated = 1 << 4;
+
+constexpr uint32_t kLoadoutSuppressor = 1u << 0;
+constexpr uint32_t kLoadoutCompensator = 1u << 1;
+constexpr uint32_t kLoadoutOptic = 1u << 2;
+constexpr uint32_t kLoadoutExtendedMag = 1u << 3;
+constexpr uint32_t kLoadoutGrip = 1u << 4;
+
+bool IsEnergyWeapon(const afps::weapons::WeaponDef *weapon) {
+  if (!weapon) {
+    return false;
+  }
+  if (weapon->id.rfind("ENERGY", 0) == 0) {
+    return true;
+  }
+  return weapon->sfx_profile.rfind("ENERGY", 0) == 0;
+}
+
+uint16_t QuantizeU16(double value, double step) {
+  if (!std::isfinite(value) || !std::isfinite(step) || step <= 0.0) {
+    return 0;
+  }
+  const double clamped = std::max(0.0, value);
+  const uint64_t q = static_cast<uint64_t>(std::llround(clamped / step));
+  return static_cast<uint16_t>(std::min<uint64_t>(q, std::numeric_limits<uint16_t>::max()));
+}
+
+int16_t QuantizeI16(double value, double step) {
+  if (!std::isfinite(value) || !std::isfinite(step) || step <= 0.0) {
+    return 0;
+  }
+  const int64_t q = static_cast<int64_t>(std::llround(value / step));
+  const int64_t clamped = std::max<int64_t>(std::numeric_limits<int16_t>::min(),
+                                            std::min<int64_t>(std::numeric_limits<int16_t>::max(), q));
+  return static_cast<int16_t>(clamped);
+}
+
+int16_t QuantizeYaw(double yaw_rad) {
+  if (!std::isfinite(yaw_rad)) {
+    return 0;
+  }
+  const double wrapped = std::fmod(yaw_rad + kPi, 2.0 * kPi);
+  const double normalized = (wrapped < 0.0 ? wrapped + 2.0 * kPi : wrapped) - kPi;
+  const double q = normalized / kPi;
+  return static_cast<int16_t>(std::llround(std::max(-1.0, std::min(1.0, q)) * 32767.0));
+}
+
+int16_t QuantizePitch(double pitch_rad) {
+  if (!std::isfinite(pitch_rad)) {
+    return 0;
+  }
+  const double max_pitch = (kPi / 2.0) - 0.01;
+  const double clamped = std::max(-max_pitch, std::min(max_pitch, pitch_rad));
+  const double q = clamped / max_pitch;
+  return static_cast<int16_t>(std::llround(std::max(-1.0, std::min(1.0, q)) * 32767.0));
+}
+
+uint32_t HashString(const std::string &value) {
+  uint32_t hash = 2166136261u;
+  for (char ch : value) {
+    hash ^= static_cast<uint8_t>(ch);
+    hash *= 16777619u;
+  }
+  return hash;
+}
+
+uint32_t XorShift32(uint32_t &state) {
+  state ^= state << 13;
+  state ^= state >> 17;
+  state ^= state << 5;
+  return state;
+}
+
+double Random01(uint32_t &state) {
+  const uint32_t next = XorShift32(state);
+  return static_cast<double>(next) / 4294967296.0;
+}
+
+struct OctEncoded16 {
+  int16_t x = 0;
+  int16_t y = 0;
+};
+
+double SignNotZero(double value) {
+  return value < 0.0 ? -1.0 : 1.0;
+}
+
+OctEncoded16 EncodeOct16(double x, double y, double z) {
+  if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
+    return {};
+  }
+  const double l1 = std::abs(x) + std::abs(y) + std::abs(z);
+  if (l1 <= 1e-12) {
+    return {};
+  }
+  x /= l1;
+  y /= l1;
+  z /= l1;
+  if (z < 0.0) {
+    const double ox = (1.0 - std::abs(y)) * SignNotZero(x);
+    const double oy = (1.0 - std::abs(x)) * SignNotZero(y);
+    x = ox;
+    y = oy;
+  }
+  x = std::max(-1.0, std::min(1.0, x));
+  y = std::max(-1.0, std::min(1.0, y));
+  return {static_cast<int16_t>(std::llround(x * 32767.0)),
+          static_cast<int16_t>(std::llround(y * 32767.0))};
+}
+
+double RaycastAabb2D(double origin_x, double origin_y, double dir_x, double dir_y, double min_x, double max_x,
+                     double min_y, double max_y) {
+  const double inf = std::numeric_limits<double>::infinity();
+  const double epsilon = 1e-8;
+  double t_min = -inf;
+  double t_max = inf;
+
+  auto update_axis = [&](double origin, double dir, double min_bound, double max_bound) -> bool {
+    if (std::abs(dir) < epsilon) {
+      return origin >= min_bound && origin <= max_bound;
+    }
+    double t1 = (min_bound - origin) / dir;
+    double t2 = (max_bound - origin) / dir;
+    if (t1 > t2) {
+      std::swap(t1, t2);
+    }
+    t_min = std::max(t_min, t1);
+    t_max = std::min(t_max, t2);
+    return t_min <= t_max;
+  };
+
+  if (!update_axis(origin_x, dir_x, min_x, max_x)) {
+    return inf;
+  }
+  if (!update_axis(origin_y, dir_y, min_y, max_y)) {
+    return inf;
+  }
+  if (t_max < 0.0) {
+    return inf;
+  }
+  if (t_min >= 0.0) {
+    return t_min;
+  }
+  return t_max;
+}
+
+struct WorldHitscanHit {
+  bool hit = false;
+  double distance = 0.0;
+  afps::combat::Vec3 position{};
+  afps::combat::Vec3 normal{};
+  SurfaceType surface = SurfaceType::Stone;
+};
+
+double Clamp01(double value) {
+  if (!std::isfinite(value)) {
+    return 0.0;
+  }
+  return std::max(0.0, std::min(1.0, value));
+}
+
+afps::combat::Vec3 Add(const afps::combat::Vec3 &a, const afps::combat::Vec3 &b) {
+  return {a.x + b.x, a.y + b.y, a.z + b.z};
+}
+
+afps::combat::Vec3 Sub(const afps::combat::Vec3 &a, const afps::combat::Vec3 &b) {
+  return {a.x - b.x, a.y - b.y, a.z - b.z};
+}
+
+afps::combat::Vec3 Mul(const afps::combat::Vec3 &v, double s) {
+  return {v.x * s, v.y * s, v.z * s};
+}
+
+double Dot(const afps::combat::Vec3 &a, const afps::combat::Vec3 &b) {
+  return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+afps::combat::Vec3 Cross(const afps::combat::Vec3 &a, const afps::combat::Vec3 &b) {
+  return {a.y * b.z - a.z * b.y,
+          a.z * b.x - a.x * b.z,
+          a.x * b.y - a.y * b.x};
+}
+
+afps::combat::Vec3 Normalize(const afps::combat::Vec3 &v) {
+  const double len = std::sqrt(Dot(v, v));
+  if (!std::isfinite(len) || len <= 1e-8) {
+    return {0.0, -1.0, 0.0};
+  }
+  return {v.x / len, v.y / len, v.z / len};
+}
+
+double Clamp(double value, double min_value, double max_value);
+
+afps::combat::ViewAngles ViewFromDirection(const afps::combat::Vec3 &dir) {
+  const afps::combat::Vec3 safe_dir = Normalize(dir);
+  const double clamped_z = Clamp(safe_dir.z, -1.0, 1.0);
+  const double pitch = std::asin(clamped_z);
+  const double yaw = std::atan2(safe_dir.x, -safe_dir.y);
+  return afps::combat::SanitizeViewAngles(yaw, pitch);
+}
+
+afps::combat::Vec3 ApplySpread(const afps::combat::Vec3 &dir, double spread_deg, uint32_t seed) {
+  const afps::combat::Vec3 forward = Normalize(dir);
+  if (!std::isfinite(spread_deg) || spread_deg <= 0.0) {
+    return forward;
+  }
+  double spread_rad = spread_deg * (kPi / 180.0);
+  spread_rad = std::max(0.0, std::min(spread_rad, kPi * 0.5));
+  const double cos_max = std::cos(spread_rad);
+  uint32_t state = seed == 0 ? 1u : seed;
+  const double u = Random01(state);
+  const double v = Random01(state);
+  const double cos_theta = 1.0 - u * (1.0 - cos_max);
+  const double sin_theta = std::sqrt(std::max(0.0, 1.0 - cos_theta * cos_theta));
+  const double phi = 2.0 * kPi * v;
+  afps::combat::Vec3 up{0.0, 0.0, 1.0};
+  afps::combat::Vec3 right = Cross(up, forward);
+  if (Dot(right, right) < 1e-6) {
+    right = {1.0, 0.0, 0.0};
+  }
+  right = Normalize(right);
+  const afps::combat::Vec3 true_up = Normalize(Cross(forward, right));
+  const afps::combat::Vec3 spread_dir = Add(
+      Add(Mul(forward, cos_theta),
+          Mul(right, sin_theta * std::cos(phi))),
+      Mul(true_up, sin_theta * std::sin(phi)));
+  return Normalize(spread_dir);
+}
+
+double Clamp(double value, double min_value, double max_value) {
+  if (!std::isfinite(value)) {
+    return min_value;
+  }
+  return std::max(min_value, std::min(max_value, value));
+}
+
+double SegmentSegmentDistanceSquared(const afps::combat::Vec3 &p1,
+                                     const afps::combat::Vec3 &q1,
+                                     const afps::combat::Vec3 &p2,
+                                     const afps::combat::Vec3 &q2) {
+  const double kEps = 1e-12;
+  const afps::combat::Vec3 d1 = Sub(q1, p1);
+  const afps::combat::Vec3 d2 = Sub(q2, p2);
+  const afps::combat::Vec3 r = Sub(p1, p2);
+  const double a = Dot(d1, d1);
+  const double e = Dot(d2, d2);
+  const double f = Dot(d2, r);
+
+  double s = 0.0;
+  double t = 0.0;
+
+  if (a <= kEps && e <= kEps) {
+    return Dot(r, r);
+  }
+  if (a <= kEps) {
+    s = 0.0;
+    t = Clamp(f / e, 0.0, 1.0);
+  } else {
+    const double c = Dot(d1, r);
+    if (e <= kEps) {
+      t = 0.0;
+      s = Clamp(-c / a, 0.0, 1.0);
+    } else {
+      const double b = Dot(d1, d2);
+      const double denom = a * e - b * b;
+      if (std::abs(denom) > kEps) {
+        s = Clamp((b * f - c * e) / denom, 0.0, 1.0);
+      } else {
+        s = 0.0;
+      }
+      t = (b * s + f) / e;
+      if (t < 0.0) {
+        t = 0.0;
+        s = Clamp(-c / a, 0.0, 1.0);
+      } else if (t > 1.0) {
+        t = 1.0;
+        s = Clamp((b - c) / a, 0.0, 1.0);
+      }
+    }
+  }
+
+  const afps::combat::Vec3 c1 = Add(p1, Mul(d1, s));
+  const afps::combat::Vec3 c2 = Add(p2, Mul(d2, t));
+  const afps::combat::Vec3 diff = Sub(c1, c2);
+  return Dot(diff, diff);
+}
+
+struct WorldSurfaceInfo {
+  afps::combat::Vec3 normal{0.0, 0.0, 1.0};
+  SurfaceType surface = SurfaceType::Stone;
+};
+
+WorldSurfaceInfo ResolveWorldSurfaceAt(const afps::combat::Vec3 &position, const afps::sim::SimConfig &config) {
+  WorldSurfaceInfo best;
+  double best_dist = std::numeric_limits<double>::infinity();
+
+  auto consider = [&](double dist, const afps::combat::Vec3 &normal, SurfaceType surface) {
+    if (!std::isfinite(dist) || dist < 0.0) {
+      return;
+    }
+    if (dist < best_dist) {
+      best_dist = dist;
+      best.normal = normal;
+      best.surface = surface;
+    }
+  };
+
+  consider(std::abs(position.z), {0.0, 0.0, 1.0}, SurfaceType::Dirt);
+
+  if (std::isfinite(config.arena_half_size) && config.arena_half_size > 0.0) {
+    const double half = std::max(0.0, config.arena_half_size);
+    const double dx = std::abs(std::abs(position.x) - half);
+    const double dy = std::abs(std::abs(position.y) - half);
+    if (dx <= dy) {
+      consider(dx, {SignNotZero(position.x), 0.0, 0.0}, SurfaceType::Stone);
+    } else {
+      consider(dy, {0.0, SignNotZero(position.y), 0.0}, SurfaceType::Stone);
+    }
+  }
+
+  if (std::isfinite(config.obstacle_min_x) && std::isfinite(config.obstacle_max_x) &&
+      std::isfinite(config.obstacle_min_y) && std::isfinite(config.obstacle_max_y) &&
+      config.obstacle_min_x < config.obstacle_max_x && config.obstacle_min_y < config.obstacle_max_y) {
+    const double dx_min = std::abs(position.x - config.obstacle_min_x);
+    const double dx_max = std::abs(position.x - config.obstacle_max_x);
+    const double dy_min = std::abs(position.y - config.obstacle_min_y);
+    const double dy_max = std::abs(position.y - config.obstacle_max_y);
+    const double best_face = std::min(std::min(dx_min, dx_max), std::min(dy_min, dy_max));
+    if (best_face == dx_min) {
+      consider(best_face, {-1.0, 0.0, 0.0}, SurfaceType::Metal);
+    } else if (best_face == dx_max) {
+      consider(best_face, {1.0, 0.0, 0.0}, SurfaceType::Metal);
+    } else if (best_face == dy_min) {
+      consider(best_face, {0.0, -1.0, 0.0}, SurfaceType::Metal);
+    } else {
+      consider(best_face, {0.0, 1.0, 0.0}, SurfaceType::Metal);
+    }
+  }
+
+  return best;
+}
+
+WorldHitscanHit ResolveWorldHitscan(const afps::combat::Vec3 &origin,
+                                    const afps::combat::Vec3 &dir,
+                                    const afps::sim::SimConfig &config,
+                                    double max_range) {
+  WorldHitscanHit best;
+  const double inf = std::numeric_limits<double>::infinity();
+  best.distance = inf;
+
+  auto consider = [&](double t, const afps::combat::Vec3 &normal, SurfaceType surface) {
+    if (!std::isfinite(t) || t < 0.0 || t > max_range) {
+      return;
+    }
+    if (t < best.distance) {
+      best.hit = true;
+      best.distance = t;
+      best.position = {origin.x + dir.x * t, origin.y + dir.y * t, origin.z + dir.z * t};
+      best.normal = normal;
+      best.surface = surface;
+    }
+  };
+
+  if (std::isfinite(dir.z) && dir.z < -1e-8) {
+    if (origin.z <= 0.0) {
+      consider(0.0, {0.0, 0.0, 1.0}, SurfaceType::Dirt);
+    } else {
+      const double t_ground = (0.0 - origin.z) / dir.z;
+      consider(t_ground, {0.0, 0.0, 1.0}, SurfaceType::Dirt);
+    }
+  }
+
+  if (std::isfinite(config.arena_half_size) && config.arena_half_size > 0.0) {
+    const double half = std::max(0.0, config.arena_half_size);
+    const double t = RaycastAabb2D(origin.x, origin.y, dir.x, dir.y, -half, half, -half, half);
+    if (std::isfinite(t) && t >= 0.0) {
+      const afps::combat::Vec3 hit_pos{origin.x + dir.x * t, origin.y + dir.y * t, origin.z + dir.z * t};
+      const double dx = std::abs(std::abs(hit_pos.x) - half);
+      const double dy = std::abs(std::abs(hit_pos.y) - half);
+      if (dx <= dy) {
+        consider(t, {SignNotZero(hit_pos.x), 0.0, 0.0}, SurfaceType::Stone);
+      } else {
+        consider(t, {0.0, SignNotZero(hit_pos.y), 0.0}, SurfaceType::Stone);
+      }
+    }
+  }
+
+  if (std::isfinite(config.obstacle_min_x) && std::isfinite(config.obstacle_max_x) &&
+      std::isfinite(config.obstacle_min_y) && std::isfinite(config.obstacle_max_y) &&
+      config.obstacle_min_x < config.obstacle_max_x && config.obstacle_min_y < config.obstacle_max_y) {
+    const double t = RaycastAabb2D(origin.x, origin.y, dir.x, dir.y,
+                                   config.obstacle_min_x, config.obstacle_max_x,
+                                   config.obstacle_min_y, config.obstacle_max_y);
+    if (std::isfinite(t) && t >= 0.0) {
+      const afps::combat::Vec3 hit_pos{origin.x + dir.x * t, origin.y + dir.y * t, origin.z + dir.z * t};
+      const double dx_min = std::abs(hit_pos.x - config.obstacle_min_x);
+      const double dx_max = std::abs(hit_pos.x - config.obstacle_max_x);
+      const double dy_min = std::abs(hit_pos.y - config.obstacle_min_y);
+      const double dy_max = std::abs(hit_pos.y - config.obstacle_max_y);
+      const double best_face = std::min(std::min(dx_min, dx_max), std::min(dy_min, dy_max));
+      if (best_face == dx_min) {
+        consider(t, {-1.0, 0.0, 0.0}, SurfaceType::Metal);
+      } else if (best_face == dx_max) {
+        consider(t, {1.0, 0.0, 0.0}, SurfaceType::Metal);
+      } else if (best_face == dy_min) {
+        consider(t, {0.0, -1.0, 0.0}, SurfaceType::Metal);
+      } else {
+        consider(t, {0.0, 1.0, 0.0}, SurfaceType::Metal);
+      }
+    }
+  }
+
+  return best;
+}
 
 afps::sim::PlayerState MakeSpawnState(const std::string &connection_id, const afps::sim::SimConfig &config) {
   afps::sim::PlayerState state;
@@ -159,6 +590,7 @@ void TickLoop::Step() {
   prune(last_full_snapshots_);
   prune(snapshot_sequence_);
   prune(weapon_states_);
+  prune(loadout_bits_);
   prune(pose_histories_);
   prune(combat_states_);
 
@@ -172,6 +604,23 @@ void TickLoop::Step() {
     afps::combat::Vec3 origin{};
   };
   std::vector<ShockwaveEvent> shockwave_events;
+
+  std::unordered_map<std::string, std::vector<FxEventData>> fx_events;
+  fx_events.reserve(active_ids.size());
+  for (const auto &connection_id : active_ids) {
+    fx_events.emplace(connection_id, std::vector<FxEventData>{});
+  }
+  auto emit_fx_all = [&](const FxEventData &event) {
+    for (auto &entry : fx_events) {
+      entry.second.push_back(event);
+    }
+  };
+  auto emit_fx_to = [&](const std::string &connection_id, const FxEventData &event) {
+    auto iter = fx_events.find(connection_id);
+    if (iter != fx_events.end()) {
+      iter->second.push_back(event);
+    }
+  };
 
   auto resolve_view = [&](const std::string &connection_id) {
     auto input_iter = last_inputs_.find(connection_id);
@@ -194,19 +643,86 @@ void TickLoop::Step() {
     return afps::combat::IsShieldFacing(target_pos, view, source_pos);
   };
 
+  auto resolve_loadout_bits = [&](const std::string &connection_id) -> uint32_t {
+    auto iter = loadout_bits_.find(connection_id);
+    return iter == loadout_bits_.end() ? 0u : iter->second;
+  };
+
+  auto resolve_max_ammo = [&](const afps::weapons::WeaponDef *weapon, uint32_t loadout_bits) -> int {
+    if (!weapon) {
+      return 0;
+    }
+    double max_ammo = static_cast<double>(weapon->max_ammo_in_mag);
+    if (loadout_bits & kLoadoutExtendedMag) {
+      max_ammo *= 1.25;
+    }
+    if (!std::isfinite(max_ammo) || max_ammo <= 0.0) {
+      return 0;
+    }
+    return std::max(1, static_cast<int>(std::llround(max_ammo)));
+  };
+
+  auto resolve_reload_seconds = [&](const afps::weapons::WeaponDef *weapon, uint32_t loadout_bits) -> double {
+    if (!weapon || !std::isfinite(weapon->reload_seconds) || weapon->reload_seconds <= 0.0) {
+      return 0.0;
+    }
+    double multiplier = 1.0;
+    if (loadout_bits & kLoadoutExtendedMag) {
+      multiplier *= 1.12;
+    }
+    return weapon->reload_seconds * multiplier;
+  };
+
+  auto resolve_spread_deg = [&](const afps::weapons::WeaponDef *weapon,
+                                const WeaponSlotState &slot_state,
+                                const InputCmd &input,
+                                const afps::sim::PlayerState &state,
+                                uint32_t loadout_bits) -> double {
+    if (!weapon || !std::isfinite(weapon->spread_deg) || weapon->spread_deg <= 0.0) {
+      return 0.0;
+    }
+    double multiplier = 1.0;
+    const double speed = std::hypot(state.vel_x, state.vel_y);
+    if (input.sprint) {
+      multiplier *= 1.5;
+    } else if (speed > 0.4) {
+      multiplier *= 1.2;
+    }
+    if (input.ads) {
+      multiplier *= (loadout_bits & kLoadoutOptic) ? 0.45 : 0.6;
+    }
+    if (loadout_bits & kLoadoutSuppressor) {
+      multiplier *= 1.12;
+    }
+    if (loadout_bits & kLoadoutCompensator) {
+      multiplier *= 0.85;
+    }
+    if (loadout_bits & kLoadoutGrip) {
+      multiplier *= 0.9;
+    }
+    if (IsEnergyWeapon(weapon)) {
+      multiplier *= (1.0 + slot_state.heat * 0.6);
+    }
+    const double spread = weapon->spread_deg * multiplier;
+    return std::max(0.0, spread);
+  };
+
   const size_t slot_count = weapon_config_.slots.empty() ? 1 : weapon_config_.slots.size();
-  auto init_weapon_state = [&](PlayerWeaponState &state) {
+  auto init_weapon_state = [&](PlayerWeaponState &state, const std::string &connection_id) {
     state.slots.clear();
     state.slots.resize(slot_count);
+    const uint32_t loadout_bits = resolve_loadout_bits(connection_id);
     for (size_t i = 0; i < slot_count; ++i) {
       const auto *weapon = afps::weapons::ResolveWeaponSlot(weapon_config_, static_cast<int>(i));
       if (weapon) {
-        state.slots[i].ammo_in_mag = weapon->max_ammo_in_mag;
+        state.slots[i].ammo_in_mag = resolve_max_ammo(weapon, loadout_bits);
       } else {
         state.slots[i].ammo_in_mag = 0;
       }
       state.slots[i].cooldown = 0.0;
       state.slots[i].reload_timer = 0.0;
+      state.slots[i].heat = 0.0;
+      state.slots[i].overheat_timer = 0.0;
     }
     state.shot_seq = 0;
   };
@@ -221,10 +737,10 @@ void TickLoop::Step() {
     auto weapon_iter = weapon_states_.find(connection_id);
     if (weapon_iter == weapon_states_.end()) {
       PlayerWeaponState state;
-      init_weapon_state(state);
+      init_weapon_state(state, connection_id);
       weapon_states_[connection_id] = std::move(state);
     } else if (weapon_iter->second.slots.size() != slot_count) {
-      init_weapon_state(weapon_iter->second);
+      init_weapon_state(weapon_iter->second, connection_id);
     }
   }
 
@@ -247,6 +763,43 @@ void TickLoop::Step() {
   for (const auto &batch : fire_batches) {
     for (const auto &request : batch.requests) {
       fire_events.push_back({batch.connection_id, request});
+    }
+  }
+
+  auto loadout_batches = store_.DrainAllLoadoutRequests();
+  for (const auto &batch : loadout_batches) {
+    if (batch.requests.empty()) {
+      continue;
+    }
+    const uint32_t previous_bits = resolve_loadout_bits(batch.connection_id);
+    const uint32_t next_bits = batch.requests.back().loadout_bits;
+    loadout_bits_[batch.connection_id] = next_bits;
+    if (previous_bits == next_bits) {
+      continue;
+    }
+    auto weapon_iter = weapon_states_.find(batch.connection_id);
+    if (weapon_iter == weapon_states_.end()) {
+      continue;
+    }
+    auto &weapon_state = weapon_iter->second;
+    for (size_t i = 0; i < weapon_state.slots.size(); ++i) {
+      auto &slot_state = weapon_state.slots[i];
+      const auto *weapon = afps::weapons::ResolveWeaponSlot(weapon_config_, static_cast<int>(i));
+      if (!weapon) {
+        slot_state.ammo_in_mag = 0;
+        continue;
+      }
+      const int base_max = std::max(0, weapon->max_ammo_in_mag);
+      const int next_max = resolve_max_ammo(weapon, next_bits);
+      if (next_max <= 0) {
+        slot_state.ammo_in_mag = 0;
+        continue;
+      }
+      if (next_max > base_max && slot_state.ammo_in_mag >= base_max) {
+        slot_state.ammo_in_mag = next_max;
+      } else {
+        slot_state.ammo_in_mag = std::min(slot_state.ammo_in_mag, next_max);
+      }
     }
   }
 
@@ -295,12 +848,13 @@ void TickLoop::Step() {
       state = MakeSpawnState(connection_id, sim_config_);
       auto weapon_iter = weapon_states_.find(connection_id);
       if (weapon_iter != weapon_states_.end()) {
-        init_weapon_state(weapon_iter->second);
+        init_weapon_state(weapon_iter->second, connection_id);
       }
     }
   }
 
   for (auto &entry : weapon_states_) {
+    const uint32_t loadout_bits = resolve_loadout_bits(entry.first);
     auto &state = entry.second;
     for (size_t i = 0; i < state.slots.size(); ++i) {
       auto &slot_state = state.slots[i];
@@ -311,9 +865,24 @@ void TickLoop::Step() {
         slot_state.reload_timer = std::max(0.0, slot_state.reload_timer - dt);
         if (slot_state.reload_timer <= 0.0) {
           const auto *weapon = afps::weapons::ResolveWeaponSlot(weapon_config_, static_cast<int>(i));
-          slot_state.ammo_in_mag = weapon ? weapon->max_ammo_in_mag : 0;
+          slot_state.ammo_in_mag = resolve_max_ammo(weapon, loadout_bits);
         }
       }
+
+      const auto *weapon = afps::weapons::ResolveWeaponSlot(weapon_config_, static_cast<int>(i));
+      if (!IsEnergyWeapon(weapon)) {
+        slot_state.heat = 0.0;
+        slot_state.overheat_timer = 0.0;
+        continue;
+      }
+
+      if (slot_state.overheat_timer > 0.0) {
+        slot_state.overheat_timer = std::max(0.0, slot_state.overheat_timer - dt);
+        slot_state.heat = std::max(0.0, slot_state.heat - (kEnergyVentCoolPerSecond * dt));
+      } else {
+        slot_state.heat = std::max(0.0, slot_state.heat - (kEnergyCoolPerSecond * dt));
+      }
+      slot_state.heat = std::min(1.0, slot_state.heat);
     }
   }
 
@@ -367,16 +936,11 @@ void TickLoop::Step() {
           killed = afps::combat::ApplyDamageWithShield(target_combat_iter->second, attacker, hit.damage,
                                                        shield_active && shield_facing,
                                                        sim_config_.shield_damage_multiplier);
-          GameEvent hit_event;
-          hit_event.event = "HitConfirmed";
+          HitConfirmedFx hit_event;
           hit_event.target_id = hit.target_id;
           hit_event.damage = hit.damage;
           hit_event.killed = killed;
-          store_.SendUnreliable(
-              event.connection_id,
-              BuildGameEvent(hit_event,
-                             store_.NextServerMessageSeq(event.connection_id),
-                             store_.LastClientMessageSeq(event.connection_id)));
+          emit_fx_to(event.connection_id, hit_event);
         }
         if (killed) {
           target_state_iter->second.vel_x = 0.0;
@@ -390,10 +954,10 @@ void TickLoop::Step() {
   }
 
   auto resolve_active_slot = [&](const std::string &connection_id, int requested_slot) -> int {
-    int slot = requested_slot;
-    auto input_iter = last_inputs_.find(connection_id);
-    if (input_iter != last_inputs_.end()) {
-      slot = input_iter->second.weapon_slot;
+	    int slot = requested_slot;
+	    auto input_iter = last_inputs_.find(connection_id);
+	    if (input_iter != last_inputs_.end()) {
+	      slot = input_iter->second.weapon_slot;
     }
     if (slot < 0) {
       slot = 0;
@@ -405,34 +969,36 @@ void TickLoop::Step() {
     return std::min(slot, max_slot);
   };
 
-  auto normalize = [](const afps::combat::Vec3 &value) {
-    const double len = std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
-    if (!std::isfinite(len) || len <= 1e-6) {
-      return afps::combat::Vec3{0.0, -1.0, 0.0};
+  auto should_show_tracer = [&](const afps::weapons::WeaponDef *weapon,
+                                int shot_seq,
+                                uint32_t loadout_bits) {
+    if (!weapon) {
+      return false;
     }
-    return afps::combat::Vec3{value.x / len, value.y / len, value.z / len};
-  };
+    if (weapon->kind != afps::weapons::WeaponKind::kHitscan) {
+      return false;
+    }
+    if (loadout_bits & kLoadoutSuppressor) {
+      return (shot_seq % 5) == 0;
+    }
+    if (IsEnergyWeapon(weapon)) {
+      return true;
+    }
+	    if (weapon->fire_mode == afps::weapons::FireMode::kSemi) {
+	      return true;
+	    }
+	    return (shot_seq % 3) == 0;
+	  };
 
-  auto cross = [](const afps::combat::Vec3 &a, const afps::combat::Vec3 &b) {
-    return afps::combat::Vec3{a.y * b.z - a.z * b.y,
-                              a.z * b.x - a.x * b.z,
-                              a.x * b.y - a.y * b.x};
-  };
+	  auto quantize_unit_u16 = [&](double value) {
+	    const double clamped = Clamp01(value);
+	    return static_cast<uint16_t>(std::llround(clamped * 65535.0));
+	  };
 
-  auto transform_local = [](const afps::combat::Vec3 &local,
-                            const afps::combat::Vec3 &right,
-                            const afps::combat::Vec3 &forward,
-                            const afps::combat::Vec3 &up) {
-    return afps::combat::Vec3{
-        right.x * local.x + forward.x * local.y + up.x * local.z,
-        right.y * local.x + forward.y * local.y + up.y * local.z,
-        right.z * local.x + forward.z * local.y + up.z * local.z};
-  };
-
-  for (const auto &event : fire_events) {
-    auto shooter_iter = combat_states_.find(event.connection_id);
-    if (shooter_iter == combat_states_.end() || !shooter_iter->second.alive) {
-      continue;
+	  for (const auto &event : fire_events) {
+	    auto shooter_iter = combat_states_.find(event.connection_id);
+	    if (shooter_iter == combat_states_.end() || !shooter_iter->second.alive) {
+	      continue;
     }
     auto state_iter = players_.find(event.connection_id);
     if (state_iter == players_.end()) {
@@ -448,256 +1014,293 @@ void TickLoop::Step() {
       continue;
     }
     const auto *weapon = afps::weapons::ResolveWeaponSlot(weapon_config_, active_slot);
-    if (!weapon) {
-      continue;
-    }
-    auto &slot_state = weapon_state_iter->second.slots[active_slot];
-    if (slot_state.reload_timer > 0.0) {
-      continue;
-    }
-    if (slot_state.cooldown > 0.0) {
-      continue;
-    }
+	    if (!weapon) {
+	      continue;
+	    }
+	    auto &slot_state = weapon_state_iter->second.slots[active_slot];
+	    if (slot_state.reload_timer > 0.0) {
+	      continue;
+	    }
+	    if (slot_state.cooldown > 0.0) {
+	      continue;
+	    }
+	    if (slot_state.overheat_timer > 0.0) {
+	      continue;
+	    }
 
-    const auto view = resolve_view(event.connection_id);
-    const auto dir = afps::combat::ViewDirection(view);
-    afps::combat::Vec3 muzzle{state_iter->second.x,
-                              state_iter->second.y,
-                              state_iter->second.z + afps::combat::kPlayerEyeHeight};
-    muzzle.x += dir.x * 0.2;
-    muzzle.y += dir.y * 0.2;
-    muzzle.z += dir.z * 0.2;
+	    weapon_state_iter->second.shot_seq += 1;
+	    const int shot_seq = weapon_state_iter->second.shot_seq;
+	    const uint32_t loadout_bits = resolve_loadout_bits(event.connection_id);
+	    InputCmd input;
+	    auto input_iter = last_inputs_.find(event.connection_id);
+	    if (input_iter != last_inputs_.end()) {
+	      input = input_iter->second;
+	    }
+	    const auto view = resolve_view(event.connection_id);
+	    const auto dir = afps::combat::ViewDirection(view);
+	    const double spread_deg = resolve_spread_deg(weapon, slot_state, input, state_iter->second, loadout_bits);
+	    const uint32_t spread_seed =
+	        HashString(event.connection_id) ^
+	        (static_cast<uint32_t>(shot_seq) * 0x9e3779b9u) ^
+	        (static_cast<uint32_t>(active_slot + 1) * 0x85ebca6bu);
+	    const auto shot_dir = ApplySpread(dir, spread_deg, spread_seed);
+	    const auto shot_view = ViewFromDirection(shot_dir);
+	    OctEncoded16 dir_oct = EncodeOct16(shot_dir.x, shot_dir.y, shot_dir.z);
+	    const double weapon_cooldown = weapon->cooldown_seconds;
 
-    weapon_state_iter->second.shot_seq += 1;
-    const int shot_seq = weapon_state_iter->second.shot_seq;
-    const double weapon_cooldown = weapon->cooldown_seconds;
+	    if (slot_state.ammo_in_mag <= 0) {
+	      slot_state.cooldown = weapon_cooldown;
+	      ShotFiredFx fired;
+	      fired.shooter_id = event.connection_id;
+	      fired.weapon_slot = static_cast<uint8_t>(active_slot);
+	      fired.shot_seq = shot_seq;
+	      fired.dry_fire = true;
+	      emit_fx_all(fired);
 
-    auto send_weapon_fired = [&](const WeaponFiredEvent &event_data) {
-      for (const auto &connection_id : active_ids) {
-        store_.SendUnreliable(
-            connection_id,
-            BuildWeaponFiredEvent(event_data,
-                                  store_.NextServerMessageSeq(connection_id),
-                                  store_.LastClientMessageSeq(connection_id)));
-      }
-    };
+	      const double reload_seconds = resolve_reload_seconds(weapon, loadout_bits);
+	      if (reload_seconds > 0.0) {
+	        slot_state.reload_timer = reload_seconds;
+	        ReloadFx reload;
+	        reload.shooter_id = event.connection_id;
+	        reload.weapon_slot = static_cast<uint8_t>(active_slot);
+	        emit_fx_all(reload);
+	      }
+	      continue;
+	    }
 
-    if (slot_state.ammo_in_mag <= 0) {
-      slot_state.cooldown = weapon_cooldown;
-      WeaponFiredEvent fired;
-      fired.shooter_id = event.connection_id;
-      fired.weapon_id = weapon->id;
-      fired.weapon_slot = active_slot;
-      fired.server_tick = server_tick_;
-      fired.shot_seq = shot_seq;
-      fired.muzzle_pos_x = muzzle.x;
-      fired.muzzle_pos_y = muzzle.y;
-      fired.muzzle_pos_z = muzzle.z;
-      fired.dir_x = dir.x;
-      fired.dir_y = dir.y;
-      fired.dir_z = dir.z;
-      fired.dry_fire = true;
-      fired.casing_enabled = false;
-      send_weapon_fired(fired);
+	    slot_state.ammo_in_mag = std::max(0, slot_state.ammo_in_mag - 1);
+	    slot_state.cooldown = weapon_cooldown;
 
-      if (weapon->reload_seconds > 0.0) {
-        slot_state.reload_timer = weapon->reload_seconds;
-        WeaponReloadEvent reload;
-        reload.shooter_id = event.connection_id;
-        reload.weapon_id = weapon->id;
-        reload.weapon_slot = active_slot;
-        reload.server_tick = server_tick_;
-        reload.reload_seconds = weapon->reload_seconds;
-        for (const auto &connection_id : active_ids) {
-          store_.SendUnreliable(
-              connection_id,
-              BuildWeaponReloadEvent(reload,
-                                     store_.NextServerMessageSeq(connection_id),
-                                     store_.LastClientMessageSeq(connection_id)));
-        }
-      }
-      continue;
-    }
+	    ShotFiredFx fired;
+	    fired.shooter_id = event.connection_id;
+	    fired.weapon_slot = static_cast<uint8_t>(active_slot);
+	    fired.shot_seq = shot_seq;
+	    fired.dry_fire = false;
+	    emit_fx_all(fired);
 
-    slot_state.ammo_in_mag = std::max(0, slot_state.ammo_in_mag - 1);
-    slot_state.cooldown = weapon_cooldown;
+	    const bool energy_weapon = IsEnergyWeapon(weapon);
+	    if (energy_weapon) {
+	      const double prev_heat = slot_state.heat;
+	      slot_state.heat = Clamp01(slot_state.heat + kEnergyHeatPerShot);
+	      if (prev_heat < 1.0 && slot_state.heat >= 1.0) {
+	        slot_state.overheat_timer = kEnergyVentSeconds;
+	        OverheatFx overheat;
+	        overheat.shooter_id = event.connection_id;
+	        overheat.weapon_slot = static_cast<uint8_t>(active_slot);
+	        overheat.heat_q = quantize_unit_u16(slot_state.heat);
+	        emit_fx_all(overheat);
+	        VentFx vent;
+	        vent.shooter_id = event.connection_id;
+	        vent.weapon_slot = static_cast<uint8_t>(active_slot);
+	        emit_fx_all(vent);
+	      }
+	    }
 
-    int estimated_tick = server_tick_;
-    auto tick_iter = last_input_server_tick_.find(event.connection_id);
-    if (tick_iter != last_input_server_tick_.end()) {
-      estimated_tick = tick_iter->second;
+	    int estimated_tick = server_tick_;
+	    auto tick_iter = last_input_server_tick_.find(event.connection_id);
+	    if (tick_iter != last_input_server_tick_.end()) {
+	      estimated_tick = tick_iter->second;
     }
     if (pose_history_limit_ > 0) {
       const int min_tick = server_tick_ - pose_history_limit_ + 1;
-      estimated_tick = std::max(min_tick, std::min(server_tick_, estimated_tick));
-    }
+	      estimated_tick = std::max(min_tick, std::min(server_tick_, estimated_tick));
+	    }
 
-    if (weapon->kind == afps::weapons::WeaponKind::kHitscan) {
-      const auto result = afps::combat::ResolveHitscan(
-          event.connection_id, pose_histories_, estimated_tick, view, sim_config_, weapon->range);
-      if (result.hit) {
-        auto target_iter = combat_states_.find(result.target_id);
-        bool killed = false;
-        if (target_iter != combat_states_.end()) {
-          bool shield_active = false;
-          bool shield_facing = true;
-          auto target_state_iter = players_.find(result.target_id);
-          if (target_state_iter != players_.end()) {
-            shield_active = target_state_iter->second.shield_active;
-          }
-          if (shield_active) {
-            const afps::combat::Vec3 source{muzzle.x, muzzle.y, muzzle.z};
-            shield_facing = resolve_shield_facing(result.target_id, source);
-          }
-          killed = afps::combat::ApplyDamageWithShield(target_iter->second, &shooter_iter->second, weapon->damage,
-                                                       shield_active && shield_facing,
-                                                       sim_config_.shield_damage_multiplier);
-          if (killed) {
-            auto &target_state = players_[result.target_id];
-            target_state.vel_x = 0.0;
-            target_state.vel_y = 0.0;
-            target_state.vel_z = 0.0;
-            target_state.dash_cooldown = 0.0;
-          }
-        }
-        GameEvent hit_event;
-        hit_event.event = "HitConfirmed";
-        hit_event.target_id = result.target_id;
-        hit_event.damage = weapon->damage;
-        hit_event.killed = killed;
-        store_.SendUnreliable(
-            event.connection_id,
-            BuildGameEvent(hit_event,
-                           store_.NextServerMessageSeq(event.connection_id),
-                           store_.LastClientMessageSeq(event.connection_id)));
-        std::cout << "[shot] shooter=" << event.connection_id << " target=" << result.target_id
-                  << " dist=" << result.distance << " tick=" << estimated_tick << "\n";
-      }
-    } else if (weapon->kind == afps::weapons::WeaponKind::kProjectile) {
-      if (weapon->projectile_speed > 0.0 && std::isfinite(weapon->projectile_speed)) {
-        afps::combat::ProjectileState projectile;
-        projectile.id = next_projectile_id_++;
-        projectile.owner_id = event.connection_id;
-        projectile.position = {muzzle.x, muzzle.y, muzzle.z};
-        projectile.velocity = {dir.x * weapon->projectile_speed, dir.y * weapon->projectile_speed,
-                               dir.z * weapon->projectile_speed};
-        projectile.ttl = kProjectileTtlSeconds;
-        projectile.radius = kProjectileRadius;
-        projectile.damage = weapon->damage;
-        projectile.explosion_radius =
-            (weapon->explosion_radius > 0.0 && std::isfinite(weapon->explosion_radius))
-                ? weapon->explosion_radius
-                : 0.0;
-        projectiles_.push_back(projectile);
-        GameEvent spawn_event;
-        spawn_event.event = "ProjectileSpawn";
-        spawn_event.owner_id = event.connection_id;
-        spawn_event.projectile_id = projectile.id;
-        spawn_event.pos_x = projectile.position.x;
-        spawn_event.pos_y = projectile.position.y;
-        spawn_event.pos_z = projectile.position.z;
-        spawn_event.vel_x = projectile.velocity.x;
-        spawn_event.vel_y = projectile.velocity.y;
-        spawn_event.vel_z = projectile.velocity.z;
-        spawn_event.ttl = projectile.ttl;
-        for (const auto &connection_id : active_ids) {
-          store_.SendUnreliable(
-              connection_id,
-              BuildGameEvent(spawn_event,
-                             store_.NextServerMessageSeq(connection_id),
-                             store_.LastClientMessageSeq(connection_id)));
-        }
-      }
-    }
+	    if (weapon->kind == afps::weapons::WeaponKind::kHitscan) {
+	      afps::sim::PlayerState shooter_pose;
+	      auto history_iter = pose_histories_.find(event.connection_id);
+	      if (history_iter != pose_histories_.end()) {
+	        history_iter->second.SampleAtOrBefore(estimated_tick, shooter_pose);
+	      } else {
+	        shooter_pose = state_iter->second;
+	      }
+	      const afps::combat::Vec3 origin{shooter_pose.x,
+	                                      shooter_pose.y,
+	                                      shooter_pose.z + afps::combat::kPlayerEyeHeight};
+	      const afps::combat::Vec3 muzzle = Add(origin, Mul(shot_dir, 0.2));
+	      const double max_range = (std::isfinite(weapon->range) && weapon->range > 0.0)
+	                                   ? weapon->range
+	                                   : 0.0;
+	      const auto result = afps::combat::ResolveHitscan(
+	          event.connection_id, pose_histories_, estimated_tick, shot_view, sim_config_, weapon->range);
+	      const auto world_hit = ResolveWorldHitscan(origin, shot_dir, sim_config_, weapon->range);
 
-    WeaponFiredEvent fired;
-    fired.shooter_id = event.connection_id;
-    fired.weapon_id = weapon->id;
-    fired.weapon_slot = active_slot;
-    fired.server_tick = server_tick_;
-    fired.shot_seq = shot_seq;
-    fired.muzzle_pos_x = muzzle.x;
-    fired.muzzle_pos_y = muzzle.y;
-    fired.muzzle_pos_z = muzzle.z;
-    fired.dir_x = dir.x;
-    fired.dir_y = dir.y;
-    fired.dir_z = dir.z;
-    fired.dry_fire = false;
+	      HitKind hit_kind = HitKind::None;
+	      SurfaceType surface_type = SurfaceType::Stone;
+	      afps::combat::Vec3 hit_normal{-shot_dir.x, -shot_dir.y, -shot_dir.z};
+	      double hit_distance = max_range;
+	      std::string hit_target;
 
-    if (weapon->eject_shells_while_firing) {
-      const uint32_t seed =
-          static_cast<uint32_t>(server_tick_) ^
-          static_cast<uint32_t>(shot_seq * 2654435761u) ^
-          static_cast<uint32_t>(std::hash<std::string>{}(event.connection_id));
-      std::mt19937 rng(seed);
-      std::uniform_real_distribution<double> dist(0.0, 1.0);
-      auto rand_range = [&](double min_value, double max_value) {
-        return min_value + (max_value - min_value) * dist(rng);
-      };
-      const afps::combat::Vec3 forward = normalize(dir);
-      afps::combat::Vec3 up{0.0, 0.0, 1.0};
-      afps::combat::Vec3 right = cross(forward, up);
-      right = normalize(right);
-      up = cross(right, forward);
-      const auto local_offset = weapon->casing.local_offset;
-      const afps::combat::Vec3 world_offset =
-          transform_local({local_offset.x, local_offset.y, local_offset.z}, right, forward, up);
-      const afps::combat::Vec3 local_vel{
-          rand_range(weapon->casing.velocity_min.x, weapon->casing.velocity_max.x),
-          rand_range(weapon->casing.velocity_min.y, weapon->casing.velocity_max.y),
-          rand_range(weapon->casing.velocity_min.z, weapon->casing.velocity_max.z)};
-      const afps::combat::Vec3 local_ang{
-          rand_range(weapon->casing.angular_velocity_min.x, weapon->casing.angular_velocity_max.x),
-          rand_range(weapon->casing.angular_velocity_min.y, weapon->casing.angular_velocity_max.y),
-          rand_range(weapon->casing.angular_velocity_min.z, weapon->casing.angular_velocity_max.z)};
-      const afps::combat::Vec3 world_vel = transform_local(local_vel, right, forward, up);
-      const afps::combat::Vec3 world_ang = transform_local(local_ang, right, forward, up);
+	      if (result.hit && (!world_hit.hit || result.distance <= world_hit.distance)) {
+	        hit_kind = HitKind::Player;
+	        hit_distance = result.distance;
+	        hit_target = result.target_id;
+	        surface_type = SurfaceType::Energy;
+	      } else if (world_hit.hit) {
+	        hit_kind = HitKind::World;
+	        hit_distance = world_hit.distance;
+	        surface_type = world_hit.surface;
+	        hit_normal = world_hit.normal;
+	      }
 
-      fired.casing_enabled = true;
-      fired.casing_pos_x = muzzle.x + world_offset.x;
-      fired.casing_pos_y = muzzle.y + world_offset.y;
-      fired.casing_pos_z = muzzle.z + world_offset.z;
-      fired.casing_rot_x = weapon->casing.local_rotation.x + view.pitch;
-      fired.casing_rot_y = weapon->casing.local_rotation.y;
-      fired.casing_rot_z = weapon->casing.local_rotation.z + view.yaw;
-      fired.casing_vel_x = world_vel.x;
-      fired.casing_vel_y = world_vel.y;
-      fired.casing_vel_z = world_vel.z;
-      fired.casing_ang_x = world_ang.x;
-      fired.casing_ang_y = world_ang.y;
-      fired.casing_ang_z = world_ang.z;
-      fired.casing_seed = seed;
-    } else {
-      fired.casing_enabled = false;
-    }
+	      if (hit_kind == HitKind::Player) {
+	        auto target_iter = combat_states_.find(hit_target);
+	        bool killed = false;
+	        bool shield_active = false;
+	        bool shield_facing = true;
+	        if (target_iter != combat_states_.end()) {
+	          auto target_state_iter = players_.find(hit_target);
+	          if (target_state_iter != players_.end()) {
+	            shield_active = target_state_iter->second.shield_active;
+	          }
+	          if (shield_active) {
+	            shield_facing = resolve_shield_facing(hit_target, muzzle);
+	          }
+	          killed = afps::combat::ApplyDamageWithShield(target_iter->second, &shooter_iter->second, weapon->damage,
+	                                                       shield_active && shield_facing,
+	                                                       sim_config_.shield_damage_multiplier);
+	          if (killed) {
+	            auto &target_state = players_[hit_target];
+	            target_state.vel_x = 0.0;
+	            target_state.vel_y = 0.0;
+	            target_state.vel_z = 0.0;
+	            target_state.dash_cooldown = 0.0;
+	          }
+	        }
+	        if (shield_active && shield_facing) {
+	          surface_type = SurfaceType::Energy;
+	        }
+	        HitConfirmedFx confirmed;
+	        confirmed.target_id = hit_target;
+	        confirmed.damage = weapon->damage;
+	        confirmed.killed = killed;
+	        emit_fx_to(event.connection_id, confirmed);
+	      }
 
-    for (const auto &connection_id : active_ids) {
-      store_.SendUnreliable(
-          connection_id,
-          BuildWeaponFiredEvent(fired,
-                                store_.NextServerMessageSeq(connection_id),
-                                store_.LastClientMessageSeq(connection_id)));
-    }
+	      if (max_range > 0.0) {
+	        const auto normal_oct = EncodeOct16(hit_normal.x, hit_normal.y, hit_normal.z);
+	        ShotTraceFx trace;
+	        trace.shooter_id = event.connection_id;
+	        trace.weapon_slot = static_cast<uint8_t>(active_slot);
+	        trace.shot_seq = shot_seq;
+	        trace.dir_oct_x = dir_oct.x;
+	        trace.dir_oct_y = dir_oct.y;
+	        trace.hit_dist_q = QuantizeU16(hit_distance, kHitDistanceStepMeters);
+	        trace.hit_kind = hit_kind;
+	        trace.surface_type = surface_type;
+	        trace.normal_oct_x = normal_oct.x;
+	        trace.normal_oct_y = normal_oct.y;
+	        trace.show_tracer = should_show_tracer(weapon, shot_seq, loadout_bits);
 
-    if (slot_state.ammo_in_mag <= 0 && weapon->reload_seconds > 0.0) {
-      slot_state.reload_timer = weapon->reload_seconds;
-      WeaponReloadEvent reload;
-      reload.shooter_id = event.connection_id;
-      reload.weapon_id = weapon->id;
-      reload.weapon_slot = active_slot;
-      reload.server_tick = server_tick_;
-      reload.reload_seconds = weapon->reload_seconds;
-      for (const auto &connection_id : active_ids) {
-        store_.SendUnreliable(
-            connection_id,
-            BuildWeaponReloadEvent(reload,
-                                   store_.NextServerMessageSeq(connection_id),
-                                   store_.LastClientMessageSeq(connection_id)));
-      }
-    }
-  }
+	        const double cull_sq = kTraceCullDistanceMeters * kTraceCullDistanceMeters;
+	        for (const auto &recipient_id : active_ids) {
+	          auto recipient_state_iter = players_.find(recipient_id);
+	          if (recipient_state_iter == players_.end()) {
+	            continue;
+	          }
+	          const double dx = recipient_state_iter->second.x - shooter_pose.x;
+	          const double dy = recipient_state_iter->second.y - shooter_pose.y;
+	          const double dz = recipient_state_iter->second.z - shooter_pose.z;
+	          const double dist_sq = dx * dx + dy * dy + dz * dz;
+	          if (dist_sq > cull_sq && recipient_id != event.connection_id) {
+	            continue;
+	          }
+	          ShotTraceFx recipient_trace = trace;
+	          if (dist_sq > cull_sq) {
+	            recipient_trace.show_tracer = false;
+	          }
+	          emit_fx_to(recipient_id, recipient_trace);
+	        }
+	      }
 
-  if (!projectiles_.empty()) {
+	      const afps::combat::Vec3 segment_start = origin;
+	      const afps::combat::Vec3 segment_end = Add(origin, Mul(shot_dir, hit_distance));
+	      const double capsule_radius = (std::isfinite(sim_config_.player_radius) && sim_config_.player_radius > 0.0)
+	                                        ? sim_config_.player_radius
+	                                        : 0.4;
+	      const double threshold = capsule_radius + kNearMissExtraRadius;
+	      const double threshold_sq = threshold * threshold;
+	      for (const auto &entry : pose_histories_) {
+	        const std::string &target_id = entry.first;
+	        if (target_id == event.connection_id) {
+	          continue;
+	        }
+	        if (!hit_target.empty() && target_id == hit_target) {
+	          continue;
+	        }
+	        afps::sim::PlayerState pose;
+	        if (!entry.second.SampleAtOrBefore(estimated_tick, pose)) {
+	          continue;
+	        }
+	        const afps::combat::Vec3 axis_start{pose.x, pose.y, pose.z};
+	        const afps::combat::Vec3 axis_end{pose.x, pose.y, pose.z + afps::combat::kPlayerHeight};
+	        const double dist_sq = SegmentSegmentDistanceSquared(segment_start, segment_end, axis_start, axis_end);
+	        if (dist_sq > threshold_sq) {
+	          continue;
+	        }
+	        const double dist = std::sqrt(std::max(0.0, dist_sq));
+	        const double closeness = Clamp01((threshold - dist) / threshold);
+	        const uint8_t strength = static_cast<uint8_t>(std::llround(closeness * 255.0));
+	        if (strength == 0) {
+	          continue;
+	        }
+	        NearMissFx near_miss;
+	        near_miss.shooter_id = event.connection_id;
+	        near_miss.shot_seq = shot_seq;
+	        near_miss.strength = strength;
+	        emit_fx_to(target_id, near_miss);
+	      }
+	    } else if (weapon->kind == afps::weapons::WeaponKind::kProjectile) {
+	      const afps::combat::Vec3 origin{state_iter->second.x,
+	                                      state_iter->second.y,
+	                                      state_iter->second.z + afps::combat::kPlayerEyeHeight};
+	      const afps::combat::Vec3 muzzle = Add(origin, Mul(shot_dir, 0.2));
+	      if (weapon->projectile_speed > 0.0 && std::isfinite(weapon->projectile_speed)) {
+	        afps::combat::ProjectileState projectile;
+	        projectile.id = next_projectile_id_++;
+	        projectile.owner_id = event.connection_id;
+	        projectile.position = muzzle;
+	        projectile.velocity = {shot_dir.x * weapon->projectile_speed, shot_dir.y * weapon->projectile_speed,
+	                               shot_dir.z * weapon->projectile_speed};
+	        projectile.ttl = kProjectileTtlSeconds;
+	        projectile.radius = kProjectileRadius;
+	        projectile.damage = weapon->damage;
+	        projectile.explosion_radius =
+	            (weapon->explosion_radius > 0.0 && std::isfinite(weapon->explosion_radius))
+	                ? weapon->explosion_radius
+	                : 0.0;
+	        projectiles_.push_back(projectile);
+
+	        ProjectileSpawnFx spawn;
+	        spawn.shooter_id = event.connection_id;
+	        spawn.weapon_slot = static_cast<uint8_t>(active_slot);
+	        spawn.shot_seq = shot_seq;
+	        spawn.projectile_id = projectile.id;
+	        spawn.pos_x_q = QuantizeI16(projectile.position.x, kProjectilePositionStepMeters);
+	        spawn.pos_y_q = QuantizeI16(projectile.position.y, kProjectilePositionStepMeters);
+	        spawn.pos_z_q = QuantizeI16(projectile.position.z, kProjectilePositionStepMeters);
+	        spawn.vel_x_q = QuantizeI16(projectile.velocity.x, kProjectileVelocityStepMetersPerSecond);
+	        spawn.vel_y_q = QuantizeI16(projectile.velocity.y, kProjectileVelocityStepMetersPerSecond);
+	        spawn.vel_z_q = QuantizeI16(projectile.velocity.z, kProjectileVelocityStepMetersPerSecond);
+	        spawn.ttl_q = QuantizeU16(projectile.ttl, kProjectileTtlStepSeconds);
+	        emit_fx_all(spawn);
+	      }
+	    }
+
+	    if (slot_state.ammo_in_mag <= 0) {
+	      const double reload_seconds = resolve_reload_seconds(weapon, loadout_bits);
+	      if (reload_seconds <= 0.0) {
+	        continue;
+	      }
+	      slot_state.reload_timer = reload_seconds;
+	      ReloadFx reload;
+	      reload.shooter_id = event.connection_id;
+	      reload.weapon_slot = static_cast<uint8_t>(active_slot);
+	      emit_fx_all(reload);
+	    }
+	  }
+
+	  if (!projectiles_.empty()) {
     std::unordered_map<std::string, afps::sim::PlayerState> alive_players;
     alive_players.reserve(players_.size());
     for (const auto &entry : players_) {
@@ -707,24 +1310,30 @@ void TickLoop::Step() {
       }
     }
 
-    std::vector<afps::combat::ProjectileState> next_projectiles;
-    next_projectiles.reserve(projectiles_.size());
-    for (auto &projectile : projectiles_) {
-      if (!std::isfinite(projectile.ttl) || projectile.ttl <= 0.0) {
-        continue;
-      }
-      projectile.ttl = std::max(0.0, projectile.ttl - dt);
-      if (projectile.ttl <= 0.0) {
-        continue;
-      }
-      const afps::combat::Vec3 delta{projectile.velocity.x * dt, projectile.velocity.y * dt,
-                                     projectile.velocity.z * dt};
-      const auto impact = afps::combat::ResolveProjectileImpact(
+	    std::vector<afps::combat::ProjectileState> next_projectiles;
+	    next_projectiles.reserve(projectiles_.size());
+	    for (auto &projectile : projectiles_) {
+	      if (!std::isfinite(projectile.ttl) || projectile.ttl <= 0.0) {
+	        ProjectileRemoveFx remove;
+	        remove.projectile_id = projectile.id;
+	        emit_fx_all(remove);
+	        continue;
+	      }
+	      projectile.ttl = std::max(0.0, projectile.ttl - dt);
+	      if (projectile.ttl <= 0.0) {
+	        ProjectileRemoveFx remove;
+	        remove.projectile_id = projectile.id;
+	        emit_fx_all(remove);
+	        continue;
+	      }
+	      const afps::combat::Vec3 delta{projectile.velocity.x * dt, projectile.velocity.y * dt,
+	                                     projectile.velocity.z * dt};
+	      const auto impact = afps::combat::ResolveProjectileImpact(
           projectile, delta, sim_config_, alive_players, projectile.owner_id);
-      if (impact.hit) {
-        const auto hits = afps::combat::ComputeExplosionDamage(
-            impact.position, projectile.explosion_radius, projectile.damage, alive_players, "");
-        for (const auto &hit : hits) {
+	      if (impact.hit) {
+	        const auto hits = afps::combat::ComputeExplosionDamage(
+	            impact.position, projectile.explosion_radius, projectile.damage, alive_players, "");
+	        for (const auto &hit : hits) {
           auto target_iter = combat_states_.find(hit.target_id);
           if (target_iter == combat_states_.end() || !target_iter->second.alive) {
             continue;
@@ -738,57 +1347,125 @@ void TickLoop::Step() {
           if (state_iter != players_.end()) {
             shield_active = state_iter->second.shield_active;
           }
-          if (shield_active) {
-            shield_facing = resolve_shield_facing(hit.target_id, impact.position);
-          }
-          const bool killed = afps::combat::ApplyDamageWithShield(target_iter->second, attacker, hit.damage,
-                                                                  shield_active && shield_facing,
-                                                                  sim_config_.shield_damage_multiplier);
-          GameEvent hit_event;
-          hit_event.event = "HitConfirmed";
-          hit_event.target_id = hit.target_id;
-          hit_event.damage = hit.damage;
-          hit_event.killed = killed;
-          store_.SendUnreliable(
-              projectile.owner_id,
-              BuildGameEvent(hit_event,
-                             store_.NextServerMessageSeq(projectile.owner_id),
-                             store_.LastClientMessageSeq(projectile.owner_id)));
-          if (killed) {
-            auto &target_state = players_[hit.target_id];
-            target_state.vel_x = 0.0;
-            target_state.vel_y = 0.0;
+	          if (shield_active) {
+	            shield_facing = resolve_shield_facing(hit.target_id, impact.position);
+	          }
+	          const bool killed = afps::combat::ApplyDamageWithShield(target_iter->second, attacker, hit.damage,
+	                                                                  shield_active && shield_facing,
+	                                                                  sim_config_.shield_damage_multiplier);
+	          HitConfirmedFx hit_event;
+	          hit_event.target_id = hit.target_id;
+	          hit_event.damage = hit.damage;
+	          hit_event.killed = killed;
+	          emit_fx_to(projectile.owner_id, hit_event);
+	          if (killed) {
+	            auto &target_state = players_[hit.target_id];
+	            target_state.vel_x = 0.0;
+	            target_state.vel_y = 0.0;
             target_state.vel_z = 0.0;
             target_state.dash_cooldown = 0.0;
-            alive_players.erase(hit.target_id);
-          }
-        }
-        GameEvent remove_event;
-        remove_event.event = "ProjectileRemove";
-        remove_event.owner_id = projectile.owner_id;
-        remove_event.projectile_id = projectile.id;
-        for (const auto &connection_id : active_ids) {
-          store_.SendUnreliable(
-              connection_id,
-              BuildGameEvent(remove_event,
-                             store_.NextServerMessageSeq(connection_id),
-                             store_.LastClientMessageSeq(connection_id)));
-        }
-        std::cout << "[projectile] owner=" << projectile.owner_id << " hits=" << hits.size() << "\n";
-        continue;
-      }
-      projectile.position.x += delta.x;
-      projectile.position.y += delta.y;
+	            alive_players.erase(hit.target_id);
+	          }
+	        }
+	        afps::combat::Vec3 normal{-projectile.velocity.x, -projectile.velocity.y, -projectile.velocity.z};
+	        const double len = std::sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
+	        if (len > 1e-6 && std::isfinite(len)) {
+	          normal.x /= len;
+	          normal.y /= len;
+	          normal.z /= len;
+	        } else {
+	          normal = {0.0, 0.0, 1.0};
+	        }
+	        SurfaceType surface = SurfaceType::Stone;
+	        if (impact.hit_world) {
+	          const auto surface_info = ResolveWorldSurfaceAt(impact.position, sim_config_);
+	          normal = surface_info.normal;
+	          surface = surface_info.surface;
+	        } else {
+	          surface = SurfaceType::Energy;
+	        }
+	        const auto normal_oct = EncodeOct16(normal.x, normal.y, normal.z);
+	        ProjectileImpactFx impact_event;
+	        impact_event.projectile_id = projectile.id;
+	        impact_event.hit_world = impact.hit_world;
+	        impact_event.target_id = impact.target_id;
+	        impact_event.pos_x_q = QuantizeI16(impact.position.x, kProjectilePositionStepMeters);
+	        impact_event.pos_y_q = QuantizeI16(impact.position.y, kProjectilePositionStepMeters);
+	        impact_event.pos_z_q = QuantizeI16(impact.position.z, kProjectilePositionStepMeters);
+	        impact_event.normal_oct_x = normal_oct.x;
+	        impact_event.normal_oct_y = normal_oct.y;
+	        impact_event.surface_type = surface;
+	        emit_fx_all(impact_event);
+
+	        ProjectileRemoveFx remove_event;
+	        remove_event.projectile_id = projectile.id;
+	        emit_fx_all(remove_event);
+	        continue;
+	      }
+	      projectile.position.x += delta.x;
+	      projectile.position.y += delta.y;
       projectile.position.z += delta.z;
       next_projectiles.push_back(projectile);
     }
-    projectiles_.swap(next_projectiles);
-  }
+	    projectiles_.swap(next_projectiles);
+	  }
 
-  if (accumulator_.tick_rate() > 0) {
-    snapshot_accumulator_ += static_cast<double>(kSnapshotRate) /
-                             static_cast<double>(accumulator_.tick_rate());
-  }
+	  auto fx_priority = [](const FxEventData &event) {
+	    return std::visit(
+	        [](const auto &typed) {
+	          using T = std::decay_t<decltype(typed)>;
+	          if constexpr (std::is_same_v<T, NearMissFx>) return 0;
+	          if constexpr (std::is_same_v<T, ShotTraceFx>) return 1;
+	          if constexpr (std::is_same_v<T, ProjectileImpactFx>) return 2;
+	          if constexpr (std::is_same_v<T, ProjectileSpawnFx>) return 3;
+	          if constexpr (std::is_same_v<T, ProjectileRemoveFx>) return 4;
+	          if constexpr (std::is_same_v<T, ReloadFx>) return 5;
+	          if constexpr (std::is_same_v<T, OverheatFx>) return 6;
+	          if constexpr (std::is_same_v<T, VentFx>) return 7;
+	          if constexpr (std::is_same_v<T, ShotFiredFx>) return 8;
+	          if constexpr (std::is_same_v<T, HitConfirmedFx>) return 9;
+	          return 1;
+	        },
+	        event);
+	  };
+
+	  for (const auto &recipient_id : active_ids) {
+	    auto iter = fx_events.find(recipient_id);
+	    if (iter == fx_events.end() || iter->second.empty()) {
+	      continue;
+	    }
+	    auto &events = iter->second;
+	    const uint32_t server_seq_ack = store_.LastClientMessageSeq(recipient_id);
+
+	    while (!events.empty()) {
+	      GameEventBatch batch;
+	      batch.server_tick = server_tick_;
+	      batch.events = events;
+	      const auto probe = BuildGameEventBatch(batch, 0, server_seq_ack);
+	      if (probe.size() <= kMaxClientMessageBytes) {
+	        const auto payload = BuildGameEventBatch(batch,
+	                                                 store_.NextServerMessageSeq(recipient_id),
+	                                                 server_seq_ack);
+	        store_.SendUnreliable(recipient_id, payload);
+	        break;
+	      }
+	      size_t drop_index = 0;
+	      int lowest = fx_priority(events[0]);
+	      for (size_t i = 1; i < events.size(); ++i) {
+	        const int prio = fx_priority(events[i]);
+	        if (prio < lowest) {
+	          lowest = prio;
+	          drop_index = i;
+	        }
+	      }
+	      events.erase(events.begin() + static_cast<long>(drop_index));
+	    }
+	  }
+
+	  if (accumulator_.tick_rate() > 0) {
+	    snapshot_accumulator_ += static_cast<double>(kSnapshotRate) /
+	                             static_cast<double>(accumulator_.tick_rate());
+	  }
   if (snapshot_accumulator_ >= 1.0) {
     snapshot_accumulator_ -= 1.0;
     for (const auto &connection_id : active_ids) {
@@ -819,17 +1496,54 @@ void TickLoop::Step() {
         snapshot.vel_z = state_iter->second.vel_z;
         snapshot.dash_cooldown = state_iter->second.dash_cooldown;
       }
-      auto combat_iter = combat_states_.find(connection_id);
-      if (combat_iter != combat_states_.end()) {
-        snapshot.health = combat_iter->second.health;
-        snapshot.kills = combat_iter->second.kills;
-        snapshot.deaths = combat_iter->second.deaths;
-      }
-      auto baseline_iter = last_full_snapshots_.find(connection_id);
-      int &sequence = snapshot_sequence_[connection_id];
-      const bool needs_full = (baseline_iter == last_full_snapshots_.end()) ||
-                              (snapshot_keyframe_interval_ <= 0) ||
-                              (sequence % snapshot_keyframe_interval_ == 0);
+	      auto combat_iter = combat_states_.find(connection_id);
+	      if (combat_iter != combat_states_.end()) {
+	        snapshot.health = combat_iter->second.health;
+	        snapshot.kills = combat_iter->second.kills;
+	        snapshot.deaths = combat_iter->second.deaths;
+	      }
+	      const auto view = resolve_view(connection_id);
+	      snapshot.view_yaw_q = QuantizeYaw(view.yaw);
+	      snapshot.view_pitch_q = QuantizePitch(view.pitch);
+
+	      uint8_t flags = 0;
+	      if (input_iter != last_inputs_.end()) {
+	        if (input_iter->second.ads) {
+	          flags |= kPlayerFlagAds;
+	        }
+	        if (input_iter->second.sprint) {
+	          flags |= kPlayerFlagSprint;
+	        }
+	      }
+	      bool reloading = false;
+	      bool overheated = false;
+	      if (weapon_state_iter != weapon_states_.end() &&
+	          snapshot.weapon_slot >= 0 &&
+	          static_cast<size_t>(snapshot.weapon_slot) < weapon_state_iter->second.slots.size()) {
+	        const auto &slot = weapon_state_iter->second.slots[snapshot.weapon_slot];
+	        reloading = slot.reload_timer > 0.0;
+	        overheated = slot.overheat_timer > 0.0;
+	        snapshot.weapon_heat_q = quantize_unit_u16(slot.heat);
+	      } else {
+	        snapshot.weapon_heat_q = 0;
+	      }
+	      if (reloading) {
+	        flags |= kPlayerFlagReloading;
+	      }
+	      if (state_iter != players_.end() && state_iter->second.shield_active) {
+	        flags |= kPlayerFlagShieldActive;
+	      }
+	      if (overheated) {
+	        flags |= kPlayerFlagOverheated;
+	      }
+	      snapshot.player_flags = flags;
+	      auto loadout_iter = loadout_bits_.find(connection_id);
+	      snapshot.loadout_bits = (loadout_iter == loadout_bits_.end()) ? 0 : loadout_iter->second;
+	      auto baseline_iter = last_full_snapshots_.find(connection_id);
+	      int &sequence = snapshot_sequence_[connection_id];
+	      const bool needs_full = (baseline_iter == last_full_snapshots_.end()) ||
+	                              (snapshot_keyframe_interval_ <= 0) ||
+	                              (sequence % snapshot_keyframe_interval_ == 0);
 
       if (needs_full) {
         for (const auto &recipient_id : active_ids) {
@@ -897,14 +1611,34 @@ void TickLoop::Step() {
         delta.mask |= kSnapshotMaskKills;
         delta.kills = snapshot.kills;
       }
-      if (snapshot.deaths != baseline.deaths) {
-        delta.mask |= kSnapshotMaskDeaths;
-        delta.deaths = snapshot.deaths;
-      }
+	      if (snapshot.deaths != baseline.deaths) {
+	        delta.mask |= kSnapshotMaskDeaths;
+	        delta.deaths = snapshot.deaths;
+	      }
+	      if (snapshot.view_yaw_q != baseline.view_yaw_q) {
+	        delta.mask |= kSnapshotMaskViewYawQ;
+	        delta.view_yaw_q = snapshot.view_yaw_q;
+	      }
+	      if (snapshot.view_pitch_q != baseline.view_pitch_q) {
+	        delta.mask |= kSnapshotMaskViewPitchQ;
+	        delta.view_pitch_q = snapshot.view_pitch_q;
+	      }
+	      if (snapshot.player_flags != baseline.player_flags) {
+	        delta.mask |= kSnapshotMaskPlayerFlags;
+	        delta.player_flags = snapshot.player_flags;
+	      }
+	      if (snapshot.weapon_heat_q != baseline.weapon_heat_q) {
+	        delta.mask |= kSnapshotMaskWeaponHeatQ;
+	        delta.weapon_heat_q = snapshot.weapon_heat_q;
+	      }
+	      if (snapshot.loadout_bits != baseline.loadout_bits) {
+	        delta.mask |= kSnapshotMaskLoadoutBits;
+	        delta.loadout_bits = snapshot.loadout_bits;
+	      }
 
-      for (const auto &recipient_id : active_ids) {
-        const auto payload =
-            BuildStateSnapshotDelta(delta,
+	      for (const auto &recipient_id : active_ids) {
+	        const auto payload =
+	            BuildStateSnapshotDelta(delta,
                                     store_.NextServerMessageSeq(recipient_id),
                                     store_.LastClientMessageSeq(recipient_id));
         if (store_.SendUnreliable(recipient_id, payload)) {

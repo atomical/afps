@@ -24,6 +24,7 @@ export interface AudioBufferLike {
 export interface AudioBufferSourceLike extends AudioNodeLike {
   buffer: AudioBufferLike | null;
   loop: boolean;
+  playbackRate?: AudioParamLike;
   start: (when?: number) => void;
   stop?: (when?: number) => void;
 }
@@ -95,11 +96,11 @@ export interface AudioManager {
   hasBuffer: (key: string) => boolean;
   load: (key: string, url: string) => Promise<AudioBufferLike | null>;
   preload: (entries: Record<string, string>) => Promise<Record<string, AudioBufferLike | null>>;
-  play: (key: string, options?: { group?: AudioGroup; volume?: number }) => boolean;
+  play: (key: string, options?: { group?: AudioGroup; volume?: number; playbackRate?: number }) => boolean;
   playPositional: (
     key: string,
     position: { x: number; y: number; z: number },
-    options?: { group?: AudioGroup; volume?: number }
+    options?: { group?: AudioGroup; volume?: number; playbackRate?: number }
   ) => boolean;
   setListenerPosition: (
     position: { x: number; y: number; z: number },
@@ -124,6 +125,13 @@ const clampVolume = (value: number, fallback: number) => {
     return fallback;
   }
   return Math.min(1, Math.max(0, value));
+};
+
+const clampPlaybackRate = (value: number, fallback: number) => {
+  if (!Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+  return Math.min(2, Math.max(0.5, value));
 };
 
 export const createAudioManager = (options: AudioManagerOptions = {}): AudioManager => {
@@ -228,11 +236,15 @@ export const createAudioManager = (options: AudioManagerOptions = {}): AudioMana
     buffer: AudioBufferLike,
     groupGain: GainNodeLike,
     volume: number | undefined,
-    panner?: PannerNodeLike
+    panner?: PannerNodeLike,
+    playbackRate?: number
   ) => {
     const source = context.createBufferSource();
     source.buffer = buffer;
     source.loop = false;
+    if (source.playbackRate && Number.isFinite(playbackRate)) {
+      source.playbackRate.value = clampPlaybackRate(playbackRate, 1);
+    }
 
     let output: AudioNodeLike = source;
     if (panner) {
@@ -251,12 +263,12 @@ export const createAudioManager = (options: AudioManagerOptions = {}): AudioMana
     source.start();
   };
 
-  const play = (key: string, options?: { group?: AudioGroup; volume?: number }) => {
+  const play = (key: string, options?: { group?: AudioGroup; volume?: number; playbackRate?: number }) => {
     const buffer = buffers.get(key);
     if (!buffer) {
       return false;
     }
-    playBuffer(buffer, resolveGroupGain(options?.group), options?.volume, undefined);
+    playBuffer(buffer, resolveGroupGain(options?.group), options?.volume, undefined, options?.playbackRate);
     return true;
   };
 
@@ -277,7 +289,7 @@ export const createAudioManager = (options: AudioManagerOptions = {}): AudioMana
   const playPositional = (
     key: string,
     position: { x: number; y: number; z: number },
-    options?: { group?: AudioGroup; volume?: number }
+    options?: { group?: AudioGroup; volume?: number; playbackRate?: number }
   ) => {
     const buffer = buffers.get(key);
     if (!buffer) {
@@ -285,7 +297,7 @@ export const createAudioManager = (options: AudioManagerOptions = {}): AudioMana
     }
     const panner = context.createPanner();
     configurePanner(panner, position);
-    playBuffer(buffer, resolveGroupGain(options?.group), options?.volume, panner);
+    playBuffer(buffer, resolveGroupGain(options?.group), options?.volume, panner, options?.playbackRate);
     return true;
   };
 

@@ -19,8 +19,9 @@ export interface CharacterCatalog {
   defaultId: string;
 }
 
-const BASE_URL = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
-const NORMALIZED_BASE = BASE_URL.endsWith('/') ? BASE_URL : `${BASE_URL}/`;
+const resolveBaseUrl = (env?: { BASE_URL?: string }) => env?.BASE_URL ?? '/';
+const BASE_URL = resolveBaseUrl((import.meta as { env?: { BASE_URL?: string } }).env);
+const NORMALIZED_BASE = BASE_URL.replace(/\/?$/, '/');
 const MANIFEST_URL = `${NORMALIZED_BASE}assets/characters/ultimate_modular_men/manifest.json`;
 
 const FALLBACK_CATALOG: CharacterCatalog = {
@@ -135,3 +136,5 @@ export const resolveCharacterEntry = (catalog: CharacterCatalog, id?: string | n
   const fallback = catalog.entries.find((entry) => entry.id === catalog.defaultId);
   return fallback ?? catalog.entries[0];
 };
+
+export const __test = { resolveBaseUrl };

@@ -111,8 +111,33 @@ deaths():number {
   return offset ? this.bb!.readInt32(this.bb_pos + offset) : 0;
 }
 
+viewYawQ():number {
+  const offset = this.bb!.__offset(this.bb_pos, 38);
+  return offset ? this.bb!.readInt16(this.bb_pos + offset) : 0;
+}
+
+viewPitchQ():number {
+  const offset = this.bb!.__offset(this.bb_pos, 40);
+  return offset ? this.bb!.readInt16(this.bb_pos + offset) : 0;
+}
+
+playerFlags():number {
+  const offset = this.bb!.__offset(this.bb_pos, 42);
+  return offset ? this.bb!.readUint8(this.bb_pos + offset) : 0;
+}
+
+weaponHeatQ():number {
+  const offset = this.bb!.__offset(this.bb_pos, 44);
+  return offset ? this.bb!.readUint16(this.bb_pos + offset) : 0;
+}
+
+loadoutBits():number {
+  const offset = this.bb!.__offset(this.bb_pos, 46);
+  return offset ? this.bb!.readUint32(this.bb_pos + offset) : 0;
+}
+
 static startStateSnapshotDelta(builder:flatbuffers.Builder) {
-  builder.startObject(17);
+  builder.startObject(22);
 }
 
 static addServerTick(builder:flatbuffers.Builder, serverTick:number) {
@@ -183,12 +208,32 @@ static addDeaths(builder:flatbuffers.Builder, deaths:number) {
   builder.addFieldInt32(16, deaths, 0);
 }
 
+static addViewYawQ(builder:flatbuffers.Builder, viewYawQ:number) {
+  builder.addFieldInt16(17, viewYawQ, 0);
+}
+
+static addViewPitchQ(builder:flatbuffers.Builder, viewPitchQ:number) {
+  builder.addFieldInt16(18, viewPitchQ, 0);
+}
+
+static addPlayerFlags(builder:flatbuffers.Builder, playerFlags:number) {
+  builder.addFieldInt8(19, playerFlags, 0);
+}
+
+static addWeaponHeatQ(builder:flatbuffers.Builder, weaponHeatQ:number) {
+  builder.addFieldInt16(20, weaponHeatQ, 0);
+}
+
+static addLoadoutBits(builder:flatbuffers.Builder, loadoutBits:number) {
+  builder.addFieldInt32(21, loadoutBits, 0);
+}
+
 static endStateSnapshotDelta(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createStateSnapshotDelta(builder:flatbuffers.Builder, serverTick:number, baseTick:number, lastProcessedInputSeq:number, mask:number, clientIdOffset:flatbuffers.Offset, posX:number, posY:number, posZ:number, velX:number, velY:number, velZ:number, weaponSlot:number, ammoInMag:number, dashCooldown:number, health:number, kills:number, deaths:number):flatbuffers.Offset {
+static createStateSnapshotDelta(builder:flatbuffers.Builder, serverTick:number, baseTick:number, lastProcessedInputSeq:number, mask:number, clientIdOffset:flatbuffers.Offset, posX:number, posY:number, posZ:number, velX:number, velY:number, velZ:number, weaponSlot:number, ammoInMag:number, dashCooldown:number, health:number, kills:number, deaths:number, viewYawQ:number, viewPitchQ:number, playerFlags:number, weaponHeatQ:number, loadoutBits:number):flatbuffers.Offset {
   StateSnapshotDelta.startStateSnapshotDelta(builder);
   StateSnapshotDelta.addServerTick(builder, serverTick);
   StateSnapshotDelta.addBaseTick(builder, baseTick);
@@ -207,6 +252,11 @@ static createStateSnapshotDelta(builder:flatbuffers.Builder, serverTick:number, 
   StateSnapshotDelta.addHealth(builder, health);
   StateSnapshotDelta.addKills(builder, kills);
   StateSnapshotDelta.addDeaths(builder, deaths);
+  StateSnapshotDelta.addViewYawQ(builder, viewYawQ);
+  StateSnapshotDelta.addViewPitchQ(builder, viewPitchQ);
+  StateSnapshotDelta.addPlayerFlags(builder, playerFlags);
+  StateSnapshotDelta.addWeaponHeatQ(builder, weaponHeatQ);
+  StateSnapshotDelta.addLoadoutBits(builder, loadoutBits);
   return StateSnapshotDelta.endStateSnapshotDelta(builder);
 }
 
@@ -228,7 +278,12 @@ unpack(): StateSnapshotDeltaT {
     this.dashCooldown(),
     this.health(),
     this.kills(),
-    this.deaths()
+    this.deaths(),
+    this.viewYawQ(),
+    this.viewPitchQ(),
+    this.playerFlags(),
+    this.weaponHeatQ(),
+    this.loadoutBits()
   );
 }
 
@@ -251,6 +306,11 @@ unpackTo(_o: StateSnapshotDeltaT): void {
   _o.health = this.health();
   _o.kills = this.kills();
   _o.deaths = this.deaths();
+  _o.viewYawQ = this.viewYawQ();
+  _o.viewPitchQ = this.viewPitchQ();
+  _o.playerFlags = this.playerFlags();
+  _o.weaponHeatQ = this.weaponHeatQ();
+  _o.loadoutBits = this.loadoutBits();
 }
 }
 
@@ -272,7 +332,12 @@ constructor(
   public dashCooldown: number = 0.0,
   public health: number = 0.0,
   public kills: number = 0,
-  public deaths: number = 0
+  public deaths: number = 0,
+  public viewYawQ: number = 0,
+  public viewPitchQ: number = 0,
+  public playerFlags: number = 0,
+  public weaponHeatQ: number = 0,
+  public loadoutBits: number = 0
 ){}
 
 
@@ -296,7 +361,12 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
     this.dashCooldown,
     this.health,
     this.kills,
-    this.deaths
+    this.deaths,
+    this.viewYawQ,
+    this.viewPitchQ,
+    this.playerFlags,
+    this.weaponHeatQ,
+    this.loadoutBits
   );
 }
 }

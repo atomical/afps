@@ -330,7 +330,7 @@ const generateReloadSamples = (category: ReloadCategory, lengthSeconds: number, 
   const samples = Math.max(1, Math.floor(lengthSeconds * SAMPLE_RATE));
   const data = new Float32Array(samples);
   const baseLength = RELOAD_LENGTHS[category];
-  const scale = baseLength > 0 ? lengthSeconds / baseLength : 1;
+  const scale = lengthSeconds / baseLength;
   const clickTimes = RELOAD_CLICKS[category].map((t) => t * scale);
   clickTimes.forEach((time, index) => {
     const freq = 700 + ((index * 83) % 600);
@@ -385,6 +385,101 @@ const generateCasingImpactSamples = (variant: 1 | 2) => {
   return data;
 };
 
+const generateWhizSamples = (variant: 1 | 2) => {
+  const lengthSeconds = variant === 1 ? 0.18 : 0.2;
+  const samples = Math.max(1, Math.floor(lengthSeconds * SAMPLE_RATE));
+  const data = new Float32Array(samples);
+  const rand = createRandom(hashString(`fx:whiz:${variant}`));
+  const dt = 1 / SAMPLE_RATE;
+  const center = lengthSeconds * (variant === 1 ? 0.44 : 0.48);
+  const sigma = lengthSeconds * (variant === 1 ? 0.18 : 0.2);
+  const noiseHpAlpha = onePoleHighpass(650, dt);
+  const noiseLpAlpha = onePoleLowpass(9800, dt);
+  let hp = 0;
+  let lp = 0;
+  let prevNoise = 0;
+
+  const baseHz = variant === 1 ? 1050 : 1180;
+  const sweepHz = variant === 1 ? 520 : 460;
+  const modHz = variant === 1 ? 14 : 12;
+
+  for (let i = 0; i < samples; i += 1) {
+    const t = i * dt;
+    const x = (t - center) / sigma;
+    const env = Math.exp(-0.5 * x * x);
+    const white = rand() * 2 - 1;
+    hp = noiseHpAlpha * (hp + white - prevNoise);
+    prevNoise = white;
+    lp += noiseLpAlpha * (hp - lp);
+    const noise = lp;
+    const sweep = baseHz + sweepHz * (1 - t / lengthSeconds);
+    const tone = Math.sin(TWO_PI * sweep * t + (variant === 2 ? 0.7 : 0.2));
+    const mod = 0.7 + 0.3 * Math.sin(TWO_PI * modHz * t);
+    const sample = (tone * 0.38 + noise * 0.62) * env * mod;
+    data[i] = Math.tanh(sample * 1.35) * 0.85;
+  }
+  return data;
+};
+
+const generateVentSamples = () => {
+  const lengthSeconds = 0.36;
+  const samples = Math.max(1, Math.floor(lengthSeconds * SAMPLE_RATE));
+  const data = new Float32Array(samples);
+  const rand = createRandom(hashString('fx:vent'));
+  const dt = 1 / SAMPLE_RATE;
+  const hpAlpha = onePoleHighpass(180, dt);
+  const lpAlpha = onePoleLowpass(5200, dt);
+  let hp = 0;
+  let lp = 0;
+  let prevNoise = 0;
+
+  for (let i = 0; i < samples; i += 1) {
+    const t = i * dt;
+    const attack = Math.min(1, t / 0.02);
+    const env = attack * Math.exp(-t / 0.22);
+    const white = rand() * 2 - 1;
+    hp = hpAlpha * (hp + white - prevNoise);
+    prevNoise = white;
+    lp += lpAlpha * (hp - lp);
+    const hiss = lp;
+    const chug = Math.sin(TWO_PI * 95 * t) * 0.12;
+    const sample = (hiss * 0.85 + chug) * env;
+    data[i] = Math.tanh(sample * 1.45) * 0.9;
+  }
+  return data;
+};
+
+const generateOverheatSamples = () => {
+  const lengthSeconds = 0.22;
+  const samples = Math.max(1, Math.floor(lengthSeconds * SAMPLE_RATE));
+  const data = new Float32Array(samples);
+  const rand = createRandom(hashString('fx:overheat'));
+  const click = generateClick(0.018, 940, rand);
+  mixIn(data, click, 0, 0.55);
+
+  const dt = 1 / SAMPLE_RATE;
+  const hpAlpha = onePoleHighpass(240, dt);
+  const lpAlpha = onePoleLowpass(6400, dt);
+  let hp = 0;
+  let lp = 0;
+  let prevNoise = 0;
+
+  for (let i = 0; i < samples; i += 1) {
+    const t = i * dt;
+    const env = Math.exp(-t / 0.09);
+    const toneHz = 520 + 240 * Math.sin(TWO_PI * 2.2 * t);
+    const tone = Math.sin(TWO_PI * toneHz * t) * 0.22;
+    const white = rand() * 2 - 1;
+    hp = hpAlpha * (hp + white - prevNoise);
+    prevNoise = white;
+    lp += lpAlpha * (hp - lp);
+    const fizz = lp * 0.22;
+    data[i] += (tone + fizz) * env;
+    data[i] = Math.tanh(data[i] * 1.6) * 0.9;
+  }
+  return data;
+};
+
 export const generateWeaponSfx = (
   audio: AudioManager,
   weapons: WeaponDefinition[],
@@ -419,6 +514,10 @@ export const generateWeaponSfx = (
 
   register('casing:impact:1', getSamples('casing:impact:1', () => generateCasingImpactSamples(1)));
   register('casing:impact:2', getSamples('casing:impact:2', () => generateCasingImpactSamples(2)));
+  register('fx:whiz:1', getSamples('fx:whiz:1', () => generateWhizSamples(1)));
+  register('fx:whiz:2', getSamples('fx:whiz:2', () => generateWhizSamples(2)));
+  register('fx:vent', getSamples('fx:vent', () => generateVentSamples()));
+  register('fx:overheat', getSamples('fx:overheat', () => generateOverheatSamples()));
 
   weapons.forEach((weapon) => {
     const profileKey = weapon.sfxProfile;

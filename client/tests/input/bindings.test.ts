@@ -54,5 +54,6 @@ describe('input bindings', () => {
   it('returns primary binding per action', () => {
     const updated = setPrimaryBinding(DEFAULT_BINDINGS, 'jump', 'KeyU');
     expect(getPrimaryBinding(updated, 'jump')).toBe('KeyU');
+    expect(getPrimaryBinding({ ...DEFAULT_BINDINGS, jump: [] }, 'jump')).toBe('');
   });
 });

@@ -16,6 +16,46 @@ static_assert(FLATBUFFERS_VERSION_MAJOR == 25 &&
 namespace afps {
 namespace protocol {
 
+struct ShotFiredFx;
+struct ShotFiredFxBuilder;
+struct ShotFiredFxT;
+
+struct ShotTraceFx;
+struct ShotTraceFxBuilder;
+struct ShotTraceFxT;
+
+struct ReloadFx;
+struct ReloadFxBuilder;
+struct ReloadFxT;
+
+struct NearMissFx;
+struct NearMissFxBuilder;
+struct NearMissFxT;
+
+struct OverheatFx;
+struct OverheatFxBuilder;
+struct OverheatFxT;
+
+struct VentFx;
+struct VentFxBuilder;
+struct VentFxT;
+
+struct HitConfirmedFx;
+struct HitConfirmedFxBuilder;
+struct HitConfirmedFxT;
+
+struct ProjectileSpawnFx;
+struct ProjectileSpawnFxBuilder;
+struct ProjectileSpawnFxT;
+
+struct ProjectileImpactFx;
+struct ProjectileImpactFxBuilder;
+struct ProjectileImpactFxT;
+
+struct ProjectileRemoveFx;
+struct ProjectileRemoveFxBuilder;
+struct ProjectileRemoveFxT;
+
 struct ClientHello;
 struct ClientHelloBuilder;
 struct ClientHelloT;
@@ -40,13 +80,9 @@ struct FireWeaponRequest;
 struct FireWeaponRequestBuilder;
 struct FireWeaponRequestT;
 
-struct WeaponFiredEvent;
-struct WeaponFiredEventBuilder;
-struct WeaponFiredEventT;
-
-struct WeaponReloadEvent;
-struct WeaponReloadEventBuilder;
-struct WeaponReloadEventT;
+struct SetLoadoutRequest;
+struct SetLoadoutRequestBuilder;
+struct SetLoadoutRequestT;
 
 struct StateSnapshot;
 struct StateSnapshotBuilder;
@@ -122,13 +158,12 @@ enum class MessageType : uint16_t {
   Error = 12,
   Disconnect = 13,
   FireWeaponRequest = 14,
-  WeaponFiredEvent = 15,
-  WeaponReloadEvent = 16,
+  SetLoadoutRequest = 15,
   MIN = ClientHello,
-  MAX = WeaponReloadEvent
+  MAX = SetLoadoutRequest
 };
 
-inline const MessageType (&EnumValuesMessageType())[16] {
+inline const MessageType (&EnumValuesMessageType())[15] {
   static const MessageType values[] = {
     MessageType::ClientHello,
     MessageType::ServerHello,
@@ -144,14 +179,13 @@ inline const MessageType (&EnumValuesMessageType())[16] {
     MessageType::Error,
     MessageType::Disconnect,
     MessageType::FireWeaponRequest,
-    MessageType::WeaponFiredEvent,
-    MessageType::WeaponReloadEvent
+    MessageType::SetLoadoutRequest
   };
   return values;
 }
 
 inline const char * const *EnumNamesMessageType() {
-  static const char * const names[17] = {
+  static const char * const names[16] = {
     "ClientHello",
     "ServerHello",
     "JoinRequest",
@@ -166,51 +200,1475 @@ inline const char * const *EnumNamesMessageType() {
     "Error",
     "Disconnect",
     "FireWeaponRequest",
-    "WeaponFiredEvent",
-    "WeaponReloadEvent",
+    "SetLoadoutRequest",
     nullptr
   };
   return names;
 }
 
 inline const char *EnumNameMessageType(MessageType e) {
-  if (::flatbuffers::IsOutRange(e, MessageType::ClientHello, MessageType::WeaponReloadEvent)) return "";
+  if (::flatbuffers::IsOutRange(e, MessageType::ClientHello, MessageType::SetLoadoutRequest)) return "";
   const size_t index = static_cast<size_t>(e) - static_cast<size_t>(MessageType::ClientHello);
   return EnumNamesMessageType()[index];
 }
 
-enum class GameEventType : int8_t {
-  HitConfirmed = 0,
-  ProjectileSpawn = 1,
-  ProjectileRemove = 2,
-  MIN = HitConfirmed,
-  MAX = ProjectileRemove
+enum class HitKind : uint8_t {
+  None = 0,
+  World = 1,
+  Player = 2,
+  MIN = None,
+  MAX = Player
 };
 
-inline const GameEventType (&EnumValuesGameEventType())[3] {
-  static const GameEventType values[] = {
-    GameEventType::HitConfirmed,
-    GameEventType::ProjectileSpawn,
-    GameEventType::ProjectileRemove
+inline const HitKind (&EnumValuesHitKind())[3] {
+  static const HitKind values[] = {
+    HitKind::None,
+    HitKind::World,
+    HitKind::Player
   };
   return values;
 }
 
-inline const char * const *EnumNamesGameEventType() {
+inline const char * const *EnumNamesHitKind() {
   static const char * const names[4] = {
-    "HitConfirmed",
-    "ProjectileSpawn",
-    "ProjectileRemove",
+    "None",
+    "World",
+    "Player",
     nullptr
   };
   return names;
 }
 
-inline const char *EnumNameGameEventType(GameEventType e) {
-  if (::flatbuffers::IsOutRange(e, GameEventType::HitConfirmed, GameEventType::ProjectileRemove)) return "";
+inline const char *EnumNameHitKind(HitKind e) {
+  if (::flatbuffers::IsOutRange(e, HitKind::None, HitKind::Player)) return "";
   const size_t index = static_cast<size_t>(e);
-  return EnumNamesGameEventType()[index];
+  return EnumNamesHitKind()[index];
 }
+
+enum class SurfaceType : uint8_t {
+  Stone = 0,
+  Metal = 1,
+  Dirt = 2,
+  Energy = 3,
+  MIN = Stone,
+  MAX = Energy
+};
+
+inline const SurfaceType (&EnumValuesSurfaceType())[4] {
+  static const SurfaceType values[] = {
+    SurfaceType::Stone,
+    SurfaceType::Metal,
+    SurfaceType::Dirt,
+    SurfaceType::Energy
+  };
+  return values;
+}
+
+inline const char * const *EnumNamesSurfaceType() {
+  static const char * const names[5] = {
+    "Stone",
+    "Metal",
+    "Dirt",
+    "Energy",
+    nullptr
+  };
+  return names;
+}
+
+inline const char *EnumNameSurfaceType(SurfaceType e) {
+  if (::flatbuffers::IsOutRange(e, SurfaceType::Stone, SurfaceType::Energy)) return "";
+  const size_t index = static_cast<size_t>(e);
+  return EnumNamesSurfaceType()[index];
+}
+
+enum class FxEvent : uint8_t {
+  NONE = 0,
+  ShotFiredFx = 1,
+  ShotTraceFx = 2,
+  ReloadFx = 3,
+  NearMissFx = 4,
+  OverheatFx = 5,
+  VentFx = 6,
+  HitConfirmedFx = 7,
+  ProjectileSpawnFx = 8,
+  ProjectileImpactFx = 9,
+  ProjectileRemoveFx = 10,
+  MIN = NONE,
+  MAX = ProjectileRemoveFx
+};
+
+inline const FxEvent (&EnumValuesFxEvent())[11] {
+  static const FxEvent values[] = {
+    FxEvent::NONE,
+    FxEvent::ShotFiredFx,
+    FxEvent::ShotTraceFx,
+    FxEvent::ReloadFx,
+    FxEvent::NearMissFx,
+    FxEvent::OverheatFx,
+    FxEvent::VentFx,
+    FxEvent::HitConfirmedFx,
+    FxEvent::ProjectileSpawnFx,
+    FxEvent::ProjectileImpactFx,
+    FxEvent::ProjectileRemoveFx
+  };
+  return values;
+}
+
+inline const char * const *EnumNamesFxEvent() {
+  static const char * const names[12] = {
+    "NONE",
+    "ShotFiredFx",
+    "ShotTraceFx",
+    "ReloadFx",
+    "NearMissFx",
+    "OverheatFx",
+    "VentFx",
+    "HitConfirmedFx",
+    "ProjectileSpawnFx",
+    "ProjectileImpactFx",
+    "ProjectileRemoveFx",
+    nullptr
+  };
+  return names;
+}
+
+inline const char *EnumNameFxEvent(FxEvent e) {
+  if (::flatbuffers::IsOutRange(e, FxEvent::NONE, FxEvent::ProjectileRemoveFx)) return "";
+  const size_t index = static_cast<size_t>(e);
+  return EnumNamesFxEvent()[index];
+}
+
+template<typename T> struct FxEventTraits {
+  static const FxEvent enum_value = FxEvent::NONE;
+};
+
+template<> struct FxEventTraits<afps::protocol::ShotFiredFx> {
+  static const FxEvent enum_value = FxEvent::ShotFiredFx;
+};
+
+template<> struct FxEventTraits<afps::protocol::ShotTraceFx> {
+  static const FxEvent enum_value = FxEvent::ShotTraceFx;
+};
+
+template<> struct FxEventTraits<afps::protocol::ReloadFx> {
+  static const FxEvent enum_value = FxEvent::ReloadFx;
+};
+
+template<> struct FxEventTraits<afps::protocol::NearMissFx> {
+  static const FxEvent enum_value = FxEvent::NearMissFx;
+};
+
+template<> struct FxEventTraits<afps::protocol::OverheatFx> {
+  static const FxEvent enum_value = FxEvent::OverheatFx;
+};
+
+template<> struct FxEventTraits<afps::protocol::VentFx> {
+  static const FxEvent enum_value = FxEvent::VentFx;
+};
+
+template<> struct FxEventTraits<afps::protocol::HitConfirmedFx> {
+  static const FxEvent enum_value = FxEvent::HitConfirmedFx;
+};
+
+template<> struct FxEventTraits<afps::protocol::ProjectileSpawnFx> {
+  static const FxEvent enum_value = FxEvent::ProjectileSpawnFx;
+};
+
+template<> struct FxEventTraits<afps::protocol::ProjectileImpactFx> {
+  static const FxEvent enum_value = FxEvent::ProjectileImpactFx;
+};
+
+template<> struct FxEventTraits<afps::protocol::ProjectileRemoveFx> {
+  static const FxEvent enum_value = FxEvent::ProjectileRemoveFx;
+};
+
+template<typename T> struct FxEventUnionTraits {
+  static const FxEvent enum_value = FxEvent::NONE;
+};
+
+template<> struct FxEventUnionTraits<afps::protocol::ShotFiredFxT> {
+  static const FxEvent enum_value = FxEvent::ShotFiredFx;
+};
+
+template<> struct FxEventUnionTraits<afps::protocol::ShotTraceFxT> {
+  static const FxEvent enum_value = FxEvent::ShotTraceFx;
+};
+
+template<> struct FxEventUnionTraits<afps::protocol::ReloadFxT> {
+  static const FxEvent enum_value = FxEvent::ReloadFx;
+};
+
+template<> struct FxEventUnionTraits<afps::protocol::NearMissFxT> {
+  static const FxEvent enum_value = FxEvent::NearMissFx;
+};
+
+template<> struct FxEventUnionTraits<afps::protocol::OverheatFxT> {
+  static const FxEvent enum_value = FxEvent::OverheatFx;
+};
+
+template<> struct FxEventUnionTraits<afps::protocol::VentFxT> {
+  static const FxEvent enum_value = FxEvent::VentFx;
+};
+
+template<> struct FxEventUnionTraits<afps::protocol::HitConfirmedFxT> {
+  static const FxEvent enum_value = FxEvent::HitConfirmedFx;
+};
+
+template<> struct FxEventUnionTraits<afps::protocol::ProjectileSpawnFxT> {
+  static const FxEvent enum_value = FxEvent::ProjectileSpawnFx;
+};
+
+template<> struct FxEventUnionTraits<afps::protocol::ProjectileImpactFxT> {
+  static const FxEvent enum_value = FxEvent::ProjectileImpactFx;
+};
+
+template<> struct FxEventUnionTraits<afps::protocol::ProjectileRemoveFxT> {
+  static const FxEvent enum_value = FxEvent::ProjectileRemoveFx;
+};
+
+struct FxEventUnion {
+  FxEvent type;
+  void *value;
+
+  FxEventUnion() : type(FxEvent::NONE), value(nullptr) {}
+  FxEventUnion(FxEventUnion&& u) FLATBUFFERS_NOEXCEPT :
+    type(FxEvent::NONE), value(nullptr)
+    { std::swap(type, u.type); std::swap(value, u.value); }
+  FxEventUnion(const FxEventUnion &);
+  FxEventUnion &operator=(const FxEventUnion &u)
+    { FxEventUnion t(u); std::swap(type, t.type); std::swap(value, t.value); return *this; }
+  FxEventUnion &operator=(FxEventUnion &&u) FLATBUFFERS_NOEXCEPT
+    { std::swap(type, u.type); std::swap(value, u.value); return *this; }
+  ~FxEventUnion() { Reset(); }
+
+  void Reset();
+
+  template <typename T>
+  void Set(T&& val) {
+    typedef typename std::remove_reference<T>::type RT;
+    Reset();
+    type = FxEventUnionTraits<RT>::enum_value;
+    if (type != FxEvent::NONE) {
+      value = new RT(std::forward<T>(val));
+    }
+  }
+
+  static void *UnPack(const void *obj, FxEvent type, const ::flatbuffers::resolver_function_t *resolver);
+  ::flatbuffers::Offset<void> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr) const;
+
+  afps::protocol::ShotFiredFxT *AsShotFiredFx() {
+    return type == FxEvent::ShotFiredFx ?
+      reinterpret_cast<afps::protocol::ShotFiredFxT *>(value) : nullptr;
+  }
+  const afps::protocol::ShotFiredFxT *AsShotFiredFx() const {
+    return type == FxEvent::ShotFiredFx ?
+      reinterpret_cast<const afps::protocol::ShotFiredFxT *>(value) : nullptr;
+  }
+  afps::protocol::ShotTraceFxT *AsShotTraceFx() {
+    return type == FxEvent::ShotTraceFx ?
+      reinterpret_cast<afps::protocol::ShotTraceFxT *>(value) : nullptr;
+  }
+  const afps::protocol::ShotTraceFxT *AsShotTraceFx() const {
+    return type == FxEvent::ShotTraceFx ?
+      reinterpret_cast<const afps::protocol::ShotTraceFxT *>(value) : nullptr;
+  }
+  afps::protocol::ReloadFxT *AsReloadFx() {
+    return type == FxEvent::ReloadFx ?
+      reinterpret_cast<afps::protocol::ReloadFxT *>(value) : nullptr;
+  }
+  const afps::protocol::ReloadFxT *AsReloadFx() const {
+    return type == FxEvent::ReloadFx ?
+      reinterpret_cast<const afps::protocol::ReloadFxT *>(value) : nullptr;
+  }
+  afps::protocol::NearMissFxT *AsNearMissFx() {
+    return type == FxEvent::NearMissFx ?
+      reinterpret_cast<afps::protocol::NearMissFxT *>(value) : nullptr;
+  }
+  const afps::protocol::NearMissFxT *AsNearMissFx() const {
+    return type == FxEvent::NearMissFx ?
+      reinterpret_cast<const afps::protocol::NearMissFxT *>(value) : nullptr;
+  }
+  afps::protocol::OverheatFxT *AsOverheatFx() {
+    return type == FxEvent::OverheatFx ?
+      reinterpret_cast<afps::protocol::OverheatFxT *>(value) : nullptr;
+  }
+  const afps::protocol::OverheatFxT *AsOverheatFx() const {
+    return type == FxEvent::OverheatFx ?
+      reinterpret_cast<const afps::protocol::OverheatFxT *>(value) : nullptr;
+  }
+  afps::protocol::VentFxT *AsVentFx() {
+    return type == FxEvent::VentFx ?
+      reinterpret_cast<afps::protocol::VentFxT *>(value) : nullptr;
+  }
+  const afps::protocol::VentFxT *AsVentFx() const {
+    return type == FxEvent::VentFx ?
+      reinterpret_cast<const afps::protocol::VentFxT *>(value) : nullptr;
+  }
+  afps::protocol::HitConfirmedFxT *AsHitConfirmedFx() {
+    return type == FxEvent::HitConfirmedFx ?
+      reinterpret_cast<afps::protocol::HitConfirmedFxT *>(value) : nullptr;
+  }
+  const afps::protocol::HitConfirmedFxT *AsHitConfirmedFx() const {
+    return type == FxEvent::HitConfirmedFx ?
+      reinterpret_cast<const afps::protocol::HitConfirmedFxT *>(value) : nullptr;
+  }
+  afps::protocol::ProjectileSpawnFxT *AsProjectileSpawnFx() {
+    return type == FxEvent::ProjectileSpawnFx ?
+      reinterpret_cast<afps::protocol::ProjectileSpawnFxT *>(value) : nullptr;
+  }
+  const afps::protocol::ProjectileSpawnFxT *AsProjectileSpawnFx() const {
+    return type == FxEvent::ProjectileSpawnFx ?
+      reinterpret_cast<const afps::protocol::ProjectileSpawnFxT *>(value) : nullptr;
+  }
+  afps::protocol::ProjectileImpactFxT *AsProjectileImpactFx() {
+    return type == FxEvent::ProjectileImpactFx ?
+      reinterpret_cast<afps::protocol::ProjectileImpactFxT *>(value) : nullptr;
+  }
+  const afps::protocol::ProjectileImpactFxT *AsProjectileImpactFx() const {
+    return type == FxEvent::ProjectileImpactFx ?
+      reinterpret_cast<const afps::protocol::ProjectileImpactFxT *>(value) : nullptr;
+  }
+  afps::protocol::ProjectileRemoveFxT *AsProjectileRemoveFx() {
+    return type == FxEvent::ProjectileRemoveFx ?
+      reinterpret_cast<afps::protocol::ProjectileRemoveFxT *>(value) : nullptr;
+  }
+  const afps::protocol::ProjectileRemoveFxT *AsProjectileRemoveFx() const {
+    return type == FxEvent::ProjectileRemoveFx ?
+      reinterpret_cast<const afps::protocol::ProjectileRemoveFxT *>(value) : nullptr;
+  }
+};
+
+template <bool B = false>
+bool VerifyFxEvent(::flatbuffers::VerifierTemplate<B> &verifier, const void *obj, FxEvent type);
+template <bool B = false>
+bool VerifyFxEventVector(::flatbuffers::VerifierTemplate<B> &verifier, const ::flatbuffers::Vector<::flatbuffers::Offset<void>> *values, const ::flatbuffers::Vector<FxEvent> *types);
+
+struct ShotFiredFxT : public ::flatbuffers::NativeTable {
+  typedef ShotFiredFx TableType;
+  std::string shooter_id{};
+  uint8_t weapon_slot = 0;
+  int32_t shot_seq = 0;
+  bool dry_fire = false;
+};
+
+struct ShotFiredFx FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef ShotFiredFxT NativeTableType;
+  typedef ShotFiredFxBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_SHOOTER_ID = 4,
+    VT_WEAPON_SLOT = 6,
+    VT_SHOT_SEQ = 8,
+    VT_DRY_FIRE = 10
+  };
+  const ::flatbuffers::String *shooter_id() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_SHOOTER_ID);
+  }
+  uint8_t weapon_slot() const {
+    return GetField<uint8_t>(VT_WEAPON_SLOT, 0);
+  }
+  int32_t shot_seq() const {
+    return GetField<int32_t>(VT_SHOT_SEQ, 0);
+  }
+  bool dry_fire() const {
+    return GetField<uint8_t>(VT_DRY_FIRE, 0) != 0;
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyOffset(verifier, VT_SHOOTER_ID) &&
+           verifier.VerifyString(shooter_id()) &&
+           VerifyField<uint8_t>(verifier, VT_WEAPON_SLOT, 1) &&
+           VerifyField<int32_t>(verifier, VT_SHOT_SEQ, 4) &&
+           VerifyField<uint8_t>(verifier, VT_DRY_FIRE, 1) &&
+           verifier.EndTable();
+  }
+  ShotFiredFxT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  void UnPackTo(ShotFiredFxT *_o, const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  static ::flatbuffers::Offset<ShotFiredFx> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const ShotFiredFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+};
+
+struct ShotFiredFxBuilder {
+  typedef ShotFiredFx Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_shooter_id(::flatbuffers::Offset<::flatbuffers::String> shooter_id) {
+    fbb_.AddOffset(ShotFiredFx::VT_SHOOTER_ID, shooter_id);
+  }
+  void add_weapon_slot(uint8_t weapon_slot) {
+    fbb_.AddElement<uint8_t>(ShotFiredFx::VT_WEAPON_SLOT, weapon_slot, 0);
+  }
+  void add_shot_seq(int32_t shot_seq) {
+    fbb_.AddElement<int32_t>(ShotFiredFx::VT_SHOT_SEQ, shot_seq, 0);
+  }
+  void add_dry_fire(bool dry_fire) {
+    fbb_.AddElement<uint8_t>(ShotFiredFx::VT_DRY_FIRE, static_cast<uint8_t>(dry_fire), 0);
+  }
+  explicit ShotFiredFxBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<ShotFiredFx> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<ShotFiredFx>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<ShotFiredFx> CreateShotFiredFx(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ::flatbuffers::Offset<::flatbuffers::String> shooter_id = 0,
+    uint8_t weapon_slot = 0,
+    int32_t shot_seq = 0,
+    bool dry_fire = false) {
+  ShotFiredFxBuilder builder_(_fbb);
+  builder_.add_shot_seq(shot_seq);
+  builder_.add_shooter_id(shooter_id);
+  builder_.add_dry_fire(dry_fire);
+  builder_.add_weapon_slot(weapon_slot);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<ShotFiredFx> CreateShotFiredFxDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    const char *shooter_id = nullptr,
+    uint8_t weapon_slot = 0,
+    int32_t shot_seq = 0,
+    bool dry_fire = false) {
+  auto shooter_id__ = shooter_id ? _fbb.CreateString(shooter_id) : 0;
+  return afps::protocol::CreateShotFiredFx(
+      _fbb,
+      shooter_id__,
+      weapon_slot,
+      shot_seq,
+      dry_fire);
+}
+
+::flatbuffers::Offset<ShotFiredFx> CreateShotFiredFx(::flatbuffers::FlatBufferBuilder &_fbb, const ShotFiredFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+
+struct ShotTraceFxT : public ::flatbuffers::NativeTable {
+  typedef ShotTraceFx TableType;
+  std::string shooter_id{};
+  uint8_t weapon_slot = 0;
+  int32_t shot_seq = 0;
+  int16_t dir_oct_x = 0;
+  int16_t dir_oct_y = 0;
+  uint16_t hit_dist_q = 0;
+  afps::protocol::HitKind hit_kind = afps::protocol::HitKind::None;
+  afps::protocol::SurfaceType surface_type = afps::protocol::SurfaceType::Stone;
+  int16_t normal_oct_x = 0;
+  int16_t normal_oct_y = 0;
+  bool show_tracer = false;
+};
+
+struct ShotTraceFx FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef ShotTraceFxT NativeTableType;
+  typedef ShotTraceFxBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_SHOOTER_ID = 4,
+    VT_WEAPON_SLOT = 6,
+    VT_SHOT_SEQ = 8,
+    VT_DIR_OCT_X = 10,
+    VT_DIR_OCT_Y = 12,
+    VT_HIT_DIST_Q = 14,
+    VT_HIT_KIND = 16,
+    VT_SURFACE_TYPE = 18,
+    VT_NORMAL_OCT_X = 20,
+    VT_NORMAL_OCT_Y = 22,
+    VT_SHOW_TRACER = 24
+  };
+  const ::flatbuffers::String *shooter_id() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_SHOOTER_ID);
+  }
+  uint8_t weapon_slot() const {
+    return GetField<uint8_t>(VT_WEAPON_SLOT, 0);
+  }
+  int32_t shot_seq() const {
+    return GetField<int32_t>(VT_SHOT_SEQ, 0);
+  }
+  int16_t dir_oct_x() const {
+    return GetField<int16_t>(VT_DIR_OCT_X, 0);
+  }
+  int16_t dir_oct_y() const {
+    return GetField<int16_t>(VT_DIR_OCT_Y, 0);
+  }
+  uint16_t hit_dist_q() const {
+    return GetField<uint16_t>(VT_HIT_DIST_Q, 0);
+  }
+  afps::protocol::HitKind hit_kind() const {
+    return static_cast<afps::protocol::HitKind>(GetField<uint8_t>(VT_HIT_KIND, 0));
+  }
+  afps::protocol::SurfaceType surface_type() const {
+    return static_cast<afps::protocol::SurfaceType>(GetField<uint8_t>(VT_SURFACE_TYPE, 0));
+  }
+  int16_t normal_oct_x() const {
+    return GetField<int16_t>(VT_NORMAL_OCT_X, 0);
+  }
+  int16_t normal_oct_y() const {
+    return GetField<int16_t>(VT_NORMAL_OCT_Y, 0);
+  }
+  bool show_tracer() const {
+    return GetField<uint8_t>(VT_SHOW_TRACER, 0) != 0;
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyOffset(verifier, VT_SHOOTER_ID) &&
+           verifier.VerifyString(shooter_id()) &&
+           VerifyField<uint8_t>(verifier, VT_WEAPON_SLOT, 1) &&
+           VerifyField<int32_t>(verifier, VT_SHOT_SEQ, 4) &&
+           VerifyField<int16_t>(verifier, VT_DIR_OCT_X, 2) &&
+           VerifyField<int16_t>(verifier, VT_DIR_OCT_Y, 2) &&
+           VerifyField<uint16_t>(verifier, VT_HIT_DIST_Q, 2) &&
+           VerifyField<uint8_t>(verifier, VT_HIT_KIND, 1) &&
+           VerifyField<uint8_t>(verifier, VT_SURFACE_TYPE, 1) &&
+           VerifyField<int16_t>(verifier, VT_NORMAL_OCT_X, 2) &&
+           VerifyField<int16_t>(verifier, VT_NORMAL_OCT_Y, 2) &&
+           VerifyField<uint8_t>(verifier, VT_SHOW_TRACER, 1) &&
+           verifier.EndTable();
+  }
+  ShotTraceFxT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  void UnPackTo(ShotTraceFxT *_o, const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  static ::flatbuffers::Offset<ShotTraceFx> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const ShotTraceFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+};
+
+struct ShotTraceFxBuilder {
+  typedef ShotTraceFx Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_shooter_id(::flatbuffers::Offset<::flatbuffers::String> shooter_id) {
+    fbb_.AddOffset(ShotTraceFx::VT_SHOOTER_ID, shooter_id);
+  }
+  void add_weapon_slot(uint8_t weapon_slot) {
+    fbb_.AddElement<uint8_t>(ShotTraceFx::VT_WEAPON_SLOT, weapon_slot, 0);
+  }
+  void add_shot_seq(int32_t shot_seq) {
+    fbb_.AddElement<int32_t>(ShotTraceFx::VT_SHOT_SEQ, shot_seq, 0);
+  }
+  void add_dir_oct_x(int16_t dir_oct_x) {
+    fbb_.AddElement<int16_t>(ShotTraceFx::VT_DIR_OCT_X, dir_oct_x, 0);
+  }
+  void add_dir_oct_y(int16_t dir_oct_y) {
+    fbb_.AddElement<int16_t>(ShotTraceFx::VT_DIR_OCT_Y, dir_oct_y, 0);
+  }
+  void add_hit_dist_q(uint16_t hit_dist_q) {
+    fbb_.AddElement<uint16_t>(ShotTraceFx::VT_HIT_DIST_Q, hit_dist_q, 0);
+  }
+  void add_hit_kind(afps::protocol::HitKind hit_kind) {
+    fbb_.AddElement<uint8_t>(ShotTraceFx::VT_HIT_KIND, static_cast<uint8_t>(hit_kind), 0);
+  }
+  void add_surface_type(afps::protocol::SurfaceType surface_type) {
+    fbb_.AddElement<uint8_t>(ShotTraceFx::VT_SURFACE_TYPE, static_cast<uint8_t>(surface_type), 0);
+  }
+  void add_normal_oct_x(int16_t normal_oct_x) {
+    fbb_.AddElement<int16_t>(ShotTraceFx::VT_NORMAL_OCT_X, normal_oct_x, 0);
+  }
+  void add_normal_oct_y(int16_t normal_oct_y) {
+    fbb_.AddElement<int16_t>(ShotTraceFx::VT_NORMAL_OCT_Y, normal_oct_y, 0);
+  }
+  void add_show_tracer(bool show_tracer) {
+    fbb_.AddElement<uint8_t>(ShotTraceFx::VT_SHOW_TRACER, static_cast<uint8_t>(show_tracer), 0);
+  }
+  explicit ShotTraceFxBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<ShotTraceFx> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<ShotTraceFx>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<ShotTraceFx> CreateShotTraceFx(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ::flatbuffers::Offset<::flatbuffers::String> shooter_id = 0,
+    uint8_t weapon_slot = 0,
+    int32_t shot_seq = 0,
+    int16_t dir_oct_x = 0,
+    int16_t dir_oct_y = 0,
+    uint16_t hit_dist_q = 0,
+    afps::protocol::HitKind hit_kind = afps::protocol::HitKind::None,
+    afps::protocol::SurfaceType surface_type = afps::protocol::SurfaceType::Stone,
+    int16_t normal_oct_x = 0,
+    int16_t normal_oct_y = 0,
+    bool show_tracer = false) {
+  ShotTraceFxBuilder builder_(_fbb);
+  builder_.add_shot_seq(shot_seq);
+  builder_.add_shooter_id(shooter_id);
+  builder_.add_normal_oct_y(normal_oct_y);
+  builder_.add_normal_oct_x(normal_oct_x);
+  builder_.add_hit_dist_q(hit_dist_q);
+  builder_.add_dir_oct_y(dir_oct_y);
+  builder_.add_dir_oct_x(dir_oct_x);
+  builder_.add_show_tracer(show_tracer);
+  builder_.add_surface_type(surface_type);
+  builder_.add_hit_kind(hit_kind);
+  builder_.add_weapon_slot(weapon_slot);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<ShotTraceFx> CreateShotTraceFxDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    const char *shooter_id = nullptr,
+    uint8_t weapon_slot = 0,
+    int32_t shot_seq = 0,
+    int16_t dir_oct_x = 0,
+    int16_t dir_oct_y = 0,
+    uint16_t hit_dist_q = 0,
+    afps::protocol::HitKind hit_kind = afps::protocol::HitKind::None,
+    afps::protocol::SurfaceType surface_type = afps::protocol::SurfaceType::Stone,
+    int16_t normal_oct_x = 0,
+    int16_t normal_oct_y = 0,
+    bool show_tracer = false) {
+  auto shooter_id__ = shooter_id ? _fbb.CreateString(shooter_id) : 0;
+  return afps::protocol::CreateShotTraceFx(
+      _fbb,
+      shooter_id__,
+      weapon_slot,
+      shot_seq,
+      dir_oct_x,
+      dir_oct_y,
+      hit_dist_q,
+      hit_kind,
+      surface_type,
+      normal_oct_x,
+      normal_oct_y,
+      show_tracer);
+}
+
+::flatbuffers::Offset<ShotTraceFx> CreateShotTraceFx(::flatbuffers::FlatBufferBuilder &_fbb, const ShotTraceFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+
+struct ReloadFxT : public ::flatbuffers::NativeTable {
+  typedef ReloadFx TableType;
+  std::string shooter_id{};
+  uint8_t weapon_slot = 0;
+};
+
+struct ReloadFx FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef ReloadFxT NativeTableType;
+  typedef ReloadFxBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_SHOOTER_ID = 4,
+    VT_WEAPON_SLOT = 6
+  };
+  const ::flatbuffers::String *shooter_id() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_SHOOTER_ID);
+  }
+  uint8_t weapon_slot() const {
+    return GetField<uint8_t>(VT_WEAPON_SLOT, 0);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyOffset(verifier, VT_SHOOTER_ID) &&
+           verifier.VerifyString(shooter_id()) &&
+           VerifyField<uint8_t>(verifier, VT_WEAPON_SLOT, 1) &&
+           verifier.EndTable();
+  }
+  ReloadFxT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  void UnPackTo(ReloadFxT *_o, const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  static ::flatbuffers::Offset<ReloadFx> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const ReloadFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+};
+
+struct ReloadFxBuilder {
+  typedef ReloadFx Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_shooter_id(::flatbuffers::Offset<::flatbuffers::String> shooter_id) {
+    fbb_.AddOffset(ReloadFx::VT_SHOOTER_ID, shooter_id);
+  }
+  void add_weapon_slot(uint8_t weapon_slot) {
+    fbb_.AddElement<uint8_t>(ReloadFx::VT_WEAPON_SLOT, weapon_slot, 0);
+  }
+  explicit ReloadFxBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<ReloadFx> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<ReloadFx>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<ReloadFx> CreateReloadFx(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ::flatbuffers::Offset<::flatbuffers::String> shooter_id = 0,
+    uint8_t weapon_slot = 0) {
+  ReloadFxBuilder builder_(_fbb);
+  builder_.add_shooter_id(shooter_id);
+  builder_.add_weapon_slot(weapon_slot);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<ReloadFx> CreateReloadFxDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    const char *shooter_id = nullptr,
+    uint8_t weapon_slot = 0) {
+  auto shooter_id__ = shooter_id ? _fbb.CreateString(shooter_id) : 0;
+  return afps::protocol::CreateReloadFx(
+      _fbb,
+      shooter_id__,
+      weapon_slot);
+}
+
+::flatbuffers::Offset<ReloadFx> CreateReloadFx(::flatbuffers::FlatBufferBuilder &_fbb, const ReloadFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+
+struct NearMissFxT : public ::flatbuffers::NativeTable {
+  typedef NearMissFx TableType;
+  std::string shooter_id{};
+  int32_t shot_seq = 0;
+  uint8_t strength = 0;
+};
+
+struct NearMissFx FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef NearMissFxT NativeTableType;
+  typedef NearMissFxBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_SHOOTER_ID = 4,
+    VT_SHOT_SEQ = 6,
+    VT_STRENGTH = 8
+  };
+  const ::flatbuffers::String *shooter_id() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_SHOOTER_ID);
+  }
+  int32_t shot_seq() const {
+    return GetField<int32_t>(VT_SHOT_SEQ, 0);
+  }
+  uint8_t strength() const {
+    return GetField<uint8_t>(VT_STRENGTH, 0);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyOffset(verifier, VT_SHOOTER_ID) &&
+           verifier.VerifyString(shooter_id()) &&
+           VerifyField<int32_t>(verifier, VT_SHOT_SEQ, 4) &&
+           VerifyField<uint8_t>(verifier, VT_STRENGTH, 1) &&
+           verifier.EndTable();
+  }
+  NearMissFxT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  void UnPackTo(NearMissFxT *_o, const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  static ::flatbuffers::Offset<NearMissFx> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const NearMissFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+};
+
+struct NearMissFxBuilder {
+  typedef NearMissFx Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_shooter_id(::flatbuffers::Offset<::flatbuffers::String> shooter_id) {
+    fbb_.AddOffset(NearMissFx::VT_SHOOTER_ID, shooter_id);
+  }
+  void add_shot_seq(int32_t shot_seq) {
+    fbb_.AddElement<int32_t>(NearMissFx::VT_SHOT_SEQ, shot_seq, 0);
+  }
+  void add_strength(uint8_t strength) {
+    fbb_.AddElement<uint8_t>(NearMissFx::VT_STRENGTH, strength, 0);
+  }
+  explicit NearMissFxBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<NearMissFx> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<NearMissFx>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<NearMissFx> CreateNearMissFx(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ::flatbuffers::Offset<::flatbuffers::String> shooter_id = 0,
+    int32_t shot_seq = 0,
+    uint8_t strength = 0) {
+  NearMissFxBuilder builder_(_fbb);
+  builder_.add_shot_seq(shot_seq);
+  builder_.add_shooter_id(shooter_id);
+  builder_.add_strength(strength);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<NearMissFx> CreateNearMissFxDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    const char *shooter_id = nullptr,
+    int32_t shot_seq = 0,
+    uint8_t strength = 0) {
+  auto shooter_id__ = shooter_id ? _fbb.CreateString(shooter_id) : 0;
+  return afps::protocol::CreateNearMissFx(
+      _fbb,
+      shooter_id__,
+      shot_seq,
+      strength);
+}
+
+::flatbuffers::Offset<NearMissFx> CreateNearMissFx(::flatbuffers::FlatBufferBuilder &_fbb, const NearMissFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+
+struct OverheatFxT : public ::flatbuffers::NativeTable {
+  typedef OverheatFx TableType;
+  std::string shooter_id{};
+  uint8_t weapon_slot = 0;
+  uint16_t heat_q = 0;
+};
+
+struct OverheatFx FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef OverheatFxT NativeTableType;
+  typedef OverheatFxBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_SHOOTER_ID = 4,
+    VT_WEAPON_SLOT = 6,
+    VT_HEAT_Q = 8
+  };
+  const ::flatbuffers::String *shooter_id() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_SHOOTER_ID);
+  }
+  uint8_t weapon_slot() const {
+    return GetField<uint8_t>(VT_WEAPON_SLOT, 0);
+  }
+  uint16_t heat_q() const {
+    return GetField<uint16_t>(VT_HEAT_Q, 0);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyOffset(verifier, VT_SHOOTER_ID) &&
+           verifier.VerifyString(shooter_id()) &&
+           VerifyField<uint8_t>(verifier, VT_WEAPON_SLOT, 1) &&
+           VerifyField<uint16_t>(verifier, VT_HEAT_Q, 2) &&
+           verifier.EndTable();
+  }
+  OverheatFxT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  void UnPackTo(OverheatFxT *_o, const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  static ::flatbuffers::Offset<OverheatFx> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const OverheatFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+};
+
+struct OverheatFxBuilder {
+  typedef OverheatFx Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_shooter_id(::flatbuffers::Offset<::flatbuffers::String> shooter_id) {
+    fbb_.AddOffset(OverheatFx::VT_SHOOTER_ID, shooter_id);
+  }
+  void add_weapon_slot(uint8_t weapon_slot) {
+    fbb_.AddElement<uint8_t>(OverheatFx::VT_WEAPON_SLOT, weapon_slot, 0);
+  }
+  void add_heat_q(uint16_t heat_q) {
+    fbb_.AddElement<uint16_t>(OverheatFx::VT_HEAT_Q, heat_q, 0);
+  }
+  explicit OverheatFxBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<OverheatFx> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<OverheatFx>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<OverheatFx> CreateOverheatFx(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ::flatbuffers::Offset<::flatbuffers::String> shooter_id = 0,
+    uint8_t weapon_slot = 0,
+    uint16_t heat_q = 0) {
+  OverheatFxBuilder builder_(_fbb);
+  builder_.add_shooter_id(shooter_id);
+  builder_.add_heat_q(heat_q);
+  builder_.add_weapon_slot(weapon_slot);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<OverheatFx> CreateOverheatFxDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    const char *shooter_id = nullptr,
+    uint8_t weapon_slot = 0,
+    uint16_t heat_q = 0) {
+  auto shooter_id__ = shooter_id ? _fbb.CreateString(shooter_id) : 0;
+  return afps::protocol::CreateOverheatFx(
+      _fbb,
+      shooter_id__,
+      weapon_slot,
+      heat_q);
+}
+
+::flatbuffers::Offset<OverheatFx> CreateOverheatFx(::flatbuffers::FlatBufferBuilder &_fbb, const OverheatFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+
+struct VentFxT : public ::flatbuffers::NativeTable {
+  typedef VentFx TableType;
+  std::string shooter_id{};
+  uint8_t weapon_slot = 0;
+};
+
+struct VentFx FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef VentFxT NativeTableType;
+  typedef VentFxBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_SHOOTER_ID = 4,
+    VT_WEAPON_SLOT = 6
+  };
+  const ::flatbuffers::String *shooter_id() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_SHOOTER_ID);
+  }
+  uint8_t weapon_slot() const {
+    return GetField<uint8_t>(VT_WEAPON_SLOT, 0);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyOffset(verifier, VT_SHOOTER_ID) &&
+           verifier.VerifyString(shooter_id()) &&
+           VerifyField<uint8_t>(verifier, VT_WEAPON_SLOT, 1) &&
+           verifier.EndTable();
+  }
+  VentFxT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  void UnPackTo(VentFxT *_o, const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  static ::flatbuffers::Offset<VentFx> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const VentFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+};
+
+struct VentFxBuilder {
+  typedef VentFx Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_shooter_id(::flatbuffers::Offset<::flatbuffers::String> shooter_id) {
+    fbb_.AddOffset(VentFx::VT_SHOOTER_ID, shooter_id);
+  }
+  void add_weapon_slot(uint8_t weapon_slot) {
+    fbb_.AddElement<uint8_t>(VentFx::VT_WEAPON_SLOT, weapon_slot, 0);
+  }
+  explicit VentFxBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<VentFx> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<VentFx>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<VentFx> CreateVentFx(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ::flatbuffers::Offset<::flatbuffers::String> shooter_id = 0,
+    uint8_t weapon_slot = 0) {
+  VentFxBuilder builder_(_fbb);
+  builder_.add_shooter_id(shooter_id);
+  builder_.add_weapon_slot(weapon_slot);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<VentFx> CreateVentFxDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    const char *shooter_id = nullptr,
+    uint8_t weapon_slot = 0) {
+  auto shooter_id__ = shooter_id ? _fbb.CreateString(shooter_id) : 0;
+  return afps::protocol::CreateVentFx(
+      _fbb,
+      shooter_id__,
+      weapon_slot);
+}
+
+::flatbuffers::Offset<VentFx> CreateVentFx(::flatbuffers::FlatBufferBuilder &_fbb, const VentFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+
+struct HitConfirmedFxT : public ::flatbuffers::NativeTable {
+  typedef HitConfirmedFx TableType;
+  std::string target_id{};
+  double damage = 0.0;
+  bool killed = false;
+};
+
+struct HitConfirmedFx FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef HitConfirmedFxT NativeTableType;
+  typedef HitConfirmedFxBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_TARGET_ID = 4,
+    VT_DAMAGE = 6,
+    VT_KILLED = 8
+  };
+  const ::flatbuffers::String *target_id() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_TARGET_ID);
+  }
+  double damage() const {
+    return GetField<double>(VT_DAMAGE, 0.0);
+  }
+  bool killed() const {
+    return GetField<uint8_t>(VT_KILLED, 0) != 0;
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyOffset(verifier, VT_TARGET_ID) &&
+           verifier.VerifyString(target_id()) &&
+           VerifyField<double>(verifier, VT_DAMAGE, 8) &&
+           VerifyField<uint8_t>(verifier, VT_KILLED, 1) &&
+           verifier.EndTable();
+  }
+  HitConfirmedFxT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  void UnPackTo(HitConfirmedFxT *_o, const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  static ::flatbuffers::Offset<HitConfirmedFx> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const HitConfirmedFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+};
+
+struct HitConfirmedFxBuilder {
+  typedef HitConfirmedFx Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_target_id(::flatbuffers::Offset<::flatbuffers::String> target_id) {
+    fbb_.AddOffset(HitConfirmedFx::VT_TARGET_ID, target_id);
+  }
+  void add_damage(double damage) {
+    fbb_.AddElement<double>(HitConfirmedFx::VT_DAMAGE, damage, 0.0);
+  }
+  void add_killed(bool killed) {
+    fbb_.AddElement<uint8_t>(HitConfirmedFx::VT_KILLED, static_cast<uint8_t>(killed), 0);
+  }
+  explicit HitConfirmedFxBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<HitConfirmedFx> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<HitConfirmedFx>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<HitConfirmedFx> CreateHitConfirmedFx(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ::flatbuffers::Offset<::flatbuffers::String> target_id = 0,
+    double damage = 0.0,
+    bool killed = false) {
+  HitConfirmedFxBuilder builder_(_fbb);
+  builder_.add_damage(damage);
+  builder_.add_target_id(target_id);
+  builder_.add_killed(killed);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<HitConfirmedFx> CreateHitConfirmedFxDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    const char *target_id = nullptr,
+    double damage = 0.0,
+    bool killed = false) {
+  auto target_id__ = target_id ? _fbb.CreateString(target_id) : 0;
+  return afps::protocol::CreateHitConfirmedFx(
+      _fbb,
+      target_id__,
+      damage,
+      killed);
+}
+
+::flatbuffers::Offset<HitConfirmedFx> CreateHitConfirmedFx(::flatbuffers::FlatBufferBuilder &_fbb, const HitConfirmedFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+
+struct ProjectileSpawnFxT : public ::flatbuffers::NativeTable {
+  typedef ProjectileSpawnFx TableType;
+  std::string shooter_id{};
+  uint8_t weapon_slot = 0;
+  int32_t shot_seq = 0;
+  int32_t projectile_id = 0;
+  int16_t pos_x_q = 0;
+  int16_t pos_y_q = 0;
+  int16_t pos_z_q = 0;
+  int16_t vel_x_q = 0;
+  int16_t vel_y_q = 0;
+  int16_t vel_z_q = 0;
+  uint16_t ttl_q = 0;
+};
+
+struct ProjectileSpawnFx FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef ProjectileSpawnFxT NativeTableType;
+  typedef ProjectileSpawnFxBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_SHOOTER_ID = 4,
+    VT_WEAPON_SLOT = 6,
+    VT_SHOT_SEQ = 8,
+    VT_PROJECTILE_ID = 10,
+    VT_POS_X_Q = 12,
+    VT_POS_Y_Q = 14,
+    VT_POS_Z_Q = 16,
+    VT_VEL_X_Q = 18,
+    VT_VEL_Y_Q = 20,
+    VT_VEL_Z_Q = 22,
+    VT_TTL_Q = 24
+  };
+  const ::flatbuffers::String *shooter_id() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_SHOOTER_ID);
+  }
+  uint8_t weapon_slot() const {
+    return GetField<uint8_t>(VT_WEAPON_SLOT, 0);
+  }
+  int32_t shot_seq() const {
+    return GetField<int32_t>(VT_SHOT_SEQ, 0);
+  }
+  int32_t projectile_id() const {
+    return GetField<int32_t>(VT_PROJECTILE_ID, 0);
+  }
+  int16_t pos_x_q() const {
+    return GetField<int16_t>(VT_POS_X_Q, 0);
+  }
+  int16_t pos_y_q() const {
+    return GetField<int16_t>(VT_POS_Y_Q, 0);
+  }
+  int16_t pos_z_q() const {
+    return GetField<int16_t>(VT_POS_Z_Q, 0);
+  }
+  int16_t vel_x_q() const {
+    return GetField<int16_t>(VT_VEL_X_Q, 0);
+  }
+  int16_t vel_y_q() const {
+    return GetField<int16_t>(VT_VEL_Y_Q, 0);
+  }
+  int16_t vel_z_q() const {
+    return GetField<int16_t>(VT_VEL_Z_Q, 0);
+  }
+  uint16_t ttl_q() const {
+    return GetField<uint16_t>(VT_TTL_Q, 0);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyOffset(verifier, VT_SHOOTER_ID) &&
+           verifier.VerifyString(shooter_id()) &&
+           VerifyField<uint8_t>(verifier, VT_WEAPON_SLOT, 1) &&
+           VerifyField<int32_t>(verifier, VT_SHOT_SEQ, 4) &&
+           VerifyField<int32_t>(verifier, VT_PROJECTILE_ID, 4) &&
+           VerifyField<int16_t>(verifier, VT_POS_X_Q, 2) &&
+           VerifyField<int16_t>(verifier, VT_POS_Y_Q, 2) &&
+           VerifyField<int16_t>(verifier, VT_POS_Z_Q, 2) &&
+           VerifyField<int16_t>(verifier, VT_VEL_X_Q, 2) &&
+           VerifyField<int16_t>(verifier, VT_VEL_Y_Q, 2) &&
+           VerifyField<int16_t>(verifier, VT_VEL_Z_Q, 2) &&
+           VerifyField<uint16_t>(verifier, VT_TTL_Q, 2) &&
+           verifier.EndTable();
+  }
+  ProjectileSpawnFxT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  void UnPackTo(ProjectileSpawnFxT *_o, const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  static ::flatbuffers::Offset<ProjectileSpawnFx> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const ProjectileSpawnFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+};
+
+struct ProjectileSpawnFxBuilder {
+  typedef ProjectileSpawnFx Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_shooter_id(::flatbuffers::Offset<::flatbuffers::String> shooter_id) {
+    fbb_.AddOffset(ProjectileSpawnFx::VT_SHOOTER_ID, shooter_id);
+  }
+  void add_weapon_slot(uint8_t weapon_slot) {
+    fbb_.AddElement<uint8_t>(ProjectileSpawnFx::VT_WEAPON_SLOT, weapon_slot, 0);
+  }
+  void add_shot_seq(int32_t shot_seq) {
+    fbb_.AddElement<int32_t>(ProjectileSpawnFx::VT_SHOT_SEQ, shot_seq, 0);
+  }
+  void add_projectile_id(int32_t projectile_id) {
+    fbb_.AddElement<int32_t>(ProjectileSpawnFx::VT_PROJECTILE_ID, projectile_id, 0);
+  }
+  void add_pos_x_q(int16_t pos_x_q) {
+    fbb_.AddElement<int16_t>(ProjectileSpawnFx::VT_POS_X_Q, pos_x_q, 0);
+  }
+  void add_pos_y_q(int16_t pos_y_q) {
+    fbb_.AddElement<int16_t>(ProjectileSpawnFx::VT_POS_Y_Q, pos_y_q, 0);
+  }
+  void add_pos_z_q(int16_t pos_z_q) {
+    fbb_.AddElement<int16_t>(ProjectileSpawnFx::VT_POS_Z_Q, pos_z_q, 0);
+  }
+  void add_vel_x_q(int16_t vel_x_q) {
+    fbb_.AddElement<int16_t>(ProjectileSpawnFx::VT_VEL_X_Q, vel_x_q, 0);
+  }
+  void add_vel_y_q(int16_t vel_y_q) {
+    fbb_.AddElement<int16_t>(ProjectileSpawnFx::VT_VEL_Y_Q, vel_y_q, 0);
+  }
+  void add_vel_z_q(int16_t vel_z_q) {
+    fbb_.AddElement<int16_t>(ProjectileSpawnFx::VT_VEL_Z_Q, vel_z_q, 0);
+  }
+  void add_ttl_q(uint16_t ttl_q) {
+    fbb_.AddElement<uint16_t>(ProjectileSpawnFx::VT_TTL_Q, ttl_q, 0);
+  }
+  explicit ProjectileSpawnFxBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<ProjectileSpawnFx> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<ProjectileSpawnFx>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<ProjectileSpawnFx> CreateProjectileSpawnFx(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ::flatbuffers::Offset<::flatbuffers::String> shooter_id = 0,
+    uint8_t weapon_slot = 0,
+    int32_t shot_seq = 0,
+    int32_t projectile_id = 0,
+    int16_t pos_x_q = 0,
+    int16_t pos_y_q = 0,
+    int16_t pos_z_q = 0,
+    int16_t vel_x_q = 0,
+    int16_t vel_y_q = 0,
+    int16_t vel_z_q = 0,
+    uint16_t ttl_q = 0) {
+  ProjectileSpawnFxBuilder builder_(_fbb);
+  builder_.add_projectile_id(projectile_id);
+  builder_.add_shot_seq(shot_seq);
+  builder_.add_shooter_id(shooter_id);
+  builder_.add_ttl_q(ttl_q);
+  builder_.add_vel_z_q(vel_z_q);
+  builder_.add_vel_y_q(vel_y_q);
+  builder_.add_vel_x_q(vel_x_q);
+  builder_.add_pos_z_q(pos_z_q);
+  builder_.add_pos_y_q(pos_y_q);
+  builder_.add_pos_x_q(pos_x_q);
+  builder_.add_weapon_slot(weapon_slot);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<ProjectileSpawnFx> CreateProjectileSpawnFxDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    const char *shooter_id = nullptr,
+    uint8_t weapon_slot = 0,
+    int32_t shot_seq = 0,
+    int32_t projectile_id = 0,
+    int16_t pos_x_q = 0,
+    int16_t pos_y_q = 0,
+    int16_t pos_z_q = 0,
+    int16_t vel_x_q = 0,
+    int16_t vel_y_q = 0,
+    int16_t vel_z_q = 0,
+    uint16_t ttl_q = 0) {
+  auto shooter_id__ = shooter_id ? _fbb.CreateString(shooter_id) : 0;
+  return afps::protocol::CreateProjectileSpawnFx(
+      _fbb,
+      shooter_id__,
+      weapon_slot,
+      shot_seq,
+      projectile_id,
+      pos_x_q,
+      pos_y_q,
+      pos_z_q,
+      vel_x_q,
+      vel_y_q,
+      vel_z_q,
+      ttl_q);
+}
+
+::flatbuffers::Offset<ProjectileSpawnFx> CreateProjectileSpawnFx(::flatbuffers::FlatBufferBuilder &_fbb, const ProjectileSpawnFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+
+struct ProjectileImpactFxT : public ::flatbuffers::NativeTable {
+  typedef ProjectileImpactFx TableType;
+  int32_t projectile_id = 0;
+  bool hit_world = false;
+  std::string target_id{};
+  int16_t pos_x_q = 0;
+  int16_t pos_y_q = 0;
+  int16_t pos_z_q = 0;
+  int16_t normal_oct_x = 0;
+  int16_t normal_oct_y = 0;
+  afps::protocol::SurfaceType surface_type = afps::protocol::SurfaceType::Stone;
+};
+
+struct ProjectileImpactFx FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef ProjectileImpactFxT NativeTableType;
+  typedef ProjectileImpactFxBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_PROJECTILE_ID = 4,
+    VT_HIT_WORLD = 6,
+    VT_TARGET_ID = 8,
+    VT_POS_X_Q = 10,
+    VT_POS_Y_Q = 12,
+    VT_POS_Z_Q = 14,
+    VT_NORMAL_OCT_X = 16,
+    VT_NORMAL_OCT_Y = 18,
+    VT_SURFACE_TYPE = 20
+  };
+  int32_t projectile_id() const {
+    return GetField<int32_t>(VT_PROJECTILE_ID, 0);
+  }
+  bool hit_world() const {
+    return GetField<uint8_t>(VT_HIT_WORLD, 0) != 0;
+  }
+  const ::flatbuffers::String *target_id() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_TARGET_ID);
+  }
+  int16_t pos_x_q() const {
+    return GetField<int16_t>(VT_POS_X_Q, 0);
+  }
+  int16_t pos_y_q() const {
+    return GetField<int16_t>(VT_POS_Y_Q, 0);
+  }
+  int16_t pos_z_q() const {
+    return GetField<int16_t>(VT_POS_Z_Q, 0);
+  }
+  int16_t normal_oct_x() const {
+    return GetField<int16_t>(VT_NORMAL_OCT_X, 0);
+  }
+  int16_t normal_oct_y() const {
+    return GetField<int16_t>(VT_NORMAL_OCT_Y, 0);
+  }
+  afps::protocol::SurfaceType surface_type() const {
+    return static_cast<afps::protocol::SurfaceType>(GetField<uint8_t>(VT_SURFACE_TYPE, 0));
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<int32_t>(verifier, VT_PROJECTILE_ID, 4) &&
+           VerifyField<uint8_t>(verifier, VT_HIT_WORLD, 1) &&
+           VerifyOffset(verifier, VT_TARGET_ID) &&
+           verifier.VerifyString(target_id()) &&
+           VerifyField<int16_t>(verifier, VT_POS_X_Q, 2) &&
+           VerifyField<int16_t>(verifier, VT_POS_Y_Q, 2) &&
+           VerifyField<int16_t>(verifier, VT_POS_Z_Q, 2) &&
+           VerifyField<int16_t>(verifier, VT_NORMAL_OCT_X, 2) &&
+           VerifyField<int16_t>(verifier, VT_NORMAL_OCT_Y, 2) &&
+           VerifyField<uint8_t>(verifier, VT_SURFACE_TYPE, 1) &&
+           verifier.EndTable();
+  }
+  ProjectileImpactFxT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  void UnPackTo(ProjectileImpactFxT *_o, const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  static ::flatbuffers::Offset<ProjectileImpactFx> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const ProjectileImpactFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+};
+
+struct ProjectileImpactFxBuilder {
+  typedef ProjectileImpactFx Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_projectile_id(int32_t projectile_id) {
+    fbb_.AddElement<int32_t>(ProjectileImpactFx::VT_PROJECTILE_ID, projectile_id, 0);
+  }
+  void add_hit_world(bool hit_world) {
+    fbb_.AddElement<uint8_t>(ProjectileImpactFx::VT_HIT_WORLD, static_cast<uint8_t>(hit_world), 0);
+  }
+  void add_target_id(::flatbuffers::Offset<::flatbuffers::String> target_id) {
+    fbb_.AddOffset(ProjectileImpactFx::VT_TARGET_ID, target_id);
+  }
+  void add_pos_x_q(int16_t pos_x_q) {
+    fbb_.AddElement<int16_t>(ProjectileImpactFx::VT_POS_X_Q, pos_x_q, 0);
+  }
+  void add_pos_y_q(int16_t pos_y_q) {
+    fbb_.AddElement<int16_t>(ProjectileImpactFx::VT_POS_Y_Q, pos_y_q, 0);
+  }
+  void add_pos_z_q(int16_t pos_z_q) {
+    fbb_.AddElement<int16_t>(ProjectileImpactFx::VT_POS_Z_Q, pos_z_q, 0);
+  }
+  void add_normal_oct_x(int16_t normal_oct_x) {
+    fbb_.AddElement<int16_t>(ProjectileImpactFx::VT_NORMAL_OCT_X, normal_oct_x, 0);
+  }
+  void add_normal_oct_y(int16_t normal_oct_y) {
+    fbb_.AddElement<int16_t>(ProjectileImpactFx::VT_NORMAL_OCT_Y, normal_oct_y, 0);
+  }
+  void add_surface_type(afps::protocol::SurfaceType surface_type) {
+    fbb_.AddElement<uint8_t>(ProjectileImpactFx::VT_SURFACE_TYPE, static_cast<uint8_t>(surface_type), 0);
+  }
+  explicit ProjectileImpactFxBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<ProjectileImpactFx> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<ProjectileImpactFx>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<ProjectileImpactFx> CreateProjectileImpactFx(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    int32_t projectile_id = 0,
+    bool hit_world = false,
+    ::flatbuffers::Offset<::flatbuffers::String> target_id = 0,
+    int16_t pos_x_q = 0,
+    int16_t pos_y_q = 0,
+    int16_t pos_z_q = 0,
+    int16_t normal_oct_x = 0,
+    int16_t normal_oct_y = 0,
+    afps::protocol::SurfaceType surface_type = afps::protocol::SurfaceType::Stone) {
+  ProjectileImpactFxBuilder builder_(_fbb);
+  builder_.add_target_id(target_id);
+  builder_.add_projectile_id(projectile_id);
+  builder_.add_normal_oct_y(normal_oct_y);
+  builder_.add_normal_oct_x(normal_oct_x);
+  builder_.add_pos_z_q(pos_z_q);
+  builder_.add_pos_y_q(pos_y_q);
+  builder_.add_pos_x_q(pos_x_q);
+  builder_.add_surface_type(surface_type);
+  builder_.add_hit_world(hit_world);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<ProjectileImpactFx> CreateProjectileImpactFxDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    int32_t projectile_id = 0,
+    bool hit_world = false,
+    const char *target_id = nullptr,
+    int16_t pos_x_q = 0,
+    int16_t pos_y_q = 0,
+    int16_t pos_z_q = 0,
+    int16_t normal_oct_x = 0,
+    int16_t normal_oct_y = 0,
+    afps::protocol::SurfaceType surface_type = afps::protocol::SurfaceType::Stone) {
+  auto target_id__ = target_id ? _fbb.CreateString(target_id) : 0;
+  return afps::protocol::CreateProjectileImpactFx(
+      _fbb,
+      projectile_id,
+      hit_world,
+      target_id__,
+      pos_x_q,
+      pos_y_q,
+      pos_z_q,
+      normal_oct_x,
+      normal_oct_y,
+      surface_type);
+}
+
+::flatbuffers::Offset<ProjectileImpactFx> CreateProjectileImpactFx(::flatbuffers::FlatBufferBuilder &_fbb, const ProjectileImpactFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+
+struct ProjectileRemoveFxT : public ::flatbuffers::NativeTable {
+  typedef ProjectileRemoveFx TableType;
+  int32_t projectile_id = 0;
+};
+
+struct ProjectileRemoveFx FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef ProjectileRemoveFxT NativeTableType;
+  typedef ProjectileRemoveFxBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_PROJECTILE_ID = 4
+  };
+  int32_t projectile_id() const {
+    return GetField<int32_t>(VT_PROJECTILE_ID, 0);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<int32_t>(verifier, VT_PROJECTILE_ID, 4) &&
+           verifier.EndTable();
+  }
+  ProjectileRemoveFxT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  void UnPackTo(ProjectileRemoveFxT *_o, const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  static ::flatbuffers::Offset<ProjectileRemoveFx> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const ProjectileRemoveFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+};
+
+struct ProjectileRemoveFxBuilder {
+  typedef ProjectileRemoveFx Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_projectile_id(int32_t projectile_id) {
+    fbb_.AddElement<int32_t>(ProjectileRemoveFx::VT_PROJECTILE_ID, projectile_id, 0);
+  }
+  explicit ProjectileRemoveFxBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<ProjectileRemoveFx> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<ProjectileRemoveFx>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<ProjectileRemoveFx> CreateProjectileRemoveFx(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    int32_t projectile_id = 0) {
+  ProjectileRemoveFxBuilder builder_(_fbb);
+  builder_.add_projectile_id(projectile_id);
+  return builder_.Finish();
+}
+
+::flatbuffers::Offset<ProjectileRemoveFx> CreateProjectileRemoveFx(::flatbuffers::FlatBufferBuilder &_fbb, const ProjectileRemoveFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
 
 struct ClientHelloT : public ::flatbuffers::NativeTable {
   typedef ClientHello TableType;
@@ -661,6 +2119,7 @@ struct InputCmdT : public ::flatbuffers::NativeTable {
   int32_t weapon_slot = 0;
   bool jump = false;
   bool fire = false;
+  bool ads = false;
   bool sprint = false;
   bool dash = false;
   bool grapple = false;
@@ -682,11 +2141,12 @@ struct InputCmd FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_WEAPON_SLOT = 18,
     VT_JUMP = 20,
     VT_FIRE = 22,
-    VT_SPRINT = 24,
-    VT_DASH = 26,
-    VT_GRAPPLE = 28,
-    VT_SHIELD = 30,
-    VT_SHOCKWAVE = 32
+    VT_ADS = 24,
+    VT_SPRINT = 26,
+    VT_DASH = 28,
+    VT_GRAPPLE = 30,
+    VT_SHIELD = 32,
+    VT_SHOCKWAVE = 34
   };
   int32_t input_seq() const {
     return GetField<int32_t>(VT_INPUT_SEQ, 0);
@@ -718,6 +2178,9 @@ struct InputCmd FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   bool fire() const {
     return GetField<uint8_t>(VT_FIRE, 0) != 0;
   }
+  bool ads() const {
+    return GetField<uint8_t>(VT_ADS, 0) != 0;
+  }
   bool sprint() const {
     return GetField<uint8_t>(VT_SPRINT, 0) != 0;
   }
@@ -746,6 +2209,7 @@ struct InputCmd FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<int32_t>(verifier, VT_WEAPON_SLOT, 4) &&
            VerifyField<uint8_t>(verifier, VT_JUMP, 1) &&
            VerifyField<uint8_t>(verifier, VT_FIRE, 1) &&
+           VerifyField<uint8_t>(verifier, VT_ADS, 1) &&
            VerifyField<uint8_t>(verifier, VT_SPRINT, 1) &&
            VerifyField<uint8_t>(verifier, VT_DASH, 1) &&
            VerifyField<uint8_t>(verifier, VT_GRAPPLE, 1) &&
@@ -792,6 +2256,9 @@ struct InputCmdBuilder {
   void add_fire(bool fire) {
     fbb_.AddElement<uint8_t>(InputCmd::VT_FIRE, static_cast<uint8_t>(fire), 0);
   }
+  void add_ads(bool ads) {
+    fbb_.AddElement<uint8_t>(InputCmd::VT_ADS, static_cast<uint8_t>(ads), 0);
+  }
   void add_sprint(bool sprint) {
     fbb_.AddElement<uint8_t>(InputCmd::VT_SPRINT, static_cast<uint8_t>(sprint), 0);
   }
@@ -830,6 +2297,7 @@ inline ::flatbuffers::Offset<InputCmd> CreateInputCmd(
     int32_t weapon_slot = 0,
     bool jump = false,
     bool fire = false,
+    bool ads = false,
     bool sprint = false,
     bool dash = false,
     bool grapple = false,
@@ -849,6 +2317,7 @@ inline ::flatbuffers::Offset<InputCmd> CreateInputCmd(
   builder_.add_grapple(grapple);
   builder_.add_dash(dash);
   builder_.add_sprint(sprint);
+  builder_.add_ads(ads);
   builder_.add_fire(fire);
   builder_.add_jump(jump);
   return builder_.Finish();
@@ -1023,512 +2492,58 @@ inline ::flatbuffers::Offset<FireWeaponRequest> CreateFireWeaponRequestDirect(
 
 ::flatbuffers::Offset<FireWeaponRequest> CreateFireWeaponRequest(::flatbuffers::FlatBufferBuilder &_fbb, const FireWeaponRequestT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
 
-struct WeaponFiredEventT : public ::flatbuffers::NativeTable {
-  typedef WeaponFiredEvent TableType;
-  std::string shooter_id{};
-  std::string weapon_id{};
-  int32_t weapon_slot = 0;
-  int32_t server_tick = 0;
-  int32_t shot_seq = 0;
-  double muzzle_pos_x = 0.0;
-  double muzzle_pos_y = 0.0;
-  double muzzle_pos_z = 0.0;
-  double dir_x = 0.0;
-  double dir_y = 0.0;
-  double dir_z = 0.0;
-  bool dry_fire = false;
-  bool casing_enabled = false;
-  double casing_pos_x = 0.0;
-  double casing_pos_y = 0.0;
-  double casing_pos_z = 0.0;
-  double casing_rot_x = 0.0;
-  double casing_rot_y = 0.0;
-  double casing_rot_z = 0.0;
-  double casing_vel_x = 0.0;
-  double casing_vel_y = 0.0;
-  double casing_vel_z = 0.0;
-  double casing_ang_x = 0.0;
-  double casing_ang_y = 0.0;
-  double casing_ang_z = 0.0;
-  uint32_t casing_seed = 0;
+struct SetLoadoutRequestT : public ::flatbuffers::NativeTable {
+  typedef SetLoadoutRequest TableType;
+  uint32_t loadout_bits = 0;
 };
 
-struct WeaponFiredEvent FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
-  typedef WeaponFiredEventT NativeTableType;
-  typedef WeaponFiredEventBuilder Builder;
+struct SetLoadoutRequest FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef SetLoadoutRequestT NativeTableType;
+  typedef SetLoadoutRequestBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
-    VT_SHOOTER_ID = 4,
-    VT_WEAPON_ID = 6,
-    VT_WEAPON_SLOT = 8,
-    VT_SERVER_TICK = 10,
-    VT_SHOT_SEQ = 12,
-    VT_MUZZLE_POS_X = 14,
-    VT_MUZZLE_POS_Y = 16,
-    VT_MUZZLE_POS_Z = 18,
-    VT_DIR_X = 20,
-    VT_DIR_Y = 22,
-    VT_DIR_Z = 24,
-    VT_DRY_FIRE = 26,
-    VT_CASING_ENABLED = 28,
-    VT_CASING_POS_X = 30,
-    VT_CASING_POS_Y = 32,
-    VT_CASING_POS_Z = 34,
-    VT_CASING_ROT_X = 36,
-    VT_CASING_ROT_Y = 38,
-    VT_CASING_ROT_Z = 40,
-    VT_CASING_VEL_X = 42,
-    VT_CASING_VEL_Y = 44,
-    VT_CASING_VEL_Z = 46,
-    VT_CASING_ANG_X = 48,
-    VT_CASING_ANG_Y = 50,
-    VT_CASING_ANG_Z = 52,
-    VT_CASING_SEED = 54
+    VT_LOADOUT_BITS = 4
   };
-  const ::flatbuffers::String *shooter_id() const {
-    return GetPointer<const ::flatbuffers::String *>(VT_SHOOTER_ID);
-  }
-  const ::flatbuffers::String *weapon_id() const {
-    return GetPointer<const ::flatbuffers::String *>(VT_WEAPON_ID);
-  }
-  int32_t weapon_slot() const {
-    return GetField<int32_t>(VT_WEAPON_SLOT, 0);
-  }
-  int32_t server_tick() const {
-    return GetField<int32_t>(VT_SERVER_TICK, 0);
-  }
-  int32_t shot_seq() const {
-    return GetField<int32_t>(VT_SHOT_SEQ, 0);
-  }
-  double muzzle_pos_x() const {
-    return GetField<double>(VT_MUZZLE_POS_X, 0.0);
-  }
-  double muzzle_pos_y() const {
-    return GetField<double>(VT_MUZZLE_POS_Y, 0.0);
-  }
-  double muzzle_pos_z() const {
-    return GetField<double>(VT_MUZZLE_POS_Z, 0.0);
-  }
-  double dir_x() const {
-    return GetField<double>(VT_DIR_X, 0.0);
-  }
-  double dir_y() const {
-    return GetField<double>(VT_DIR_Y, 0.0);
-  }
-  double dir_z() const {
-    return GetField<double>(VT_DIR_Z, 0.0);
-  }
-  bool dry_fire() const {
-    return GetField<uint8_t>(VT_DRY_FIRE, 0) != 0;
-  }
-  bool casing_enabled() const {
-    return GetField<uint8_t>(VT_CASING_ENABLED, 0) != 0;
-  }
-  double casing_pos_x() const {
-    return GetField<double>(VT_CASING_POS_X, 0.0);
-  }
-  double casing_pos_y() const {
-    return GetField<double>(VT_CASING_POS_Y, 0.0);
-  }
-  double casing_pos_z() const {
-    return GetField<double>(VT_CASING_POS_Z, 0.0);
-  }
-  double casing_rot_x() const {
-    return GetField<double>(VT_CASING_ROT_X, 0.0);
-  }
-  double casing_rot_y() const {
-    return GetField<double>(VT_CASING_ROT_Y, 0.0);
-  }
-  double casing_rot_z() const {
-    return GetField<double>(VT_CASING_ROT_Z, 0.0);
-  }
-  double casing_vel_x() const {
-    return GetField<double>(VT_CASING_VEL_X, 0.0);
-  }
-  double casing_vel_y() const {
-    return GetField<double>(VT_CASING_VEL_Y, 0.0);
-  }
-  double casing_vel_z() const {
-    return GetField<double>(VT_CASING_VEL_Z, 0.0);
-  }
-  double casing_ang_x() const {
-    return GetField<double>(VT_CASING_ANG_X, 0.0);
-  }
-  double casing_ang_y() const {
-    return GetField<double>(VT_CASING_ANG_Y, 0.0);
-  }
-  double casing_ang_z() const {
-    return GetField<double>(VT_CASING_ANG_Z, 0.0);
-  }
-  uint32_t casing_seed() const {
-    return GetField<uint32_t>(VT_CASING_SEED, 0);
+  uint32_t loadout_bits() const {
+    return GetField<uint32_t>(VT_LOADOUT_BITS, 0);
   }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
-           VerifyOffset(verifier, VT_SHOOTER_ID) &&
-           verifier.VerifyString(shooter_id()) &&
-           VerifyOffset(verifier, VT_WEAPON_ID) &&
-           verifier.VerifyString(weapon_id()) &&
-           VerifyField<int32_t>(verifier, VT_WEAPON_SLOT, 4) &&
-           VerifyField<int32_t>(verifier, VT_SERVER_TICK, 4) &&
-           VerifyField<int32_t>(verifier, VT_SHOT_SEQ, 4) &&
-           VerifyField<double>(verifier, VT_MUZZLE_POS_X, 8) &&
-           VerifyField<double>(verifier, VT_MUZZLE_POS_Y, 8) &&
-           VerifyField<double>(verifier, VT_MUZZLE_POS_Z, 8) &&
-           VerifyField<double>(verifier, VT_DIR_X, 8) &&
-           VerifyField<double>(verifier, VT_DIR_Y, 8) &&
-           VerifyField<double>(verifier, VT_DIR_Z, 8) &&
-           VerifyField<uint8_t>(verifier, VT_DRY_FIRE, 1) &&
-           VerifyField<uint8_t>(verifier, VT_CASING_ENABLED, 1) &&
-           VerifyField<double>(verifier, VT_CASING_POS_X, 8) &&
-           VerifyField<double>(verifier, VT_CASING_POS_Y, 8) &&
-           VerifyField<double>(verifier, VT_CASING_POS_Z, 8) &&
-           VerifyField<double>(verifier, VT_CASING_ROT_X, 8) &&
-           VerifyField<double>(verifier, VT_CASING_ROT_Y, 8) &&
-           VerifyField<double>(verifier, VT_CASING_ROT_Z, 8) &&
-           VerifyField<double>(verifier, VT_CASING_VEL_X, 8) &&
-           VerifyField<double>(verifier, VT_CASING_VEL_Y, 8) &&
-           VerifyField<double>(verifier, VT_CASING_VEL_Z, 8) &&
-           VerifyField<double>(verifier, VT_CASING_ANG_X, 8) &&
-           VerifyField<double>(verifier, VT_CASING_ANG_Y, 8) &&
-           VerifyField<double>(verifier, VT_CASING_ANG_Z, 8) &&
-           VerifyField<uint32_t>(verifier, VT_CASING_SEED, 4) &&
+           VerifyField<uint32_t>(verifier, VT_LOADOUT_BITS, 4) &&
            verifier.EndTable();
   }
-  WeaponFiredEventT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
-  void UnPackTo(WeaponFiredEventT *_o, const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
-  static ::flatbuffers::Offset<WeaponFiredEvent> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const WeaponFiredEventT* _o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+  SetLoadoutRequestT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  void UnPackTo(SetLoadoutRequestT *_o, const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  static ::flatbuffers::Offset<SetLoadoutRequest> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const SetLoadoutRequestT* _o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
 };
 
-struct WeaponFiredEventBuilder {
-  typedef WeaponFiredEvent Table;
+struct SetLoadoutRequestBuilder {
+  typedef SetLoadoutRequest Table;
   ::flatbuffers::FlatBufferBuilder &fbb_;
   ::flatbuffers::uoffset_t start_;
-  void add_shooter_id(::flatbuffers::Offset<::flatbuffers::String> shooter_id) {
-    fbb_.AddOffset(WeaponFiredEvent::VT_SHOOTER_ID, shooter_id);
+  void add_loadout_bits(uint32_t loadout_bits) {
+    fbb_.AddElement<uint32_t>(SetLoadoutRequest::VT_LOADOUT_BITS, loadout_bits, 0);
   }
-  void add_weapon_id(::flatbuffers::Offset<::flatbuffers::String> weapon_id) {
-    fbb_.AddOffset(WeaponFiredEvent::VT_WEAPON_ID, weapon_id);
-  }
-  void add_weapon_slot(int32_t weapon_slot) {
-    fbb_.AddElement<int32_t>(WeaponFiredEvent::VT_WEAPON_SLOT, weapon_slot, 0);
-  }
-  void add_server_tick(int32_t server_tick) {
-    fbb_.AddElement<int32_t>(WeaponFiredEvent::VT_SERVER_TICK, server_tick, 0);
-  }
-  void add_shot_seq(int32_t shot_seq) {
-    fbb_.AddElement<int32_t>(WeaponFiredEvent::VT_SHOT_SEQ, shot_seq, 0);
-  }
-  void add_muzzle_pos_x(double muzzle_pos_x) {
-    fbb_.AddElement<double>(WeaponFiredEvent::VT_MUZZLE_POS_X, muzzle_pos_x, 0.0);
-  }
-  void add_muzzle_pos_y(double muzzle_pos_y) {
-    fbb_.AddElement<double>(WeaponFiredEvent::VT_MUZZLE_POS_Y, muzzle_pos_y, 0.0);
-  }
-  void add_muzzle_pos_z(double muzzle_pos_z) {
-    fbb_.AddElement<double>(WeaponFiredEvent::VT_MUZZLE_POS_Z, muzzle_pos_z, 0.0);
-  }
-  void add_dir_x(double dir_x) {
-    fbb_.AddElement<double>(WeaponFiredEvent::VT_DIR_X, dir_x, 0.0);
-  }
-  void add_dir_y(double dir_y) {
-    fbb_.AddElement<double>(WeaponFiredEvent::VT_DIR_Y, dir_y, 0.0);
-  }
-  void add_dir_z(double dir_z) {
-    fbb_.AddElement<double>(WeaponFiredEvent::VT_DIR_Z, dir_z, 0.0);
-  }
-  void add_dry_fire(bool dry_fire) {
-    fbb_.AddElement<uint8_t>(WeaponFiredEvent::VT_DRY_FIRE, static_cast<uint8_t>(dry_fire), 0);
-  }
-  void add_casing_enabled(bool casing_enabled) {
-    fbb_.AddElement<uint8_t>(WeaponFiredEvent::VT_CASING_ENABLED, static_cast<uint8_t>(casing_enabled), 0);
-  }
-  void add_casing_pos_x(double casing_pos_x) {
-    fbb_.AddElement<double>(WeaponFiredEvent::VT_CASING_POS_X, casing_pos_x, 0.0);
-  }
-  void add_casing_pos_y(double casing_pos_y) {
-    fbb_.AddElement<double>(WeaponFiredEvent::VT_CASING_POS_Y, casing_pos_y, 0.0);
-  }
-  void add_casing_pos_z(double casing_pos_z) {
-    fbb_.AddElement<double>(WeaponFiredEvent::VT_CASING_POS_Z, casing_pos_z, 0.0);
-  }
-  void add_casing_rot_x(double casing_rot_x) {
-    fbb_.AddElement<double>(WeaponFiredEvent::VT_CASING_ROT_X, casing_rot_x, 0.0);
-  }
-  void add_casing_rot_y(double casing_rot_y) {
-    fbb_.AddElement<double>(WeaponFiredEvent::VT_CASING_ROT_Y, casing_rot_y, 0.0);
-  }
-  void add_casing_rot_z(double casing_rot_z) {
-    fbb_.AddElement<double>(WeaponFiredEvent::VT_CASING_ROT_Z, casing_rot_z, 0.0);
-  }
-  void add_casing_vel_x(double casing_vel_x) {
-    fbb_.AddElement<double>(WeaponFiredEvent::VT_CASING_VEL_X, casing_vel_x, 0.0);
-  }
-  void add_casing_vel_y(double casing_vel_y) {
-    fbb_.AddElement<double>(WeaponFiredEvent::VT_CASING_VEL_Y, casing_vel_y, 0.0);
-  }
-  void add_casing_vel_z(double casing_vel_z) {
-    fbb_.AddElement<double>(WeaponFiredEvent::VT_CASING_VEL_Z, casing_vel_z, 0.0);
-  }
-  void add_casing_ang_x(double casing_ang_x) {
-    fbb_.AddElement<double>(WeaponFiredEvent::VT_CASING_ANG_X, casing_ang_x, 0.0);
-  }
-  void add_casing_ang_y(double casing_ang_y) {
-    fbb_.AddElement<double>(WeaponFiredEvent::VT_CASING_ANG_Y, casing_ang_y, 0.0);
-  }
-  void add_casing_ang_z(double casing_ang_z) {
-    fbb_.AddElement<double>(WeaponFiredEvent::VT_CASING_ANG_Z, casing_ang_z, 0.0);
-  }
-  void add_casing_seed(uint32_t casing_seed) {
-    fbb_.AddElement<uint32_t>(WeaponFiredEvent::VT_CASING_SEED, casing_seed, 0);
-  }
-  explicit WeaponFiredEventBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+  explicit SetLoadoutRequestBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
   }
-  ::flatbuffers::Offset<WeaponFiredEvent> Finish() {
+  ::flatbuffers::Offset<SetLoadoutRequest> Finish() {
     const auto end = fbb_.EndTable(start_);
-    auto o = ::flatbuffers::Offset<WeaponFiredEvent>(end);
+    auto o = ::flatbuffers::Offset<SetLoadoutRequest>(end);
     return o;
   }
 };
 
-inline ::flatbuffers::Offset<WeaponFiredEvent> CreateWeaponFiredEvent(
+inline ::flatbuffers::Offset<SetLoadoutRequest> CreateSetLoadoutRequest(
     ::flatbuffers::FlatBufferBuilder &_fbb,
-    ::flatbuffers::Offset<::flatbuffers::String> shooter_id = 0,
-    ::flatbuffers::Offset<::flatbuffers::String> weapon_id = 0,
-    int32_t weapon_slot = 0,
-    int32_t server_tick = 0,
-    int32_t shot_seq = 0,
-    double muzzle_pos_x = 0.0,
-    double muzzle_pos_y = 0.0,
-    double muzzle_pos_z = 0.0,
-    double dir_x = 0.0,
-    double dir_y = 0.0,
-    double dir_z = 0.0,
-    bool dry_fire = false,
-    bool casing_enabled = false,
-    double casing_pos_x = 0.0,
-    double casing_pos_y = 0.0,
-    double casing_pos_z = 0.0,
-    double casing_rot_x = 0.0,
-    double casing_rot_y = 0.0,
-    double casing_rot_z = 0.0,
-    double casing_vel_x = 0.0,
-    double casing_vel_y = 0.0,
-    double casing_vel_z = 0.0,
-    double casing_ang_x = 0.0,
-    double casing_ang_y = 0.0,
-    double casing_ang_z = 0.0,
-    uint32_t casing_seed = 0) {
-  WeaponFiredEventBuilder builder_(_fbb);
-  builder_.add_casing_ang_z(casing_ang_z);
-  builder_.add_casing_ang_y(casing_ang_y);
-  builder_.add_casing_ang_x(casing_ang_x);
-  builder_.add_casing_vel_z(casing_vel_z);
-  builder_.add_casing_vel_y(casing_vel_y);
-  builder_.add_casing_vel_x(casing_vel_x);
-  builder_.add_casing_rot_z(casing_rot_z);
-  builder_.add_casing_rot_y(casing_rot_y);
-  builder_.add_casing_rot_x(casing_rot_x);
-  builder_.add_casing_pos_z(casing_pos_z);
-  builder_.add_casing_pos_y(casing_pos_y);
-  builder_.add_casing_pos_x(casing_pos_x);
-  builder_.add_dir_z(dir_z);
-  builder_.add_dir_y(dir_y);
-  builder_.add_dir_x(dir_x);
-  builder_.add_muzzle_pos_z(muzzle_pos_z);
-  builder_.add_muzzle_pos_y(muzzle_pos_y);
-  builder_.add_muzzle_pos_x(muzzle_pos_x);
-  builder_.add_casing_seed(casing_seed);
-  builder_.add_shot_seq(shot_seq);
-  builder_.add_server_tick(server_tick);
-  builder_.add_weapon_slot(weapon_slot);
-  builder_.add_weapon_id(weapon_id);
-  builder_.add_shooter_id(shooter_id);
-  builder_.add_casing_enabled(casing_enabled);
-  builder_.add_dry_fire(dry_fire);
+    uint32_t loadout_bits = 0) {
+  SetLoadoutRequestBuilder builder_(_fbb);
+  builder_.add_loadout_bits(loadout_bits);
   return builder_.Finish();
 }
 
-inline ::flatbuffers::Offset<WeaponFiredEvent> CreateWeaponFiredEventDirect(
-    ::flatbuffers::FlatBufferBuilder &_fbb,
-    const char *shooter_id = nullptr,
-    const char *weapon_id = nullptr,
-    int32_t weapon_slot = 0,
-    int32_t server_tick = 0,
-    int32_t shot_seq = 0,
-    double muzzle_pos_x = 0.0,
-    double muzzle_pos_y = 0.0,
-    double muzzle_pos_z = 0.0,
-    double dir_x = 0.0,
-    double dir_y = 0.0,
-    double dir_z = 0.0,
-    bool dry_fire = false,
-    bool casing_enabled = false,
-    double casing_pos_x = 0.0,
-    double casing_pos_y = 0.0,
-    double casing_pos_z = 0.0,
-    double casing_rot_x = 0.0,
-    double casing_rot_y = 0.0,
-    double casing_rot_z = 0.0,
-    double casing_vel_x = 0.0,
-    double casing_vel_y = 0.0,
-    double casing_vel_z = 0.0,
-    double casing_ang_x = 0.0,
-    double casing_ang_y = 0.0,
-    double casing_ang_z = 0.0,
-    uint32_t casing_seed = 0) {
-  auto shooter_id__ = shooter_id ? _fbb.CreateString(shooter_id) : 0;
-  auto weapon_id__ = weapon_id ? _fbb.CreateString(weapon_id) : 0;
-  return afps::protocol::CreateWeaponFiredEvent(
-      _fbb,
-      shooter_id__,
-      weapon_id__,
-      weapon_slot,
-      server_tick,
-      shot_seq,
-      muzzle_pos_x,
-      muzzle_pos_y,
-      muzzle_pos_z,
-      dir_x,
-      dir_y,
-      dir_z,
-      dry_fire,
-      casing_enabled,
-      casing_pos_x,
-      casing_pos_y,
-      casing_pos_z,
-      casing_rot_x,
-      casing_rot_y,
-      casing_rot_z,
-      casing_vel_x,
-      casing_vel_y,
-      casing_vel_z,
-      casing_ang_x,
-      casing_ang_y,
-      casing_ang_z,
-      casing_seed);
-}
-
-::flatbuffers::Offset<WeaponFiredEvent> CreateWeaponFiredEvent(::flatbuffers::FlatBufferBuilder &_fbb, const WeaponFiredEventT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
-
-struct WeaponReloadEventT : public ::flatbuffers::NativeTable {
-  typedef WeaponReloadEvent TableType;
-  std::string shooter_id{};
-  std::string weapon_id{};
-  int32_t weapon_slot = 0;
-  int32_t server_tick = 0;
-  double reload_seconds = 0.0;
-};
-
-struct WeaponReloadEvent FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
-  typedef WeaponReloadEventT NativeTableType;
-  typedef WeaponReloadEventBuilder Builder;
-  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
-    VT_SHOOTER_ID = 4,
-    VT_WEAPON_ID = 6,
-    VT_WEAPON_SLOT = 8,
-    VT_SERVER_TICK = 10,
-    VT_RELOAD_SECONDS = 12
-  };
-  const ::flatbuffers::String *shooter_id() const {
-    return GetPointer<const ::flatbuffers::String *>(VT_SHOOTER_ID);
-  }
-  const ::flatbuffers::String *weapon_id() const {
-    return GetPointer<const ::flatbuffers::String *>(VT_WEAPON_ID);
-  }
-  int32_t weapon_slot() const {
-    return GetField<int32_t>(VT_WEAPON_SLOT, 0);
-  }
-  int32_t server_tick() const {
-    return GetField<int32_t>(VT_SERVER_TICK, 0);
-  }
-  double reload_seconds() const {
-    return GetField<double>(VT_RELOAD_SECONDS, 0.0);
-  }
-  template <bool B = false>
-  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
-    return VerifyTableStart(verifier) &&
-           VerifyOffset(verifier, VT_SHOOTER_ID) &&
-           verifier.VerifyString(shooter_id()) &&
-           VerifyOffset(verifier, VT_WEAPON_ID) &&
-           verifier.VerifyString(weapon_id()) &&
-           VerifyField<int32_t>(verifier, VT_WEAPON_SLOT, 4) &&
-           VerifyField<int32_t>(verifier, VT_SERVER_TICK, 4) &&
-           VerifyField<double>(verifier, VT_RELOAD_SECONDS, 8) &&
-           verifier.EndTable();
-  }
-  WeaponReloadEventT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
-  void UnPackTo(WeaponReloadEventT *_o, const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
-  static ::flatbuffers::Offset<WeaponReloadEvent> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const WeaponReloadEventT* _o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
-};
-
-struct WeaponReloadEventBuilder {
-  typedef WeaponReloadEvent Table;
-  ::flatbuffers::FlatBufferBuilder &fbb_;
-  ::flatbuffers::uoffset_t start_;
-  void add_shooter_id(::flatbuffers::Offset<::flatbuffers::String> shooter_id) {
-    fbb_.AddOffset(WeaponReloadEvent::VT_SHOOTER_ID, shooter_id);
-  }
-  void add_weapon_id(::flatbuffers::Offset<::flatbuffers::String> weapon_id) {
-    fbb_.AddOffset(WeaponReloadEvent::VT_WEAPON_ID, weapon_id);
-  }
-  void add_weapon_slot(int32_t weapon_slot) {
-    fbb_.AddElement<int32_t>(WeaponReloadEvent::VT_WEAPON_SLOT, weapon_slot, 0);
-  }
-  void add_server_tick(int32_t server_tick) {
-    fbb_.AddElement<int32_t>(WeaponReloadEvent::VT_SERVER_TICK, server_tick, 0);
-  }
-  void add_reload_seconds(double reload_seconds) {
-    fbb_.AddElement<double>(WeaponReloadEvent::VT_RELOAD_SECONDS, reload_seconds, 0.0);
-  }
-  explicit WeaponReloadEventBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
-        : fbb_(_fbb) {
-    start_ = fbb_.StartTable();
-  }
-  ::flatbuffers::Offset<WeaponReloadEvent> Finish() {
-    const auto end = fbb_.EndTable(start_);
-    auto o = ::flatbuffers::Offset<WeaponReloadEvent>(end);
-    return o;
-  }
-};
-
-inline ::flatbuffers::Offset<WeaponReloadEvent> CreateWeaponReloadEvent(
-    ::flatbuffers::FlatBufferBuilder &_fbb,
-    ::flatbuffers::Offset<::flatbuffers::String> shooter_id = 0,
-    ::flatbuffers::Offset<::flatbuffers::String> weapon_id = 0,
-    int32_t weapon_slot = 0,
-    int32_t server_tick = 0,
-    double reload_seconds = 0.0) {
-  WeaponReloadEventBuilder builder_(_fbb);
-  builder_.add_reload_seconds(reload_seconds);
-  builder_.add_server_tick(server_tick);
-  builder_.add_weapon_slot(weapon_slot);
-  builder_.add_weapon_id(weapon_id);
-  builder_.add_shooter_id(shooter_id);
-  return builder_.Finish();
-}
-
-inline ::flatbuffers::Offset<WeaponReloadEvent> CreateWeaponReloadEventDirect(
-    ::flatbuffers::FlatBufferBuilder &_fbb,
-    const char *shooter_id = nullptr,
-    const char *weapon_id = nullptr,
-    int32_t weapon_slot = 0,
-    int32_t server_tick = 0,
-    double reload_seconds = 0.0) {
-  auto shooter_id__ = shooter_id ? _fbb.CreateString(shooter_id) : 0;
-  auto weapon_id__ = weapon_id ? _fbb.CreateString(weapon_id) : 0;
-  return afps::protocol::CreateWeaponReloadEvent(
-      _fbb,
-      shooter_id__,
-      weapon_id__,
-      weapon_slot,
-      server_tick,
-      reload_seconds);
-}
-
-::flatbuffers::Offset<WeaponReloadEvent> CreateWeaponReloadEvent(::flatbuffers::FlatBufferBuilder &_fbb, const WeaponReloadEventT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+::flatbuffers::Offset<SetLoadoutRequest> CreateSetLoadoutRequest(::flatbuffers::FlatBufferBuilder &_fbb, const SetLoadoutRequestT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
 
 struct StateSnapshotT : public ::flatbuffers::NativeTable {
   typedef StateSnapshot TableType;
@@ -1547,6 +2562,11 @@ struct StateSnapshotT : public ::flatbuffers::NativeTable {
   double health = 0.0;
   int32_t kills = 0;
   int32_t deaths = 0;
+  int16_t view_yaw_q = 0;
+  int16_t view_pitch_q = 0;
+  uint8_t player_flags = 0;
+  uint16_t weapon_heat_q = 0;
+  uint32_t loadout_bits = 0;
 };
 
 struct StateSnapshot FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -1567,7 +2587,12 @@ struct StateSnapshot FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_DASH_COOLDOWN = 26,
     VT_HEALTH = 28,
     VT_KILLS = 30,
-    VT_DEATHS = 32
+    VT_DEATHS = 32,
+    VT_VIEW_YAW_Q = 34,
+    VT_VIEW_PITCH_Q = 36,
+    VT_PLAYER_FLAGS = 38,
+    VT_WEAPON_HEAT_Q = 40,
+    VT_LOADOUT_BITS = 42
   };
   int32_t server_tick() const {
     return GetField<int32_t>(VT_SERVER_TICK, 0);
@@ -1614,6 +2639,21 @@ struct StateSnapshot FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   int32_t deaths() const {
     return GetField<int32_t>(VT_DEATHS, 0);
   }
+  int16_t view_yaw_q() const {
+    return GetField<int16_t>(VT_VIEW_YAW_Q, 0);
+  }
+  int16_t view_pitch_q() const {
+    return GetField<int16_t>(VT_VIEW_PITCH_Q, 0);
+  }
+  uint8_t player_flags() const {
+    return GetField<uint8_t>(VT_PLAYER_FLAGS, 0);
+  }
+  uint16_t weapon_heat_q() const {
+    return GetField<uint16_t>(VT_WEAPON_HEAT_Q, 0);
+  }
+  uint32_t loadout_bits() const {
+    return GetField<uint32_t>(VT_LOADOUT_BITS, 0);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -1633,6 +2673,11 @@ struct StateSnapshot FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<double>(verifier, VT_HEALTH, 8) &&
            VerifyField<int32_t>(verifier, VT_KILLS, 4) &&
            VerifyField<int32_t>(verifier, VT_DEATHS, 4) &&
+           VerifyField<int16_t>(verifier, VT_VIEW_YAW_Q, 2) &&
+           VerifyField<int16_t>(verifier, VT_VIEW_PITCH_Q, 2) &&
+           VerifyField<uint8_t>(verifier, VT_PLAYER_FLAGS, 1) &&
+           VerifyField<uint16_t>(verifier, VT_WEAPON_HEAT_Q, 2) &&
+           VerifyField<uint32_t>(verifier, VT_LOADOUT_BITS, 4) &&
            verifier.EndTable();
   }
   StateSnapshotT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -1689,6 +2734,21 @@ struct StateSnapshotBuilder {
   void add_deaths(int32_t deaths) {
     fbb_.AddElement<int32_t>(StateSnapshot::VT_DEATHS, deaths, 0);
   }
+  void add_view_yaw_q(int16_t view_yaw_q) {
+    fbb_.AddElement<int16_t>(StateSnapshot::VT_VIEW_YAW_Q, view_yaw_q, 0);
+  }
+  void add_view_pitch_q(int16_t view_pitch_q) {
+    fbb_.AddElement<int16_t>(StateSnapshot::VT_VIEW_PITCH_Q, view_pitch_q, 0);
+  }
+  void add_player_flags(uint8_t player_flags) {
+    fbb_.AddElement<uint8_t>(StateSnapshot::VT_PLAYER_FLAGS, player_flags, 0);
+  }
+  void add_weapon_heat_q(uint16_t weapon_heat_q) {
+    fbb_.AddElement<uint16_t>(StateSnapshot::VT_WEAPON_HEAT_Q, weapon_heat_q, 0);
+  }
+  void add_loadout_bits(uint32_t loadout_bits) {
+    fbb_.AddElement<uint32_t>(StateSnapshot::VT_LOADOUT_BITS, loadout_bits, 0);
+  }
   explicit StateSnapshotBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -1716,7 +2776,12 @@ inline ::flatbuffers::Offset<StateSnapshot> CreateStateSnapshot(
     double dash_cooldown = 0.0,
     double health = 0.0,
     int32_t kills = 0,
-    int32_t deaths = 0) {
+    int32_t deaths = 0,
+    int16_t view_yaw_q = 0,
+    int16_t view_pitch_q = 0,
+    uint8_t player_flags = 0,
+    uint16_t weapon_heat_q = 0,
+    uint32_t loadout_bits = 0) {
   StateSnapshotBuilder builder_(_fbb);
   builder_.add_health(health);
   builder_.add_dash_cooldown(dash_cooldown);
@@ -1726,6 +2791,7 @@ inline ::flatbuffers::Offset<StateSnapshot> CreateStateSnapshot(
   builder_.add_pos_z(pos_z);
   builder_.add_pos_y(pos_y);
   builder_.add_pos_x(pos_x);
+  builder_.add_loadout_bits(loadout_bits);
   builder_.add_deaths(deaths);
   builder_.add_kills(kills);
   builder_.add_ammo_in_mag(ammo_in_mag);
@@ -1733,6 +2799,10 @@ inline ::flatbuffers::Offset<StateSnapshot> CreateStateSnapshot(
   builder_.add_client_id(client_id);
   builder_.add_last_processed_input_seq(last_processed_input_seq);
   builder_.add_server_tick(server_tick);
+  builder_.add_weapon_heat_q(weapon_heat_q);
+  builder_.add_view_pitch_q(view_pitch_q);
+  builder_.add_view_yaw_q(view_yaw_q);
+  builder_.add_player_flags(player_flags);
   return builder_.Finish();
 }
 
@@ -1752,7 +2822,12 @@ inline ::flatbuffers::Offset<StateSnapshot> CreateStateSnapshotDirect(
     double dash_cooldown = 0.0,
     double health = 0.0,
     int32_t kills = 0,
-    int32_t deaths = 0) {
+    int32_t deaths = 0,
+    int16_t view_yaw_q = 0,
+    int16_t view_pitch_q = 0,
+    uint8_t player_flags = 0,
+    uint16_t weapon_heat_q = 0,
+    uint32_t loadout_bits = 0) {
   auto client_id__ = client_id ? _fbb.CreateString(client_id) : 0;
   return afps::protocol::CreateStateSnapshot(
       _fbb,
@@ -1770,7 +2845,12 @@ inline ::flatbuffers::Offset<StateSnapshot> CreateStateSnapshotDirect(
       dash_cooldown,
       health,
       kills,
-      deaths);
+      deaths,
+      view_yaw_q,
+      view_pitch_q,
+      player_flags,
+      weapon_heat_q,
+      loadout_bits);
 }
 
 ::flatbuffers::Offset<StateSnapshot> CreateStateSnapshot(::flatbuffers::FlatBufferBuilder &_fbb, const StateSnapshotT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
@@ -1794,6 +2874,11 @@ struct StateSnapshotDeltaT : public ::flatbuffers::NativeTable {
   double health = 0.0;
   int32_t kills = 0;
   int32_t deaths = 0;
+  int16_t view_yaw_q = 0;
+  int16_t view_pitch_q = 0;
+  uint8_t player_flags = 0;
+  uint16_t weapon_heat_q = 0;
+  uint32_t loadout_bits = 0;
 };
 
 struct StateSnapshotDelta FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -1816,7 +2901,12 @@ struct StateSnapshotDelta FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table
     VT_DASH_COOLDOWN = 30,
     VT_HEALTH = 32,
     VT_KILLS = 34,
-    VT_DEATHS = 36
+    VT_DEATHS = 36,
+    VT_VIEW_YAW_Q = 38,
+    VT_VIEW_PITCH_Q = 40,
+    VT_PLAYER_FLAGS = 42,
+    VT_WEAPON_HEAT_Q = 44,
+    VT_LOADOUT_BITS = 46
   };
   int32_t server_tick() const {
     return GetField<int32_t>(VT_SERVER_TICK, 0);
@@ -1869,6 +2959,21 @@ struct StateSnapshotDelta FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table
   int32_t deaths() const {
     return GetField<int32_t>(VT_DEATHS, 0);
   }
+  int16_t view_yaw_q() const {
+    return GetField<int16_t>(VT_VIEW_YAW_Q, 0);
+  }
+  int16_t view_pitch_q() const {
+    return GetField<int16_t>(VT_VIEW_PITCH_Q, 0);
+  }
+  uint8_t player_flags() const {
+    return GetField<uint8_t>(VT_PLAYER_FLAGS, 0);
+  }
+  uint16_t weapon_heat_q() const {
+    return GetField<uint16_t>(VT_WEAPON_HEAT_Q, 0);
+  }
+  uint32_t loadout_bits() const {
+    return GetField<uint32_t>(VT_LOADOUT_BITS, 0);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -1890,6 +2995,11 @@ struct StateSnapshotDelta FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table
            VerifyField<double>(verifier, VT_HEALTH, 8) &&
            VerifyField<int32_t>(verifier, VT_KILLS, 4) &&
            VerifyField<int32_t>(verifier, VT_DEATHS, 4) &&
+           VerifyField<int16_t>(verifier, VT_VIEW_YAW_Q, 2) &&
+           VerifyField<int16_t>(verifier, VT_VIEW_PITCH_Q, 2) &&
+           VerifyField<uint8_t>(verifier, VT_PLAYER_FLAGS, 1) &&
+           VerifyField<uint16_t>(verifier, VT_WEAPON_HEAT_Q, 2) &&
+           VerifyField<uint32_t>(verifier, VT_LOADOUT_BITS, 4) &&
            verifier.EndTable();
   }
   StateSnapshotDeltaT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -1952,6 +3062,21 @@ struct StateSnapshotDeltaBuilder {
   void add_deaths(int32_t deaths) {
     fbb_.AddElement<int32_t>(StateSnapshotDelta::VT_DEATHS, deaths, 0);
   }
+  void add_view_yaw_q(int16_t view_yaw_q) {
+    fbb_.AddElement<int16_t>(StateSnapshotDelta::VT_VIEW_YAW_Q, view_yaw_q, 0);
+  }
+  void add_view_pitch_q(int16_t view_pitch_q) {
+    fbb_.AddElement<int16_t>(StateSnapshotDelta::VT_VIEW_PITCH_Q, view_pitch_q, 0);
+  }
+  void add_player_flags(uint8_t player_flags) {
+    fbb_.AddElement<uint8_t>(StateSnapshotDelta::VT_PLAYER_FLAGS, player_flags, 0);
+  }
+  void add_weapon_heat_q(uint16_t weapon_heat_q) {
+    fbb_.AddElement<uint16_t>(StateSnapshotDelta::VT_WEAPON_HEAT_Q, weapon_heat_q, 0);
+  }
+  void add_loadout_bits(uint32_t loadout_bits) {
+    fbb_.AddElement<uint32_t>(StateSnapshotDelta::VT_LOADOUT_BITS, loadout_bits, 0);
+  }
   explicit StateSnapshotDeltaBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -1981,7 +3106,12 @@ inline ::flatbuffers::Offset<StateSnapshotDelta> CreateStateSnapshotDelta(
     double dash_cooldown = 0.0,
     double health = 0.0,
     int32_t kills = 0,
-    int32_t deaths = 0) {
+    int32_t deaths = 0,
+    int16_t view_yaw_q = 0,
+    int16_t view_pitch_q = 0,
+    uint8_t player_flags = 0,
+    uint16_t weapon_heat_q = 0,
+    uint32_t loadout_bits = 0) {
   StateSnapshotDeltaBuilder builder_(_fbb);
   builder_.add_health(health);
   builder_.add_dash_cooldown(dash_cooldown);
@@ -1991,6 +3121,7 @@ inline ::flatbuffers::Offset<StateSnapshotDelta> CreateStateSnapshotDelta(
   builder_.add_pos_z(pos_z);
   builder_.add_pos_y(pos_y);
   builder_.add_pos_x(pos_x);
+  builder_.add_loadout_bits(loadout_bits);
   builder_.add_deaths(deaths);
   builder_.add_kills(kills);
   builder_.add_ammo_in_mag(ammo_in_mag);
@@ -2000,6 +3131,10 @@ inline ::flatbuffers::Offset<StateSnapshotDelta> CreateStateSnapshotDelta(
   builder_.add_last_processed_input_seq(last_processed_input_seq);
   builder_.add_base_tick(base_tick);
   builder_.add_server_tick(server_tick);
+  builder_.add_weapon_heat_q(weapon_heat_q);
+  builder_.add_view_pitch_q(view_pitch_q);
+  builder_.add_view_yaw_q(view_yaw_q);
+  builder_.add_player_flags(player_flags);
   return builder_.Finish();
 }
 
@@ -2021,7 +3156,12 @@ inline ::flatbuffers::Offset<StateSnapshotDelta> CreateStateSnapshotDeltaDirect(
     double dash_cooldown = 0.0,
     double health = 0.0,
     int32_t kills = 0,
-    int32_t deaths = 0) {
+    int32_t deaths = 0,
+    int16_t view_yaw_q = 0,
+    int16_t view_pitch_q = 0,
+    uint8_t player_flags = 0,
+    uint16_t weapon_heat_q = 0,
+    uint32_t loadout_bits = 0) {
   auto client_id__ = client_id ? _fbb.CreateString(client_id) : 0;
   return afps::protocol::CreateStateSnapshotDelta(
       _fbb,
@@ -2041,7 +3181,12 @@ inline ::flatbuffers::Offset<StateSnapshotDelta> CreateStateSnapshotDeltaDirect(
       dash_cooldown,
       health,
       kills,
-      deaths);
+      deaths,
+      view_yaw_q,
+      view_pitch_q,
+      player_flags,
+      weapon_heat_q,
+      loadout_bits);
 }
 
 ::flatbuffers::Offset<StateSnapshotDelta> CreateStateSnapshotDelta(::flatbuffers::FlatBufferBuilder &_fbb, const StateSnapshotDeltaT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
@@ -2141,96 +3286,36 @@ inline ::flatbuffers::Offset<PlayerProfile> CreatePlayerProfileDirect(
 
 struct GameEventT : public ::flatbuffers::NativeTable {
   typedef GameEvent TableType;
-  afps::protocol::GameEventType event_type = afps::protocol::GameEventType::HitConfirmed;
-  std::string target_id{};
-  std::string owner_id{};
-  int32_t projectile_id = 0;
-  double damage = 0.0;
-  bool killed = false;
-  double pos_x = 0.0;
-  double pos_y = 0.0;
-  double pos_z = 0.0;
-  double vel_x = 0.0;
-  double vel_y = 0.0;
-  double vel_z = 0.0;
-  double ttl = 0.0;
+  int32_t server_tick = 0;
+  std::vector<afps::protocol::FxEventUnion> events{};
 };
 
 struct GameEvent FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef GameEventT NativeTableType;
   typedef GameEventBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
-    VT_EVENT_TYPE = 4,
-    VT_TARGET_ID = 6,
-    VT_OWNER_ID = 8,
-    VT_PROJECTILE_ID = 10,
-    VT_DAMAGE = 12,
-    VT_KILLED = 14,
-    VT_POS_X = 16,
-    VT_POS_Y = 18,
-    VT_POS_Z = 20,
-    VT_VEL_X = 22,
-    VT_VEL_Y = 24,
-    VT_VEL_Z = 26,
-    VT_TTL = 28
+    VT_SERVER_TICK = 4,
+    VT_EVENTS_TYPE = 6,
+    VT_EVENTS = 8
   };
-  afps::protocol::GameEventType event_type() const {
-    return static_cast<afps::protocol::GameEventType>(GetField<int8_t>(VT_EVENT_TYPE, 0));
+  int32_t server_tick() const {
+    return GetField<int32_t>(VT_SERVER_TICK, 0);
   }
-  const ::flatbuffers::String *target_id() const {
-    return GetPointer<const ::flatbuffers::String *>(VT_TARGET_ID);
+  const ::flatbuffers::Vector<afps::protocol::FxEvent> *events_type() const {
+    return GetPointer<const ::flatbuffers::Vector<afps::protocol::FxEvent> *>(VT_EVENTS_TYPE);
   }
-  const ::flatbuffers::String *owner_id() const {
-    return GetPointer<const ::flatbuffers::String *>(VT_OWNER_ID);
-  }
-  int32_t projectile_id() const {
-    return GetField<int32_t>(VT_PROJECTILE_ID, 0);
-  }
-  double damage() const {
-    return GetField<double>(VT_DAMAGE, 0.0);
-  }
-  bool killed() const {
-    return GetField<uint8_t>(VT_KILLED, 0) != 0;
-  }
-  double pos_x() const {
-    return GetField<double>(VT_POS_X, 0.0);
-  }
-  double pos_y() const {
-    return GetField<double>(VT_POS_Y, 0.0);
-  }
-  double pos_z() const {
-    return GetField<double>(VT_POS_Z, 0.0);
-  }
-  double vel_x() const {
-    return GetField<double>(VT_VEL_X, 0.0);
-  }
-  double vel_y() const {
-    return GetField<double>(VT_VEL_Y, 0.0);
-  }
-  double vel_z() const {
-    return GetField<double>(VT_VEL_Z, 0.0);
-  }
-  double ttl() const {
-    return GetField<double>(VT_TTL, 0.0);
+  const ::flatbuffers::Vector<::flatbuffers::Offset<void>> *events() const {
+    return GetPointer<const ::flatbuffers::Vector<::flatbuffers::Offset<void>> *>(VT_EVENTS);
   }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
-           VerifyField<int8_t>(verifier, VT_EVENT_TYPE, 1) &&
-           VerifyOffset(verifier, VT_TARGET_ID) &&
-           verifier.VerifyString(target_id()) &&
-           VerifyOffset(verifier, VT_OWNER_ID) &&
-           verifier.VerifyString(owner_id()) &&
-           VerifyField<int32_t>(verifier, VT_PROJECTILE_ID, 4) &&
-           VerifyField<double>(verifier, VT_DAMAGE, 8) &&
-           VerifyField<uint8_t>(verifier, VT_KILLED, 1) &&
-           VerifyField<double>(verifier, VT_POS_X, 8) &&
-           VerifyField<double>(verifier, VT_POS_Y, 8) &&
-           VerifyField<double>(verifier, VT_POS_Z, 8) &&
-           VerifyField<double>(verifier, VT_VEL_X, 8) &&
-           VerifyField<double>(verifier, VT_VEL_Y, 8) &&
-           VerifyField<double>(verifier, VT_VEL_Z, 8) &&
-           VerifyField<double>(verifier, VT_TTL, 8) &&
+           VerifyField<int32_t>(verifier, VT_SERVER_TICK, 4) &&
+           VerifyOffset(verifier, VT_EVENTS_TYPE) &&
+           verifier.VerifyVector(events_type()) &&
+           VerifyOffset(verifier, VT_EVENTS) &&
+           verifier.VerifyVector(events()) &&
+           VerifyFxEventVector(verifier, events(), events_type()) &&
            verifier.EndTable();
   }
   GameEventT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -2242,44 +3327,14 @@ struct GameEventBuilder {
   typedef GameEvent Table;
   ::flatbuffers::FlatBufferBuilder &fbb_;
   ::flatbuffers::uoffset_t start_;
-  void add_event_type(afps::protocol::GameEventType event_type) {
-    fbb_.AddElement<int8_t>(GameEvent::VT_EVENT_TYPE, static_cast<int8_t>(event_type), 0);
+  void add_server_tick(int32_t server_tick) {
+    fbb_.AddElement<int32_t>(GameEvent::VT_SERVER_TICK, server_tick, 0);
   }
-  void add_target_id(::flatbuffers::Offset<::flatbuffers::String> target_id) {
-    fbb_.AddOffset(GameEvent::VT_TARGET_ID, target_id);
+  void add_events_type(::flatbuffers::Offset<::flatbuffers::Vector<afps::protocol::FxEvent>> events_type) {
+    fbb_.AddOffset(GameEvent::VT_EVENTS_TYPE, events_type);
   }
-  void add_owner_id(::flatbuffers::Offset<::flatbuffers::String> owner_id) {
-    fbb_.AddOffset(GameEvent::VT_OWNER_ID, owner_id);
-  }
-  void add_projectile_id(int32_t projectile_id) {
-    fbb_.AddElement<int32_t>(GameEvent::VT_PROJECTILE_ID, projectile_id, 0);
-  }
-  void add_damage(double damage) {
-    fbb_.AddElement<double>(GameEvent::VT_DAMAGE, damage, 0.0);
-  }
-  void add_killed(bool killed) {
-    fbb_.AddElement<uint8_t>(GameEvent::VT_KILLED, static_cast<uint8_t>(killed), 0);
-  }
-  void add_pos_x(double pos_x) {
-    fbb_.AddElement<double>(GameEvent::VT_POS_X, pos_x, 0.0);
-  }
-  void add_pos_y(double pos_y) {
-    fbb_.AddElement<double>(GameEvent::VT_POS_Y, pos_y, 0.0);
-  }
-  void add_pos_z(double pos_z) {
-    fbb_.AddElement<double>(GameEvent::VT_POS_Z, pos_z, 0.0);
-  }
-  void add_vel_x(double vel_x) {
-    fbb_.AddElement<double>(GameEvent::VT_VEL_X, vel_x, 0.0);
-  }
-  void add_vel_y(double vel_y) {
-    fbb_.AddElement<double>(GameEvent::VT_VEL_Y, vel_y, 0.0);
-  }
-  void add_vel_z(double vel_z) {
-    fbb_.AddElement<double>(GameEvent::VT_VEL_Z, vel_z, 0.0);
-  }
-  void add_ttl(double ttl) {
-    fbb_.AddElement<double>(GameEvent::VT_TTL, ttl, 0.0);
+  void add_events(::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<void>>> events) {
+    fbb_.AddOffset(GameEvent::VT_EVENTS, events);
   }
   explicit GameEventBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
@@ -2294,68 +3349,28 @@ struct GameEventBuilder {
 
 inline ::flatbuffers::Offset<GameEvent> CreateGameEvent(
     ::flatbuffers::FlatBufferBuilder &_fbb,
-    afps::protocol::GameEventType event_type = afps::protocol::GameEventType::HitConfirmed,
-    ::flatbuffers::Offset<::flatbuffers::String> target_id = 0,
-    ::flatbuffers::Offset<::flatbuffers::String> owner_id = 0,
-    int32_t projectile_id = 0,
-    double damage = 0.0,
-    bool killed = false,
-    double pos_x = 0.0,
-    double pos_y = 0.0,
-    double pos_z = 0.0,
-    double vel_x = 0.0,
-    double vel_y = 0.0,
-    double vel_z = 0.0,
-    double ttl = 0.0) {
+    int32_t server_tick = 0,
+    ::flatbuffers::Offset<::flatbuffers::Vector<afps::protocol::FxEvent>> events_type = 0,
+    ::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<void>>> events = 0) {
   GameEventBuilder builder_(_fbb);
-  builder_.add_ttl(ttl);
-  builder_.add_vel_z(vel_z);
-  builder_.add_vel_y(vel_y);
-  builder_.add_vel_x(vel_x);
-  builder_.add_pos_z(pos_z);
-  builder_.add_pos_y(pos_y);
-  builder_.add_pos_x(pos_x);
-  builder_.add_damage(damage);
-  builder_.add_projectile_id(projectile_id);
-  builder_.add_owner_id(owner_id);
-  builder_.add_target_id(target_id);
-  builder_.add_killed(killed);
-  builder_.add_event_type(event_type);
+  builder_.add_events(events);
+  builder_.add_events_type(events_type);
+  builder_.add_server_tick(server_tick);
   return builder_.Finish();
 }
 
 inline ::flatbuffers::Offset<GameEvent> CreateGameEventDirect(
     ::flatbuffers::FlatBufferBuilder &_fbb,
-    afps::protocol::GameEventType event_type = afps::protocol::GameEventType::HitConfirmed,
-    const char *target_id = nullptr,
-    const char *owner_id = nullptr,
-    int32_t projectile_id = 0,
-    double damage = 0.0,
-    bool killed = false,
-    double pos_x = 0.0,
-    double pos_y = 0.0,
-    double pos_z = 0.0,
-    double vel_x = 0.0,
-    double vel_y = 0.0,
-    double vel_z = 0.0,
-    double ttl = 0.0) {
-  auto target_id__ = target_id ? _fbb.CreateString(target_id) : 0;
-  auto owner_id__ = owner_id ? _fbb.CreateString(owner_id) : 0;
+    int32_t server_tick = 0,
+    const std::vector<afps::protocol::FxEvent> *events_type = nullptr,
+    const std::vector<::flatbuffers::Offset<void>> *events = nullptr) {
+  auto events_type__ = events_type ? _fbb.CreateVector<afps::protocol::FxEvent>(*events_type) : 0;
+  auto events__ = events ? _fbb.CreateVector<::flatbuffers::Offset<void>>(*events) : 0;
   return afps::protocol::CreateGameEvent(
       _fbb,
-      event_type,
-      target_id__,
-      owner_id__,
-      projectile_id,
-      damage,
-      killed,
-      pos_x,
-      pos_y,
-      pos_z,
-      vel_x,
-      vel_y,
-      vel_z,
-      ttl);
+      server_tick,
+      events_type__,
+      events__);
 }
 
 ::flatbuffers::Offset<GameEvent> CreateGameEvent(::flatbuffers::FlatBufferBuilder &_fbb, const GameEventT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
@@ -2622,6 +3637,383 @@ inline ::flatbuffers::Offset<Disconnect> CreateDisconnectDirect(
 
 ::flatbuffers::Offset<Disconnect> CreateDisconnect(::flatbuffers::FlatBufferBuilder &_fbb, const DisconnectT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
 
+inline ShotFiredFxT *ShotFiredFx::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
+  auto _o = std::unique_ptr<ShotFiredFxT>(new ShotFiredFxT());
+  UnPackTo(_o.get(), _resolver);
+  return _o.release();
+}
+
+inline void ShotFiredFx::UnPackTo(ShotFiredFxT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
+  (void)_o;
+  (void)_resolver;
+  { auto _e = shooter_id(); if (_e) _o->shooter_id = _e->str(); }
+  { auto _e = weapon_slot(); _o->weapon_slot = _e; }
+  { auto _e = shot_seq(); _o->shot_seq = _e; }
+  { auto _e = dry_fire(); _o->dry_fire = _e; }
+}
+
+inline ::flatbuffers::Offset<ShotFiredFx> CreateShotFiredFx(::flatbuffers::FlatBufferBuilder &_fbb, const ShotFiredFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  return ShotFiredFx::Pack(_fbb, _o, _rehasher);
+}
+
+inline ::flatbuffers::Offset<ShotFiredFx> ShotFiredFx::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const ShotFiredFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  (void)_rehasher;
+  (void)_o;
+  struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const ShotFiredFxT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
+  auto _shooter_id = _o->shooter_id.empty() ? 0 : _fbb.CreateString(_o->shooter_id);
+  auto _weapon_slot = _o->weapon_slot;
+  auto _shot_seq = _o->shot_seq;
+  auto _dry_fire = _o->dry_fire;
+  return afps::protocol::CreateShotFiredFx(
+      _fbb,
+      _shooter_id,
+      _weapon_slot,
+      _shot_seq,
+      _dry_fire);
+}
+
+inline ShotTraceFxT *ShotTraceFx::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
+  auto _o = std::unique_ptr<ShotTraceFxT>(new ShotTraceFxT());
+  UnPackTo(_o.get(), _resolver);
+  return _o.release();
+}
+
+inline void ShotTraceFx::UnPackTo(ShotTraceFxT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
+  (void)_o;
+  (void)_resolver;
+  { auto _e = shooter_id(); if (_e) _o->shooter_id = _e->str(); }
+  { auto _e = weapon_slot(); _o->weapon_slot = _e; }
+  { auto _e = shot_seq(); _o->shot_seq = _e; }
+  { auto _e = dir_oct_x(); _o->dir_oct_x = _e; }
+  { auto _e = dir_oct_y(); _o->dir_oct_y = _e; }
+  { auto _e = hit_dist_q(); _o->hit_dist_q = _e; }
+  { auto _e = hit_kind(); _o->hit_kind = _e; }
+  { auto _e = surface_type(); _o->surface_type = _e; }
+  { auto _e = normal_oct_x(); _o->normal_oct_x = _e; }
+  { auto _e = normal_oct_y(); _o->normal_oct_y = _e; }
+  { auto _e = show_tracer(); _o->show_tracer = _e; }
+}
+
+inline ::flatbuffers::Offset<ShotTraceFx> CreateShotTraceFx(::flatbuffers::FlatBufferBuilder &_fbb, const ShotTraceFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  return ShotTraceFx::Pack(_fbb, _o, _rehasher);
+}
+
+inline ::flatbuffers::Offset<ShotTraceFx> ShotTraceFx::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const ShotTraceFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  (void)_rehasher;
+  (void)_o;
+  struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const ShotTraceFxT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
+  auto _shooter_id = _o->shooter_id.empty() ? 0 : _fbb.CreateString(_o->shooter_id);
+  auto _weapon_slot = _o->weapon_slot;
+  auto _shot_seq = _o->shot_seq;
+  auto _dir_oct_x = _o->dir_oct_x;
+  auto _dir_oct_y = _o->dir_oct_y;
+  auto _hit_dist_q = _o->hit_dist_q;
+  auto _hit_kind = _o->hit_kind;
+  auto _surface_type = _o->surface_type;
+  auto _normal_oct_x = _o->normal_oct_x;
+  auto _normal_oct_y = _o->normal_oct_y;
+  auto _show_tracer = _o->show_tracer;
+  return afps::protocol::CreateShotTraceFx(
+      _fbb,
+      _shooter_id,
+      _weapon_slot,
+      _shot_seq,
+      _dir_oct_x,
+      _dir_oct_y,
+      _hit_dist_q,
+      _hit_kind,
+      _surface_type,
+      _normal_oct_x,
+      _normal_oct_y,
+      _show_tracer);
+}
+
+inline ReloadFxT *ReloadFx::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
+  auto _o = std::unique_ptr<ReloadFxT>(new ReloadFxT());
+  UnPackTo(_o.get(), _resolver);
+  return _o.release();
+}
+
+inline void ReloadFx::UnPackTo(ReloadFxT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
+  (void)_o;
+  (void)_resolver;
+  { auto _e = shooter_id(); if (_e) _o->shooter_id = _e->str(); }
+  { auto _e = weapon_slot(); _o->weapon_slot = _e; }
+}
+
+inline ::flatbuffers::Offset<ReloadFx> CreateReloadFx(::flatbuffers::FlatBufferBuilder &_fbb, const ReloadFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  return ReloadFx::Pack(_fbb, _o, _rehasher);
+}
+
+inline ::flatbuffers::Offset<ReloadFx> ReloadFx::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const ReloadFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  (void)_rehasher;
+  (void)_o;
+  struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const ReloadFxT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
+  auto _shooter_id = _o->shooter_id.empty() ? 0 : _fbb.CreateString(_o->shooter_id);
+  auto _weapon_slot = _o->weapon_slot;
+  return afps::protocol::CreateReloadFx(
+      _fbb,
+      _shooter_id,
+      _weapon_slot);
+}
+
+inline NearMissFxT *NearMissFx::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
+  auto _o = std::unique_ptr<NearMissFxT>(new NearMissFxT());
+  UnPackTo(_o.get(), _resolver);
+  return _o.release();
+}
+
+inline void NearMissFx::UnPackTo(NearMissFxT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
+  (void)_o;
+  (void)_resolver;
+  { auto _e = shooter_id(); if (_e) _o->shooter_id = _e->str(); }
+  { auto _e = shot_seq(); _o->shot_seq = _e; }
+  { auto _e = strength(); _o->strength = _e; }
+}
+
+inline ::flatbuffers::Offset<NearMissFx> CreateNearMissFx(::flatbuffers::FlatBufferBuilder &_fbb, const NearMissFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  return NearMissFx::Pack(_fbb, _o, _rehasher);
+}
+
+inline ::flatbuffers::Offset<NearMissFx> NearMissFx::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const NearMissFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  (void)_rehasher;
+  (void)_o;
+  struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const NearMissFxT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
+  auto _shooter_id = _o->shooter_id.empty() ? 0 : _fbb.CreateString(_o->shooter_id);
+  auto _shot_seq = _o->shot_seq;
+  auto _strength = _o->strength;
+  return afps::protocol::CreateNearMissFx(
+      _fbb,
+      _shooter_id,
+      _shot_seq,
+      _strength);
+}
+
+inline OverheatFxT *OverheatFx::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
+  auto _o = std::unique_ptr<OverheatFxT>(new OverheatFxT());
+  UnPackTo(_o.get(), _resolver);
+  return _o.release();
+}
+
+inline void OverheatFx::UnPackTo(OverheatFxT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
+  (void)_o;
+  (void)_resolver;
+  { auto _e = shooter_id(); if (_e) _o->shooter_id = _e->str(); }
+  { auto _e = weapon_slot(); _o->weapon_slot = _e; }
+  { auto _e = heat_q(); _o->heat_q = _e; }
+}
+
+inline ::flatbuffers::Offset<OverheatFx> CreateOverheatFx(::flatbuffers::FlatBufferBuilder &_fbb, const OverheatFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  return OverheatFx::Pack(_fbb, _o, _rehasher);
+}
+
+inline ::flatbuffers::Offset<OverheatFx> OverheatFx::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const OverheatFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  (void)_rehasher;
+  (void)_o;
+  struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const OverheatFxT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
+  auto _shooter_id = _o->shooter_id.empty() ? 0 : _fbb.CreateString(_o->shooter_id);
+  auto _weapon_slot = _o->weapon_slot;
+  auto _heat_q = _o->heat_q;
+  return afps::protocol::CreateOverheatFx(
+      _fbb,
+      _shooter_id,
+      _weapon_slot,
+      _heat_q);
+}
+
+inline VentFxT *VentFx::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
+  auto _o = std::unique_ptr<VentFxT>(new VentFxT());
+  UnPackTo(_o.get(), _resolver);
+  return _o.release();
+}
+
+inline void VentFx::UnPackTo(VentFxT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
+  (void)_o;
+  (void)_resolver;
+  { auto _e = shooter_id(); if (_e) _o->shooter_id = _e->str(); }
+  { auto _e = weapon_slot(); _o->weapon_slot = _e; }
+}
+
+inline ::flatbuffers::Offset<VentFx> CreateVentFx(::flatbuffers::FlatBufferBuilder &_fbb, const VentFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  return VentFx::Pack(_fbb, _o, _rehasher);
+}
+
+inline ::flatbuffers::Offset<VentFx> VentFx::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const VentFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  (void)_rehasher;
+  (void)_o;
+  struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const VentFxT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
+  auto _shooter_id = _o->shooter_id.empty() ? 0 : _fbb.CreateString(_o->shooter_id);
+  auto _weapon_slot = _o->weapon_slot;
+  return afps::protocol::CreateVentFx(
+      _fbb,
+      _shooter_id,
+      _weapon_slot);
+}
+
+inline HitConfirmedFxT *HitConfirmedFx::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
+  auto _o = std::unique_ptr<HitConfirmedFxT>(new HitConfirmedFxT());
+  UnPackTo(_o.get(), _resolver);
+  return _o.release();
+}
+
+inline void HitConfirmedFx::UnPackTo(HitConfirmedFxT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
+  (void)_o;
+  (void)_resolver;
+  { auto _e = target_id(); if (_e) _o->target_id = _e->str(); }
+  { auto _e = damage(); _o->damage = _e; }
+  { auto _e = killed(); _o->killed = _e; }
+}
+
+inline ::flatbuffers::Offset<HitConfirmedFx> CreateHitConfirmedFx(::flatbuffers::FlatBufferBuilder &_fbb, const HitConfirmedFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  return HitConfirmedFx::Pack(_fbb, _o, _rehasher);
+}
+
+inline ::flatbuffers::Offset<HitConfirmedFx> HitConfirmedFx::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const HitConfirmedFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  (void)_rehasher;
+  (void)_o;
+  struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const HitConfirmedFxT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
+  auto _target_id = _o->target_id.empty() ? 0 : _fbb.CreateString(_o->target_id);
+  auto _damage = _o->damage;
+  auto _killed = _o->killed;
+  return afps::protocol::CreateHitConfirmedFx(
+      _fbb,
+      _target_id,
+      _damage,
+      _killed);
+}
+
+inline ProjectileSpawnFxT *ProjectileSpawnFx::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
+  auto _o = std::unique_ptr<ProjectileSpawnFxT>(new ProjectileSpawnFxT());
+  UnPackTo(_o.get(), _resolver);
+  return _o.release();
+}
+
+inline void ProjectileSpawnFx::UnPackTo(ProjectileSpawnFxT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
+  (void)_o;
+  (void)_resolver;
+  { auto _e = shooter_id(); if (_e) _o->shooter_id = _e->str(); }
+  { auto _e = weapon_slot(); _o->weapon_slot = _e; }
+  { auto _e = shot_seq(); _o->shot_seq = _e; }
+  { auto _e = projectile_id(); _o->projectile_id = _e; }
+  { auto _e = pos_x_q(); _o->pos_x_q = _e; }
+  { auto _e = pos_y_q(); _o->pos_y_q = _e; }
+  { auto _e = pos_z_q(); _o->pos_z_q = _e; }
+  { auto _e = vel_x_q(); _o->vel_x_q = _e; }
+  { auto _e = vel_y_q(); _o->vel_y_q = _e; }
+  { auto _e = vel_z_q(); _o->vel_z_q = _e; }
+  { auto _e = ttl_q(); _o->ttl_q = _e; }
+}
+
+inline ::flatbuffers::Offset<ProjectileSpawnFx> CreateProjectileSpawnFx(::flatbuffers::FlatBufferBuilder &_fbb, const ProjectileSpawnFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  return ProjectileSpawnFx::Pack(_fbb, _o, _rehasher);
+}
+
+inline ::flatbuffers::Offset<ProjectileSpawnFx> ProjectileSpawnFx::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const ProjectileSpawnFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  (void)_rehasher;
+  (void)_o;
+  struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const ProjectileSpawnFxT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
+  auto _shooter_id = _o->shooter_id.empty() ? 0 : _fbb.CreateString(_o->shooter_id);
+  auto _weapon_slot = _o->weapon_slot;
+  auto _shot_seq = _o->shot_seq;
+  auto _projectile_id = _o->projectile_id;
+  auto _pos_x_q = _o->pos_x_q;
+  auto _pos_y_q = _o->pos_y_q;
+  auto _pos_z_q = _o->pos_z_q;
+  auto _vel_x_q = _o->vel_x_q;
+  auto _vel_y_q = _o->vel_y_q;
+  auto _vel_z_q = _o->vel_z_q;
+  auto _ttl_q = _o->ttl_q;
+  return afps::protocol::CreateProjectileSpawnFx(
+      _fbb,
+      _shooter_id,
+      _weapon_slot,
+      _shot_seq,
+      _projectile_id,
+      _pos_x_q,
+      _pos_y_q,
+      _pos_z_q,
+      _vel_x_q,
+      _vel_y_q,
+      _vel_z_q,
+      _ttl_q);
+}
+
+inline ProjectileImpactFxT *ProjectileImpactFx::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
+  auto _o = std::unique_ptr<ProjectileImpactFxT>(new ProjectileImpactFxT());
+  UnPackTo(_o.get(), _resolver);
+  return _o.release();
+}
+
+inline void ProjectileImpactFx::UnPackTo(ProjectileImpactFxT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
+  (void)_o;
+  (void)_resolver;
+  { auto _e = projectile_id(); _o->projectile_id = _e; }
+  { auto _e = hit_world(); _o->hit_world = _e; }
+  { auto _e = target_id(); if (_e) _o->target_id = _e->str(); }
+  { auto _e = pos_x_q(); _o->pos_x_q = _e; }
+  { auto _e = pos_y_q(); _o->pos_y_q = _e; }
+  { auto _e = pos_z_q(); _o->pos_z_q = _e; }
+  { auto _e = normal_oct_x(); _o->normal_oct_x = _e; }
+  { auto _e = normal_oct_y(); _o->normal_oct_y = _e; }
+  { auto _e = surface_type(); _o->surface_type = _e; }
+}
+
+inline ::flatbuffers::Offset<ProjectileImpactFx> CreateProjectileImpactFx(::flatbuffers::FlatBufferBuilder &_fbb, const ProjectileImpactFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  return ProjectileImpactFx::Pack(_fbb, _o, _rehasher);
+}
+
+inline ::flatbuffers::Offset<ProjectileImpactFx> ProjectileImpactFx::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const ProjectileImpactFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  (void)_rehasher;
+  (void)_o;
+  struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const ProjectileImpactFxT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
+  auto _projectile_id = _o->projectile_id;
+  auto _hit_world = _o->hit_world;
+  auto _target_id = _o->target_id.empty() ? 0 : _fbb.CreateString(_o->target_id);
+  auto _pos_x_q = _o->pos_x_q;
+  auto _pos_y_q = _o->pos_y_q;
+  auto _pos_z_q = _o->pos_z_q;
+  auto _normal_oct_x = _o->normal_oct_x;
+  auto _normal_oct_y = _o->normal_oct_y;
+  auto _surface_type = _o->surface_type;
+  return afps::protocol::CreateProjectileImpactFx(
+      _fbb,
+      _projectile_id,
+      _hit_world,
+      _target_id,
+      _pos_x_q,
+      _pos_y_q,
+      _pos_z_q,
+      _normal_oct_x,
+      _normal_oct_y,
+      _surface_type);
+}
+
+inline ProjectileRemoveFxT *ProjectileRemoveFx::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
+  auto _o = std::unique_ptr<ProjectileRemoveFxT>(new ProjectileRemoveFxT());
+  UnPackTo(_o.get(), _resolver);
+  return _o.release();
+}
+
+inline void ProjectileRemoveFx::UnPackTo(ProjectileRemoveFxT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
+  (void)_o;
+  (void)_resolver;
+  { auto _e = projectile_id(); _o->projectile_id = _e; }
+}
+
+inline ::flatbuffers::Offset<ProjectileRemoveFx> CreateProjectileRemoveFx(::flatbuffers::FlatBufferBuilder &_fbb, const ProjectileRemoveFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  return ProjectileRemoveFx::Pack(_fbb, _o, _rehasher);
+}
+
+inline ::flatbuffers::Offset<ProjectileRemoveFx> ProjectileRemoveFx::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const ProjectileRemoveFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  (void)_rehasher;
+  (void)_o;
+  struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const ProjectileRemoveFxT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
+  auto _projectile_id = _o->projectile_id;
+  return afps::protocol::CreateProjectileRemoveFx(
+      _fbb,
+      _projectile_id);
+}
+
 inline ClientHelloT *ClientHello::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
   auto _o = std::unique_ptr<ClientHelloT>(new ClientHelloT());
   UnPackTo(_o.get(), _resolver);
@@ -2784,6 +4176,7 @@ inline void InputCmd::UnPackTo(InputCmdT *_o, const ::flatbuffers::resolver_func
   { auto _e = weapon_slot(); _o->weapon_slot = _e; }
   { auto _e = jump(); _o->jump = _e; }
   { auto _e = fire(); _o->fire = _e; }
+  { auto _e = ads(); _o->ads = _e; }
   { auto _e = sprint(); _o->sprint = _e; }
   { auto _e = dash(); _o->dash = _e; }
   { auto _e = grapple(); _o->grapple = _e; }
@@ -2809,6 +4202,7 @@ inline ::flatbuffers::Offset<InputCmd> InputCmd::Pack(::flatbuffers::FlatBufferB
   auto _weapon_slot = _o->weapon_slot;
   auto _jump = _o->jump;
   auto _fire = _o->fire;
+  auto _ads = _o->ads;
   auto _sprint = _o->sprint;
   auto _dash = _o->dash;
   auto _grapple = _o->grapple;
@@ -2826,6 +4220,7 @@ inline ::flatbuffers::Offset<InputCmd> InputCmd::Pack(::flatbuffers::FlatBufferB
       _weapon_slot,
       _jump,
       _fire,
+      _ads,
       _sprint,
       _dash,
       _grapple,
@@ -2883,143 +4278,30 @@ inline ::flatbuffers::Offset<FireWeaponRequest> FireWeaponRequest::Pack(::flatbu
       _dir_z);
 }
 
-inline WeaponFiredEventT *WeaponFiredEvent::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
-  auto _o = std::unique_ptr<WeaponFiredEventT>(new WeaponFiredEventT());
+inline SetLoadoutRequestT *SetLoadoutRequest::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
+  auto _o = std::unique_ptr<SetLoadoutRequestT>(new SetLoadoutRequestT());
   UnPackTo(_o.get(), _resolver);
   return _o.release();
 }
 
-inline void WeaponFiredEvent::UnPackTo(WeaponFiredEventT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
+inline void SetLoadoutRequest::UnPackTo(SetLoadoutRequestT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
   (void)_o;
   (void)_resolver;
-  { auto _e = shooter_id(); if (_e) _o->shooter_id = _e->str(); }
-  { auto _e = weapon_id(); if (_e) _o->weapon_id = _e->str(); }
-  { auto _e = weapon_slot(); _o->weapon_slot = _e; }
-  { auto _e = server_tick(); _o->server_tick = _e; }
-  { auto _e = shot_seq(); _o->shot_seq = _e; }
-  { auto _e = muzzle_pos_x(); _o->muzzle_pos_x = _e; }
-  { auto _e = muzzle_pos_y(); _o->muzzle_pos_y = _e; }
-  { auto _e = muzzle_pos_z(); _o->muzzle_pos_z = _e; }
-  { auto _e = dir_x(); _o->dir_x = _e; }
-  { auto _e = dir_y(); _o->dir_y = _e; }
-  { auto _e = dir_z(); _o->dir_z = _e; }
-  { auto _e = dry_fire(); _o->dry_fire = _e; }
-  { auto _e = casing_enabled(); _o->casing_enabled = _e; }
-  { auto _e = casing_pos_x(); _o->casing_pos_x = _e; }
-  { auto _e = casing_pos_y(); _o->casing_pos_y = _e; }
-  { auto _e = casing_pos_z(); _o->casing_pos_z = _e; }
-  { auto _e = casing_rot_x(); _o->casing_rot_x = _e; }
-  { auto _e = casing_rot_y(); _o->casing_rot_y = _e; }
-  { auto _e = casing_rot_z(); _o->casing_rot_z = _e; }
-  { auto _e = casing_vel_x(); _o->casing_vel_x = _e; }
-  { auto _e = casing_vel_y(); _o->casing_vel_y = _e; }
-  { auto _e = casing_vel_z(); _o->casing_vel_z = _e; }
-  { auto _e = casing_ang_x(); _o->casing_ang_x = _e; }
-  { auto _e = casing_ang_y(); _o->casing_ang_y = _e; }
-  { auto _e = casing_ang_z(); _o->casing_ang_z = _e; }
-  { auto _e = casing_seed(); _o->casing_seed = _e; }
+  { auto _e = loadout_bits(); _o->loadout_bits = _e; }
 }
 
-inline ::flatbuffers::Offset<WeaponFiredEvent> CreateWeaponFiredEvent(::flatbuffers::FlatBufferBuilder &_fbb, const WeaponFiredEventT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
-  return WeaponFiredEvent::Pack(_fbb, _o, _rehasher);
+inline ::flatbuffers::Offset<SetLoadoutRequest> CreateSetLoadoutRequest(::flatbuffers::FlatBufferBuilder &_fbb, const SetLoadoutRequestT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  return SetLoadoutRequest::Pack(_fbb, _o, _rehasher);
 }
 
-inline ::flatbuffers::Offset<WeaponFiredEvent> WeaponFiredEvent::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const WeaponFiredEventT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+inline ::flatbuffers::Offset<SetLoadoutRequest> SetLoadoutRequest::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const SetLoadoutRequestT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
   (void)_rehasher;
   (void)_o;
-  struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const WeaponFiredEventT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
-  auto _shooter_id = _o->shooter_id.empty() ? 0 : _fbb.CreateString(_o->shooter_id);
-  auto _weapon_id = _o->weapon_id.empty() ? 0 : _fbb.CreateString(_o->weapon_id);
-  auto _weapon_slot = _o->weapon_slot;
-  auto _server_tick = _o->server_tick;
-  auto _shot_seq = _o->shot_seq;
-  auto _muzzle_pos_x = _o->muzzle_pos_x;
-  auto _muzzle_pos_y = _o->muzzle_pos_y;
-  auto _muzzle_pos_z = _o->muzzle_pos_z;
-  auto _dir_x = _o->dir_x;
-  auto _dir_y = _o->dir_y;
-  auto _dir_z = _o->dir_z;
-  auto _dry_fire = _o->dry_fire;
-  auto _casing_enabled = _o->casing_enabled;
-  auto _casing_pos_x = _o->casing_pos_x;
-  auto _casing_pos_y = _o->casing_pos_y;
-  auto _casing_pos_z = _o->casing_pos_z;
-  auto _casing_rot_x = _o->casing_rot_x;
-  auto _casing_rot_y = _o->casing_rot_y;
-  auto _casing_rot_z = _o->casing_rot_z;
-  auto _casing_vel_x = _o->casing_vel_x;
-  auto _casing_vel_y = _o->casing_vel_y;
-  auto _casing_vel_z = _o->casing_vel_z;
-  auto _casing_ang_x = _o->casing_ang_x;
-  auto _casing_ang_y = _o->casing_ang_y;
-  auto _casing_ang_z = _o->casing_ang_z;
-  auto _casing_seed = _o->casing_seed;
-  return afps::protocol::CreateWeaponFiredEvent(
+  struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const SetLoadoutRequestT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
+  auto _loadout_bits = _o->loadout_bits;
+  return afps::protocol::CreateSetLoadoutRequest(
       _fbb,
-      _shooter_id,
-      _weapon_id,
-      _weapon_slot,
-      _server_tick,
-      _shot_seq,
-      _muzzle_pos_x,
-      _muzzle_pos_y,
-      _muzzle_pos_z,
-      _dir_x,
-      _dir_y,
-      _dir_z,
-      _dry_fire,
-      _casing_enabled,
-      _casing_pos_x,
-      _casing_pos_y,
-      _casing_pos_z,
-      _casing_rot_x,
-      _casing_rot_y,
-      _casing_rot_z,
-      _casing_vel_x,
-      _casing_vel_y,
-      _casing_vel_z,
-      _casing_ang_x,
-      _casing_ang_y,
-      _casing_ang_z,
-      _casing_seed);
-}
-
-inline WeaponReloadEventT *WeaponReloadEvent::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
-  auto _o = std::unique_ptr<WeaponReloadEventT>(new WeaponReloadEventT());
-  UnPackTo(_o.get(), _resolver);
-  return _o.release();
-}
-
-inline void WeaponReloadEvent::UnPackTo(WeaponReloadEventT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
-  (void)_o;
-  (void)_resolver;
-  { auto _e = shooter_id(); if (_e) _o->shooter_id = _e->str(); }
-  { auto _e = weapon_id(); if (_e) _o->weapon_id = _e->str(); }
-  { auto _e = weapon_slot(); _o->weapon_slot = _e; }
-  { auto _e = server_tick(); _o->server_tick = _e; }
-  { auto _e = reload_seconds(); _o->reload_seconds = _e; }
-}
-
-inline ::flatbuffers::Offset<WeaponReloadEvent> CreateWeaponReloadEvent(::flatbuffers::FlatBufferBuilder &_fbb, const WeaponReloadEventT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
-  return WeaponReloadEvent::Pack(_fbb, _o, _rehasher);
-}
-
-inline ::flatbuffers::Offset<WeaponReloadEvent> WeaponReloadEvent::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const WeaponReloadEventT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
-  (void)_rehasher;
-  (void)_o;
-  struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const WeaponReloadEventT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
-  auto _shooter_id = _o->shooter_id.empty() ? 0 : _fbb.CreateString(_o->shooter_id);
-  auto _weapon_id = _o->weapon_id.empty() ? 0 : _fbb.CreateString(_o->weapon_id);
-  auto _weapon_slot = _o->weapon_slot;
-  auto _server_tick = _o->server_tick;
-  auto _reload_seconds = _o->reload_seconds;
-  return afps::protocol::CreateWeaponReloadEvent(
-      _fbb,
-      _shooter_id,
-      _weapon_id,
-      _weapon_slot,
-      _server_tick,
-      _reload_seconds);
+      _loadout_bits);
 }
 
 inline StateSnapshotT *StateSnapshot::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
@@ -3046,6 +4328,11 @@ inline void StateSnapshot::UnPackTo(StateSnapshotT *_o, const ::flatbuffers::res
   { auto _e = health(); _o->health = _e; }
   { auto _e = kills(); _o->kills = _e; }
   { auto _e = deaths(); _o->deaths = _e; }
+  { auto _e = view_yaw_q(); _o->view_yaw_q = _e; }
+  { auto _e = view_pitch_q(); _o->view_pitch_q = _e; }
+  { auto _e = player_flags(); _o->player_flags = _e; }
+  { auto _e = weapon_heat_q(); _o->weapon_heat_q = _e; }
+  { auto _e = loadout_bits(); _o->loadout_bits = _e; }
 }
 
 inline ::flatbuffers::Offset<StateSnapshot> CreateStateSnapshot(::flatbuffers::FlatBufferBuilder &_fbb, const StateSnapshotT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
@@ -3071,6 +4358,11 @@ inline ::flatbuffers::Offset<StateSnapshot> StateSnapshot::Pack(::flatbuffers::F
   auto _health = _o->health;
   auto _kills = _o->kills;
   auto _deaths = _o->deaths;
+  auto _view_yaw_q = _o->view_yaw_q;
+  auto _view_pitch_q = _o->view_pitch_q;
+  auto _player_flags = _o->player_flags;
+  auto _weapon_heat_q = _o->weapon_heat_q;
+  auto _loadout_bits = _o->loadout_bits;
   return afps::protocol::CreateStateSnapshot(
       _fbb,
       _server_tick,
@@ -3087,7 +4379,12 @@ inline ::flatbuffers::Offset<StateSnapshot> StateSnapshot::Pack(::flatbuffers::F
       _dash_cooldown,
       _health,
       _kills,
-      _deaths);
+      _deaths,
+      _view_yaw_q,
+      _view_pitch_q,
+      _player_flags,
+      _weapon_heat_q,
+      _loadout_bits);
 }
 
 inline StateSnapshotDeltaT *StateSnapshotDelta::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
@@ -3116,6 +4413,11 @@ inline void StateSnapshotDelta::UnPackTo(StateSnapshotDeltaT *_o, const ::flatbu
   { auto _e = health(); _o->health = _e; }
   { auto _e = kills(); _o->kills = _e; }
   { auto _e = deaths(); _o->deaths = _e; }
+  { auto _e = view_yaw_q(); _o->view_yaw_q = _e; }
+  { auto _e = view_pitch_q(); _o->view_pitch_q = _e; }
+  { auto _e = player_flags(); _o->player_flags = _e; }
+  { auto _e = weapon_heat_q(); _o->weapon_heat_q = _e; }
+  { auto _e = loadout_bits(); _o->loadout_bits = _e; }
 }
 
 inline ::flatbuffers::Offset<StateSnapshotDelta> CreateStateSnapshotDelta(::flatbuffers::FlatBufferBuilder &_fbb, const StateSnapshotDeltaT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
@@ -3143,6 +4445,11 @@ inline ::flatbuffers::Offset<StateSnapshotDelta> StateSnapshotDelta::Pack(::flat
   auto _health = _o->health;
   auto _kills = _o->kills;
   auto _deaths = _o->deaths;
+  auto _view_yaw_q = _o->view_yaw_q;
+  auto _view_pitch_q = _o->view_pitch_q;
+  auto _player_flags = _o->player_flags;
+  auto _weapon_heat_q = _o->weapon_heat_q;
+  auto _loadout_bits = _o->loadout_bits;
   return afps::protocol::CreateStateSnapshotDelta(
       _fbb,
       _server_tick,
@@ -3161,7 +4468,12 @@ inline ::flatbuffers::Offset<StateSnapshotDelta> StateSnapshotDelta::Pack(::flat
       _dash_cooldown,
       _health,
       _kills,
-      _deaths);
+      _deaths,
+      _view_yaw_q,
+      _view_pitch_q,
+      _player_flags,
+      _weapon_heat_q,
+      _loadout_bits);
 }
 
 inline PlayerProfileT *PlayerProfile::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
@@ -3205,19 +4517,9 @@ inline GameEventT *GameEvent::UnPack(const ::flatbuffers::resolver_function_t *_
 inline void GameEvent::UnPackTo(GameEventT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
   (void)_o;
   (void)_resolver;
-  { auto _e = event_type(); _o->event_type = _e; }
-  { auto _e = target_id(); if (_e) _o->target_id = _e->str(); }
-  { auto _e = owner_id(); if (_e) _o->owner_id = _e->str(); }
-  { auto _e = projectile_id(); _o->projectile_id = _e; }
-  { auto _e = damage(); _o->damage = _e; }
-  { auto _e = killed(); _o->killed = _e; }
-  { auto _e = pos_x(); _o->pos_x = _e; }
-  { auto _e = pos_y(); _o->pos_y = _e; }
-  { auto _e = pos_z(); _o->pos_z = _e; }
-  { auto _e = vel_x(); _o->vel_x = _e; }
-  { auto _e = vel_y(); _o->vel_y = _e; }
-  { auto _e = vel_z(); _o->vel_z = _e; }
-  { auto _e = ttl(); _o->ttl = _e; }
+  { auto _e = server_tick(); _o->server_tick = _e; }
+  { auto _e = events_type(); if (_e) { _o->events.resize(_e->size()); for (::flatbuffers::uoffset_t _i = 0; _i < _e->size(); _i++) { _o->events[_i].type = static_cast<afps::protocol::FxEvent>(_e->Get(_i)); } } else { _o->events.resize(0); } }
+  { auto _e = events(); if (_e) { _o->events.resize(_e->size()); for (::flatbuffers::uoffset_t _i = 0; _i < _e->size(); _i++) { _o->events[_i].value = afps::protocol::FxEventUnion::UnPack(_e->Get(_i), events_type()->GetEnum<FxEvent>(_i), _resolver); } } else { _o->events.resize(0); } }
 }
 
 inline ::flatbuffers::Offset<GameEvent> CreateGameEvent(::flatbuffers::FlatBufferBuilder &_fbb, const GameEventT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
@@ -3228,34 +4530,14 @@ inline ::flatbuffers::Offset<GameEvent> GameEvent::Pack(::flatbuffers::FlatBuffe
   (void)_rehasher;
   (void)_o;
   struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const GameEventT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
-  auto _event_type = _o->event_type;
-  auto _target_id = _o->target_id.empty() ? 0 : _fbb.CreateString(_o->target_id);
-  auto _owner_id = _o->owner_id.empty() ? 0 : _fbb.CreateString(_o->owner_id);
-  auto _projectile_id = _o->projectile_id;
-  auto _damage = _o->damage;
-  auto _killed = _o->killed;
-  auto _pos_x = _o->pos_x;
-  auto _pos_y = _o->pos_y;
-  auto _pos_z = _o->pos_z;
-  auto _vel_x = _o->vel_x;
-  auto _vel_y = _o->vel_y;
-  auto _vel_z = _o->vel_z;
-  auto _ttl = _o->ttl;
+  auto _server_tick = _o->server_tick;
+  auto _events_type = _o->events.size() ? _fbb.CreateVector<FxEvent>(_o->events.size(), [](size_t i, _VectorArgs *__va) { return __va->__o->events[i].type; }, &_va) : 0;
+  auto _events = _o->events.size() ? _fbb.CreateVector<::flatbuffers::Offset<void>>(_o->events.size(), [](size_t i, _VectorArgs *__va) { return __va->__o->events[i].Pack(*__va->__fbb, __va->__rehasher); }, &_va) : 0;
   return afps::protocol::CreateGameEvent(
       _fbb,
-      _event_type,
-      _target_id,
-      _owner_id,
-      _projectile_id,
-      _damage,
-      _killed,
-      _pos_x,
-      _pos_y,
-      _pos_z,
-      _vel_x,
-      _vel_y,
-      _vel_z,
-      _ttl);
+      _server_tick,
+      _events_type,
+      _events);
 }
 
 inline PingT *Ping::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
@@ -3366,6 +4648,268 @@ inline ::flatbuffers::Offset<Disconnect> Disconnect::Pack(::flatbuffers::FlatBuf
       _fbb,
       _code,
       _message);
+}
+
+template <bool B>
+inline bool VerifyFxEvent(::flatbuffers::VerifierTemplate<B> &verifier, const void *obj, FxEvent type) {
+  switch (type) {
+    case FxEvent::NONE: {
+      return true;
+    }
+    case FxEvent::ShotFiredFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::ShotFiredFx *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case FxEvent::ShotTraceFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::ShotTraceFx *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case FxEvent::ReloadFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::ReloadFx *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case FxEvent::NearMissFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::NearMissFx *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case FxEvent::OverheatFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::OverheatFx *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case FxEvent::VentFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::VentFx *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case FxEvent::HitConfirmedFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::HitConfirmedFx *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case FxEvent::ProjectileSpawnFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::ProjectileSpawnFx *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case FxEvent::ProjectileImpactFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::ProjectileImpactFx *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case FxEvent::ProjectileRemoveFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::ProjectileRemoveFx *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    default: return true;
+  }
+}
+
+template <bool B>
+inline bool VerifyFxEventVector(::flatbuffers::VerifierTemplate<B> &verifier, const ::flatbuffers::Vector<::flatbuffers::Offset<void>> *values, const ::flatbuffers::Vector<FxEvent> *types) {
+  if (!values || !types) return !values && !types;
+  if (values->size() != types->size()) return false;
+  for (::flatbuffers::uoffset_t i = 0; i < values->size(); ++i) {
+    if (!VerifyFxEvent(
+        verifier,  values->Get(i), types->GetEnum<FxEvent>(i))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+inline void *FxEventUnion::UnPack(const void *obj, FxEvent type, const ::flatbuffers::resolver_function_t *resolver) {
+  (void)resolver;
+  switch (type) {
+    case FxEvent::ShotFiredFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::ShotFiredFx *>(obj);
+      return ptr->UnPack(resolver);
+    }
+    case FxEvent::ShotTraceFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::ShotTraceFx *>(obj);
+      return ptr->UnPack(resolver);
+    }
+    case FxEvent::ReloadFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::ReloadFx *>(obj);
+      return ptr->UnPack(resolver);
+    }
+    case FxEvent::NearMissFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::NearMissFx *>(obj);
+      return ptr->UnPack(resolver);
+    }
+    case FxEvent::OverheatFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::OverheatFx *>(obj);
+      return ptr->UnPack(resolver);
+    }
+    case FxEvent::VentFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::VentFx *>(obj);
+      return ptr->UnPack(resolver);
+    }
+    case FxEvent::HitConfirmedFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::HitConfirmedFx *>(obj);
+      return ptr->UnPack(resolver);
+    }
+    case FxEvent::ProjectileSpawnFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::ProjectileSpawnFx *>(obj);
+      return ptr->UnPack(resolver);
+    }
+    case FxEvent::ProjectileImpactFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::ProjectileImpactFx *>(obj);
+      return ptr->UnPack(resolver);
+    }
+    case FxEvent::ProjectileRemoveFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::ProjectileRemoveFx *>(obj);
+      return ptr->UnPack(resolver);
+    }
+    default: return nullptr;
+  }
+}
+
+inline ::flatbuffers::Offset<void> FxEventUnion::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const ::flatbuffers::rehasher_function_t *_rehasher) const {
+  (void)_rehasher;
+  switch (type) {
+    case FxEvent::ShotFiredFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::ShotFiredFxT *>(value);
+      return CreateShotFiredFx(_fbb, ptr, _rehasher).Union();
+    }
+    case FxEvent::ShotTraceFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::ShotTraceFxT *>(value);
+      return CreateShotTraceFx(_fbb, ptr, _rehasher).Union();
+    }
+    case FxEvent::ReloadFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::ReloadFxT *>(value);
+      return CreateReloadFx(_fbb, ptr, _rehasher).Union();
+    }
+    case FxEvent::NearMissFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::NearMissFxT *>(value);
+      return CreateNearMissFx(_fbb, ptr, _rehasher).Union();
+    }
+    case FxEvent::OverheatFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::OverheatFxT *>(value);
+      return CreateOverheatFx(_fbb, ptr, _rehasher).Union();
+    }
+    case FxEvent::VentFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::VentFxT *>(value);
+      return CreateVentFx(_fbb, ptr, _rehasher).Union();
+    }
+    case FxEvent::HitConfirmedFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::HitConfirmedFxT *>(value);
+      return CreateHitConfirmedFx(_fbb, ptr, _rehasher).Union();
+    }
+    case FxEvent::ProjectileSpawnFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::ProjectileSpawnFxT *>(value);
+      return CreateProjectileSpawnFx(_fbb, ptr, _rehasher).Union();
+    }
+    case FxEvent::ProjectileImpactFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::ProjectileImpactFxT *>(value);
+      return CreateProjectileImpactFx(_fbb, ptr, _rehasher).Union();
+    }
+    case FxEvent::ProjectileRemoveFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::ProjectileRemoveFxT *>(value);
+      return CreateProjectileRemoveFx(_fbb, ptr, _rehasher).Union();
+    }
+    default: return 0;
+  }
+}
+
+inline FxEventUnion::FxEventUnion(const FxEventUnion &u) : type(u.type), value(nullptr) {
+  switch (type) {
+    case FxEvent::ShotFiredFx: {
+      value = new afps::protocol::ShotFiredFxT(*reinterpret_cast<afps::protocol::ShotFiredFxT *>(u.value));
+      break;
+    }
+    case FxEvent::ShotTraceFx: {
+      value = new afps::protocol::ShotTraceFxT(*reinterpret_cast<afps::protocol::ShotTraceFxT *>(u.value));
+      break;
+    }
+    case FxEvent::ReloadFx: {
+      value = new afps::protocol::ReloadFxT(*reinterpret_cast<afps::protocol::ReloadFxT *>(u.value));
+      break;
+    }
+    case FxEvent::NearMissFx: {
+      value = new afps::protocol::NearMissFxT(*reinterpret_cast<afps::protocol::NearMissFxT *>(u.value));
+      break;
+    }
+    case FxEvent::OverheatFx: {
+      value = new afps::protocol::OverheatFxT(*reinterpret_cast<afps::protocol::OverheatFxT *>(u.value));
+      break;
+    }
+    case FxEvent::VentFx: {
+      value = new afps::protocol::VentFxT(*reinterpret_cast<afps::protocol::VentFxT *>(u.value));
+      break;
+    }
+    case FxEvent::HitConfirmedFx: {
+      value = new afps::protocol::HitConfirmedFxT(*reinterpret_cast<afps::protocol::HitConfirmedFxT *>(u.value));
+      break;
+    }
+    case FxEvent::ProjectileSpawnFx: {
+      value = new afps::protocol::ProjectileSpawnFxT(*reinterpret_cast<afps::protocol::ProjectileSpawnFxT *>(u.value));
+      break;
+    }
+    case FxEvent::ProjectileImpactFx: {
+      value = new afps::protocol::ProjectileImpactFxT(*reinterpret_cast<afps::protocol::ProjectileImpactFxT *>(u.value));
+      break;
+    }
+    case FxEvent::ProjectileRemoveFx: {
+      value = new afps::protocol::ProjectileRemoveFxT(*reinterpret_cast<afps::protocol::ProjectileRemoveFxT *>(u.value));
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+inline void FxEventUnion::Reset() {
+  switch (type) {
+    case FxEvent::ShotFiredFx: {
+      auto ptr = reinterpret_cast<afps::protocol::ShotFiredFxT *>(value);
+      delete ptr;
+      break;
+    }
+    case FxEvent::ShotTraceFx: {
+      auto ptr = reinterpret_cast<afps::protocol::ShotTraceFxT *>(value);
+      delete ptr;
+      break;
+    }
+    case FxEvent::ReloadFx: {
+      auto ptr = reinterpret_cast<afps::protocol::ReloadFxT *>(value);
+      delete ptr;
+      break;
+    }
+    case FxEvent::NearMissFx: {
+      auto ptr = reinterpret_cast<afps::protocol::NearMissFxT *>(value);
+      delete ptr;
+      break;
+    }
+    case FxEvent::OverheatFx: {
+      auto ptr = reinterpret_cast<afps::protocol::OverheatFxT *>(value);
+      delete ptr;
+      break;
+    }
+    case FxEvent::VentFx: {
+      auto ptr = reinterpret_cast<afps::protocol::VentFxT *>(value);
+      delete ptr;
+      break;
+    }
+    case FxEvent::HitConfirmedFx: {
+      auto ptr = reinterpret_cast<afps::protocol::HitConfirmedFxT *>(value);
+      delete ptr;
+      break;
+    }
+    case FxEvent::ProjectileSpawnFx: {
+      auto ptr = reinterpret_cast<afps::protocol::ProjectileSpawnFxT *>(value);
+      delete ptr;
+      break;
+    }
+    case FxEvent::ProjectileImpactFx: {
+      auto ptr = reinterpret_cast<afps::protocol::ProjectileImpactFxT *>(value);
+      delete ptr;
+      break;
+    }
+    case FxEvent::ProjectileRemoveFx: {
+      auto ptr = reinterpret_cast<afps::protocol::ProjectileRemoveFxT *>(value);
+      delete ptr;
+      break;
+    }
+    default: break;
+  }
+  value = nullptr;
+  type = FxEvent::NONE;
 }
 
 }  // namespace protocol

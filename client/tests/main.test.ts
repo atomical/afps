@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { LOADOUT_BITS } from '../src/weapons/loadout';
 
 const startAppMock = vi.fn();
 const connectMock = vi.fn();
@@ -10,15 +11,28 @@ const sceneMock = {
   position: { x: 0, y: 0, z: 0, set: vi.fn() },
   rotation: { x: 0, y: 0, z: 0 }
 };
+let beforeRenderHook: ((deltaSeconds: number, nowMs: number) => void) | null = null;
 const appInstance = {
   ingestSnapshot: vi.fn(),
   setSnapshotRate: vi.fn(),
-  setBeforeRender: vi.fn(),
+  setBeforeRender: vi.fn((hook: ((deltaSeconds: number, nowMs: number) => void) | null) => {
+    beforeRenderHook = hook;
+  }),
+  getPlayerPose: vi.fn().mockReturnValue({ posX: 0, posY: 0, posZ: 0, velX: 0, velY: 0, velZ: 0 }),
   recordInput: vi.fn(),
   recordWeaponFired: vi.fn(),
   spawnProjectileVfx: vi.fn(),
   removeProjectileVfx: vi.fn(),
   spawnTracerVfx: vi.fn(),
+  spawnMuzzleFlashVfx: vi.fn(),
+  spawnImpactVfx: vi.fn(),
+  spawnDecalVfx: vi.fn(),
+  getFxPoolStats: vi.fn().mockReturnValue({
+    tracers: { active: 0, free: 0, max: 0 },
+    muzzleFlashes: { active: 0, free: 0, max: 0 },
+    impacts: { active: 0, free: 0, max: 0 },
+    decals: { active: 0, free: 0, max: 0 }
+  }),
   getWeaponCooldown: vi.fn().mockReturnValue(0),
   getAbilityCooldowns: vi.fn().mockReturnValue({
     dash: 0,
@@ -27,6 +41,7 @@ const appInstance = {
     shieldTimer: 0,
     shieldActive: false
   }),
+  getRenderTick: vi.fn().mockReturnValue(0),
   setWeaponViewmodel: vi.fn(),
   setTickRate: vi.fn(),
   setPredictionSim: vi.fn(),
@@ -189,6 +204,10 @@ let settingsOptions:
       initialShowMetrics?: boolean;
       initialAudioSettings?: Record<string, number | boolean>;
       onAudioSettingsChange?: (settings: Record<string, number | boolean>) => void;
+      initialFxSettings?: Record<string, boolean>;
+      onFxSettingsChange?: (settings: Record<string, boolean>) => void;
+      initialLoadoutBits?: number;
+      onLoadoutBitsChange?: (bits: number) => void;
     }
   | undefined;
 vi.mock('../src/ui/settings', () => ({
@@ -226,6 +245,11 @@ const audioSettingsMock = {
   saveAudioSettings: vi.fn()
 };
 
+const fxSettingsMock = {
+  loadFxSettings: vi.fn().mockReturnValue({ muzzleFlash: true, tracers: true, decals: true, aimDebug: false }),
+  saveFxSettings: vi.fn()
+};
+
 vi.mock('../src/audio/manager', () => ({
   createAudioManager: () => audioManagerMock
 }));
@@ -248,6 +272,11 @@ vi.mock('../src/weapons/casing_pool', () => ({
 vi.mock('../src/audio/settings', () => ({
   loadAudioSettings: (...args: unknown[]) => audioSettingsMock.loadAudioSettings(...args),
   saveAudioSettings: (...args: unknown[]) => audioSettingsMock.saveAudioSettings(...args)
+}));
+
+vi.mock('../src/rendering/fx_settings', () => ({
+  loadFxSettings: (...args: unknown[]) => fxSettingsMock.loadFxSettings(...args),
+  saveFxSettings: (...args: unknown[]) => fxSettingsMock.saveFxSettings(...args)
 }));
 
 vi.mock('../src/input/sampler', () => ({
@@ -297,6 +326,7 @@ vi.mock('../src/input/pointer_lock', () => ({
 
 describe('main entry', () => {
   beforeEach(() => {
+    window.localStorage?.removeItem?.('afps.loadout.bits');
     startAppMock.mockReset();
     connectMock.mockReset();
     appInstance.ingestSnapshot.mockReset();
@@ -311,6 +341,13 @@ describe('main entry', () => {
     appInstance.setLookSensitivity.mockReset();
     appInstance.setOutlineTeam.mockReset();
     appInstance.triggerOutlineFlash.mockReset();
+    appInstance.getRenderTick.mockReset();
+    appInstance.getRenderTick.mockReturnValue(0);
+    appInstance.setBeforeRender.mockReset();
+    appInstance.setBeforeRender.mockImplementation((hook: ((deltaSeconds: number, nowMs: number) => void) | null) => {
+      beforeRenderHook = hook;
+    });
+    beforeRenderHook = null;
     sceneMock.add.mockReset();
     sceneMock.remove.mockReset();
     statusMock.setState.mockReset();
@@ -330,6 +367,16 @@ describe('main entry', () => {
     appInstance.spawnProjectileVfx.mockReset();
     appInstance.removeProjectileVfx.mockReset();
     appInstance.spawnTracerVfx.mockReset();
+    appInstance.spawnMuzzleFlashVfx.mockReset();
+    appInstance.spawnImpactVfx.mockReset();
+    appInstance.spawnDecalVfx.mockReset();
+    appInstance.getFxPoolStats.mockReset();
+    appInstance.getFxPoolStats.mockReturnValue({
+      tracers: { active: 0, free: 0, max: 0 },
+      muzzleFlashes: { active: 0, free: 0, max: 0 },
+      impacts: { active: 0, free: 0, max: 0 },
+      decals: { active: 0, free: 0, max: 0 }
+    });
     casingPoolMock.spawn.mockReset();
     casingPoolMock.update.mockReset();
     casingPoolMock.dispose.mockReset();
@@ -382,6 +429,9 @@ describe('main entry', () => {
     metricsSettingsMock.loadMetricsVisibility.mockReset();
     metricsSettingsMock.saveMetricsVisibility.mockReset();
     metricsSettingsMock.loadMetricsVisibility.mockReturnValue(true);
+    fxSettingsMock.loadFxSettings.mockReset();
+    fxSettingsMock.saveFxSettings.mockReset();
+    fxSettingsMock.loadFxSettings.mockReturnValue({ muzzleFlash: true, tracers: true, decals: true, aimDebug: false });
     loadCatalogMock.mockReset();
     prejoinOverlayMock.waitForSubmit.mockReset();
     prejoinOverlayMock.setVisible.mockReset();
@@ -419,6 +469,7 @@ describe('main entry', () => {
     expect(lookInversionMock.loadInvertY).toHaveBeenCalledWith(window.localStorage);
     expect(metricsSettingsMock.loadMetricsVisibility).toHaveBeenCalledWith(window.localStorage);
     expect(audioSettingsMock.loadAudioSettings).toHaveBeenCalledWith(window.localStorage);
+    expect(fxSettingsMock.loadFxSettings).toHaveBeenCalledWith(window.localStorage);
     expect(settingsOptions?.initialBindings).toEqual(defaultBindings);
     expect(settingsOptions?.initialShowMetrics).toBe(true);
     expect(settingsOptions?.initialInvertLookX).toBe(false);
@@ -430,6 +481,13 @@ describe('main entry', () => {
       music: 0.5,
       muted: false
     });
+    expect(settingsOptions?.initialFxSettings).toEqual({
+      muzzleFlash: true,
+      tracers: true,
+      decals: true,
+      aimDebug: false
+    });
+    expect(settingsOptions?.initialLoadoutBits).toBe(0);
     expect(connectMock).not.toHaveBeenCalled();
     expect(statusMock.setState).toHaveBeenCalledWith('disabled', 'Set VITE_SIGNALING_URL');
     expect(statusMock.setMetricsVisible).toHaveBeenCalledWith(true);
@@ -584,44 +642,69 @@ describe('main entry', () => {
       dashCooldown: 0,
       health: 100,
       kills: 0,
-      deaths: 0
+      deaths: 0,
+      viewYawQ: 0,
+      viewPitchQ: 0,
+      playerFlags: 0,
+      weaponHeatQ: 0,
+      loadoutBits: 0
     };
     const sendPing = vi.fn();
-    connectMock.mockImplementation(async (config: { onSnapshot?: (snapshot: typeof snapshot) => void; onPong?: (pong: { clientTimeMs: number }) => void; onGameEvent?: (event: { type: string; event: string }) => void }) => {
+    connectMock.mockImplementation(
+      async (config: {
+        onSnapshot?: (snapshot: typeof snapshot) => void;
+        onPong?: (pong: { clientTimeMs: number }) => void;
+        onGameEvent?: (event: { type: string; serverTick: number; events: unknown[] }) => void;
+      }) => {
       config.onSnapshot?.(snapshot);
       config.onPong?.({ clientTimeMs: 5 });
-      config.onGameEvent?.({ type: 'GameEvent', event: 'HitConfirmed', killed: true });
       config.onGameEvent?.({
-        type: 'GameEvent',
-        event: 'ProjectileSpawn',
-        ownerId: 'other',
-        posX: 1,
-        posY: 2,
-        posZ: 3,
-        velX: 4,
-        velY: 5,
-        velZ: 6,
-        ttl: 0.5,
-        projectileId: 7
+        type: 'GameEventBatch',
+        serverTick: 0,
+        events: [{ type: 'HitConfirmedFx', targetId: 'target', damage: 1, killed: true }]
       });
       config.onGameEvent?.({
-        type: 'GameEvent',
-        event: 'ProjectileSpawn',
-        ownerId: 'conn',
-        posX: 9,
-        posY: 9,
-        posZ: 9,
-        velX: 1,
-        velY: 1,
-        velZ: 1,
-        ttl: 1,
-        projectileId: 8
+        type: 'GameEventBatch',
+        serverTick: 0,
+        events: [
+          {
+            type: 'ProjectileSpawnFx',
+            shooterId: 'other',
+            weaponSlot: 0,
+            shotSeq: 0,
+            projectileId: 7,
+            posXQ: 100,
+            posYQ: 200,
+            posZQ: 300,
+            velXQ: 400,
+            velYQ: 500,
+            velZQ: 600,
+            ttlQ: 50
+          }
+        ]
       });
       config.onGameEvent?.({
-        type: 'GameEvent',
-        event: 'ProjectileRemove',
-        projectileId: 7
+        type: 'GameEventBatch',
+        serverTick: 0,
+        events: [
+          {
+            type: 'ProjectileSpawnFx',
+            shooterId: 'conn',
+            weaponSlot: 0,
+            shotSeq: 0,
+            projectileId: 8,
+            posXQ: 900,
+            posYQ: 900,
+            posZQ: 900,
+            velXQ: 100,
+            velYQ: 100,
+            velZQ: 100,
+            ttlQ: 100
+          }
+        ]
       });
+      config.onGameEvent?.({ type: 'GameEventBatch', serverTick: 0, events: [{ type: 'ProjectileRemoveFx', projectileId: 7 }] });
+      beforeRenderHook?.(0.016, 1000);
       return {
         connectionId: 'conn',
         serverHello: { serverTickRate: 60, snapshotRate: 20, snapshotKeyframeInterval: 5 },
@@ -662,19 +745,27 @@ describe('main entry', () => {
     expect(appInstance.spawnProjectileVfx).toHaveBeenCalledTimes(2);
     expect(appInstance.removeProjectileVfx).toHaveBeenCalledWith(7);
     const onGameEvent = connectMock.mock.calls[0]?.[0]?.onGameEvent as
-      | ((event: { type: string; event: string; ownerId: string; posX: number; posY: number; posZ: number; velX: number; velY: number; velZ: number; ttl: number }) => void)
+      | ((event: { type: string; serverTick: number; events: unknown[] }) => void)
       | undefined;
     onGameEvent?.({
-      type: 'GameEvent',
-      event: 'ProjectileSpawn',
-      ownerId: 'conn',
-      posX: 0,
-      posY: 0,
-      posZ: 0,
-      velX: 0,
-      velY: 0,
-      velZ: 0,
-      ttl: 1
+      type: 'GameEventBatch',
+      serverTick: 0,
+      events: [
+        {
+          type: 'ProjectileSpawnFx',
+          shooterId: 'conn',
+          weaponSlot: 0,
+          shotSeq: 0,
+          projectileId: 9,
+          posXQ: 0,
+          posYQ: 0,
+          posZQ: 0,
+          velXQ: 0,
+          velYQ: 0,
+          velZQ: 0,
+          ttlQ: 100
+        }
+      ]
     });
     expect(appInstance.spawnProjectileVfx).toHaveBeenCalledTimes(3);
     expect(sendPing).toHaveBeenCalled();
@@ -733,6 +824,9 @@ describe('main entry', () => {
     await flushPromises();
 
     expect(statusMock.setMetrics).toHaveBeenCalledWith(expect.stringContaining('kf 7'));
+    const lastMetrics = statusMock.setMetrics.mock.calls.at(-1)?.[0] as string;
+    expect(lastMetrics).toEqual(expect.stringContaining('ev '));
+    expect(lastMetrics).toEqual(expect.stringContaining('pool '));
   });
 
   it('updates sensitivity from settings overlay', async () => {
@@ -795,6 +889,30 @@ describe('main entry', () => {
     expect(audioManagerMock.setVolume).toHaveBeenCalledWith('ui', 0.2);
     expect(audioManagerMock.setVolume).toHaveBeenCalledWith('music', 0.1);
     expect(audioSettingsMock.saveAudioSettings).toHaveBeenCalled();
+  });
+
+  it('persists FX settings from settings overlay', async () => {
+    envMock.getSignalingUrl.mockReturnValue(undefined);
+    envMock.getSignalingAuthToken.mockReturnValue(undefined);
+
+    await import('../src/main');
+
+    expect(settingsOptions?.onFxSettingsChange).toBeTypeOf('function');
+    const next = { muzzleFlash: false, tracers: false, decals: true, aimDebug: true };
+    settingsOptions?.onFxSettingsChange?.(next);
+    expect(fxSettingsMock.saveFxSettings).toHaveBeenCalledWith(next, window.localStorage);
+  });
+
+  it('persists loadout changes from settings overlay', async () => {
+    envMock.getSignalingUrl.mockReturnValue(undefined);
+    envMock.getSignalingAuthToken.mockReturnValue(undefined);
+
+    await import('../src/main');
+
+    expect(settingsOptions?.onLoadoutBitsChange).toBeTypeOf('function');
+    const nextBits = LOADOUT_BITS.optic | LOADOUT_BITS.suppressor;
+    settingsOptions?.onLoadoutBitsChange?.(nextBits);
+    expect(window.localStorage.getItem('afps.loadout.bits')).toBe(String(nextBits));
   });
 
   it('persists bindings updates and refreshes sampler', async () => {

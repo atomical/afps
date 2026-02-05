@@ -21,6 +21,7 @@ class FakeBufferSource extends FakeNode {
   buffer: unknown = null;
   loop = false;
   started = false;
+  playbackRate = new FakeAudioParam();
   start() {
     this.started = true;
   }
@@ -45,6 +46,7 @@ class FakeListener {
 }
 
 const makeContext = () => {
+  let lastSource: FakeBufferSource | null = null;
   const context = {
     state: 'suspended' as const,
     currentTime: 0,
@@ -53,7 +55,10 @@ const makeContext = () => {
     listener: new FakeListener(),
     createGain: () => new FakeGainNode(),
     createBuffer: () => ({ getChannelData: () => new Float32Array(1) }),
-    createBufferSource: () => new FakeBufferSource(),
+    createBufferSource: () => {
+      lastSource = new FakeBufferSource();
+      return lastSource;
+    },
     createPanner: () => new FakePannerNode(),
     decodeAudioData: vi.fn(async () => ({ decoded: true })),
     resume: vi.fn(async () => {
@@ -63,7 +68,7 @@ const makeContext = () => {
       context.state = 'closed';
     })
   };
-  return context;
+  return Object.assign(context, { getLastSource: () => lastSource });
 };
 
 describe('audio manager', () => {
@@ -121,5 +126,14 @@ describe('audio manager', () => {
     expect(audio.hasBuffer('impact')).toBe(false);
     audio.registerBuffer('impact', { getChannelData: () => new Float32Array(1) });
     expect(audio.hasBuffer('impact')).toBe(true);
+  });
+
+  it('applies playback rate when provided', () => {
+    const context = makeContext();
+    const audio = createAudioManager({ context });
+    audio.registerBuffer('tone', { getChannelData: () => new Float32Array(1) });
+    audio.play('tone', { playbackRate: 1.3 });
+    const source = context.getLastSource();
+    expect(source?.playbackRate.value).toBeCloseTo(1.3);
   });
 });

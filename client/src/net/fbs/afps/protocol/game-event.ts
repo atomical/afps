@@ -4,7 +4,17 @@
 
 import * as flatbuffers from 'flatbuffers';
 
-import { GameEventType } from '../../afps/protocol/game-event-type.js';
+import { FxEvent, unionToFxEvent, unionListToFxEvent } from '../../afps/protocol/fx-event.js';
+import { HitConfirmedFx, HitConfirmedFxT } from '../../afps/protocol/hit-confirmed-fx.js';
+import { NearMissFx, NearMissFxT } from '../../afps/protocol/near-miss-fx.js';
+import { OverheatFx, OverheatFxT } from '../../afps/protocol/overheat-fx.js';
+import { ProjectileImpactFx, ProjectileImpactFxT } from '../../afps/protocol/projectile-impact-fx.js';
+import { ProjectileRemoveFx, ProjectileRemoveFxT } from '../../afps/protocol/projectile-remove-fx.js';
+import { ProjectileSpawnFx, ProjectileSpawnFxT } from '../../afps/protocol/projectile-spawn-fx.js';
+import { ReloadFx, ReloadFxT } from '../../afps/protocol/reload-fx.js';
+import { ShotFiredFx, ShotFiredFxT } from '../../afps/protocol/shot-fired-fx.js';
+import { ShotTraceFx, ShotTraceFxT } from '../../afps/protocol/shot-trace-fx.js';
+import { VentFx, VentFxT } from '../../afps/protocol/vent-fx.js';
 
 
 export class GameEvent implements flatbuffers.IUnpackableObject<GameEventT> {
@@ -25,129 +35,74 @@ static getSizePrefixedRootAsGameEvent(bb:flatbuffers.ByteBuffer, obj?:GameEvent)
   return (obj || new GameEvent()).__init(bb.readInt32(bb.position()) + bb.position(), bb);
 }
 
-eventType():GameEventType {
+serverTick():number {
   const offset = this.bb!.__offset(this.bb_pos, 4);
-  return offset ? this.bb!.readInt8(this.bb_pos + offset) : GameEventType.HitConfirmed;
-}
-
-targetId():string|null
-targetId(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
-targetId(optionalEncoding?:any):string|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 6);
-  return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
-}
-
-ownerId():string|null
-ownerId(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
-ownerId(optionalEncoding?:any):string|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 8);
-  return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
-}
-
-projectileId():number {
-  const offset = this.bb!.__offset(this.bb_pos, 10);
   return offset ? this.bb!.readInt32(this.bb_pos + offset) : 0;
 }
 
-damage():number {
-  const offset = this.bb!.__offset(this.bb_pos, 12);
-  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
+eventsType(index: number):FxEvent|null {
+  const offset = this.bb!.__offset(this.bb_pos, 6);
+  return offset ? this.bb!.readUint8(this.bb!.__vector(this.bb_pos + offset) + index) : null;
 }
 
-killed():boolean {
-  const offset = this.bb!.__offset(this.bb_pos, 14);
-  return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
+eventsTypeLength():number {
+  const offset = this.bb!.__offset(this.bb_pos, 6);
+  return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
 }
 
-posX():number {
-  const offset = this.bb!.__offset(this.bb_pos, 16);
-  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
+eventsTypeArray():Uint8Array|null {
+  const offset = this.bb!.__offset(this.bb_pos, 6);
+  return offset ? new Uint8Array(this.bb!.bytes().buffer, this.bb!.bytes().byteOffset + this.bb!.__vector(this.bb_pos + offset), this.bb!.__vector_len(this.bb_pos + offset)) : null;
 }
 
-posY():number {
-  const offset = this.bb!.__offset(this.bb_pos, 18);
-  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
+events(index: number, obj:any):any|null {
+  const offset = this.bb!.__offset(this.bb_pos, 8);
+  return offset ? this.bb!.__union(obj, this.bb!.__vector(this.bb_pos + offset) + index * 4) : null;
 }
 
-posZ():number {
-  const offset = this.bb!.__offset(this.bb_pos, 20);
-  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
-}
-
-velX():number {
-  const offset = this.bb!.__offset(this.bb_pos, 22);
-  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
-}
-
-velY():number {
-  const offset = this.bb!.__offset(this.bb_pos, 24);
-  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
-}
-
-velZ():number {
-  const offset = this.bb!.__offset(this.bb_pos, 26);
-  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
-}
-
-ttl():number {
-  const offset = this.bb!.__offset(this.bb_pos, 28);
-  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
+eventsLength():number {
+  const offset = this.bb!.__offset(this.bb_pos, 8);
+  return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
 }
 
 static startGameEvent(builder:flatbuffers.Builder) {
-  builder.startObject(13);
+  builder.startObject(3);
 }
 
-static addEventType(builder:flatbuffers.Builder, eventType:GameEventType) {
-  builder.addFieldInt8(0, eventType, GameEventType.HitConfirmed);
+static addServerTick(builder:flatbuffers.Builder, serverTick:number) {
+  builder.addFieldInt32(0, serverTick, 0);
 }
 
-static addTargetId(builder:flatbuffers.Builder, targetIdOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(1, targetIdOffset, 0);
+static addEventsType(builder:flatbuffers.Builder, eventsTypeOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(1, eventsTypeOffset, 0);
 }
 
-static addOwnerId(builder:flatbuffers.Builder, ownerIdOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(2, ownerIdOffset, 0);
+static createEventsTypeVector(builder:flatbuffers.Builder, data:FxEvent[]):flatbuffers.Offset {
+  builder.startVector(1, data.length, 1);
+  for (let i = data.length - 1; i >= 0; i--) {
+    builder.addInt8(data[i]!);
+  }
+  return builder.endVector();
 }
 
-static addProjectileId(builder:flatbuffers.Builder, projectileId:number) {
-  builder.addFieldInt32(3, projectileId, 0);
+static startEventsTypeVector(builder:flatbuffers.Builder, numElems:number) {
+  builder.startVector(1, numElems, 1);
 }
 
-static addDamage(builder:flatbuffers.Builder, damage:number) {
-  builder.addFieldFloat64(4, damage, 0.0);
+static addEvents(builder:flatbuffers.Builder, eventsOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(2, eventsOffset, 0);
 }
 
-static addKilled(builder:flatbuffers.Builder, killed:boolean) {
-  builder.addFieldInt8(5, +killed, +false);
+static createEventsVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
+  builder.startVector(4, data.length, 4);
+  for (let i = data.length - 1; i >= 0; i--) {
+    builder.addOffset(data[i]!);
+  }
+  return builder.endVector();
 }
 
-static addPosX(builder:flatbuffers.Builder, posX:number) {
-  builder.addFieldFloat64(6, posX, 0.0);
-}
-
-static addPosY(builder:flatbuffers.Builder, posY:number) {
-  builder.addFieldFloat64(7, posY, 0.0);
-}
-
-static addPosZ(builder:flatbuffers.Builder, posZ:number) {
-  builder.addFieldFloat64(8, posZ, 0.0);
-}
-
-static addVelX(builder:flatbuffers.Builder, velX:number) {
-  builder.addFieldFloat64(9, velX, 0.0);
-}
-
-static addVelY(builder:flatbuffers.Builder, velY:number) {
-  builder.addFieldFloat64(10, velY, 0.0);
-}
-
-static addVelZ(builder:flatbuffers.Builder, velZ:number) {
-  builder.addFieldFloat64(11, velZ, 0.0);
-}
-
-static addTtl(builder:flatbuffers.Builder, ttl:number) {
-  builder.addFieldFloat64(12, ttl, 0.0);
+static startEventsVector(builder:flatbuffers.Builder, numElems:number) {
+  builder.startVector(4, numElems, 4);
 }
 
 static endGameEvent(builder:flatbuffers.Builder):flatbuffers.Offset {
@@ -155,96 +110,68 @@ static endGameEvent(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createGameEvent(builder:flatbuffers.Builder, eventType:GameEventType, targetIdOffset:flatbuffers.Offset, ownerIdOffset:flatbuffers.Offset, projectileId:number, damage:number, killed:boolean, posX:number, posY:number, posZ:number, velX:number, velY:number, velZ:number, ttl:number):flatbuffers.Offset {
+static createGameEvent(builder:flatbuffers.Builder, serverTick:number, eventsTypeOffset:flatbuffers.Offset, eventsOffset:flatbuffers.Offset):flatbuffers.Offset {
   GameEvent.startGameEvent(builder);
-  GameEvent.addEventType(builder, eventType);
-  GameEvent.addTargetId(builder, targetIdOffset);
-  GameEvent.addOwnerId(builder, ownerIdOffset);
-  GameEvent.addProjectileId(builder, projectileId);
-  GameEvent.addDamage(builder, damage);
-  GameEvent.addKilled(builder, killed);
-  GameEvent.addPosX(builder, posX);
-  GameEvent.addPosY(builder, posY);
-  GameEvent.addPosZ(builder, posZ);
-  GameEvent.addVelX(builder, velX);
-  GameEvent.addVelY(builder, velY);
-  GameEvent.addVelZ(builder, velZ);
-  GameEvent.addTtl(builder, ttl);
+  GameEvent.addServerTick(builder, serverTick);
+  GameEvent.addEventsType(builder, eventsTypeOffset);
+  GameEvent.addEvents(builder, eventsOffset);
   return GameEvent.endGameEvent(builder);
 }
 
 unpack(): GameEventT {
   return new GameEventT(
-    this.eventType(),
-    this.targetId(),
-    this.ownerId(),
-    this.projectileId(),
-    this.damage(),
-    this.killed(),
-    this.posX(),
-    this.posY(),
-    this.posZ(),
-    this.velX(),
-    this.velY(),
-    this.velZ(),
-    this.ttl()
+    this.serverTick(),
+    this.bb!.createScalarList<FxEvent>(this.eventsType.bind(this), this.eventsTypeLength()),
+    (() => {
+    const ret: (HitConfirmedFxT|NearMissFxT|OverheatFxT|ProjectileImpactFxT|ProjectileRemoveFxT|ProjectileSpawnFxT|ReloadFxT|ShotFiredFxT|ShotTraceFxT|VentFxT)[] = [];
+    for(let targetEnumIndex = 0; targetEnumIndex < this.eventsTypeLength(); ++targetEnumIndex) {
+      const targetEnum = this.eventsType(targetEnumIndex);
+      if(targetEnum === null || FxEvent[targetEnum!] === 'NONE') { continue; }
+
+      const temp = unionListToFxEvent(targetEnum, this.events.bind(this), targetEnumIndex);
+      if(temp === null) { continue; }
+      ret.push(temp.unpack());
+    }
+    return ret;
+  })()
   );
 }
 
 
 unpackTo(_o: GameEventT): void {
-  _o.eventType = this.eventType();
-  _o.targetId = this.targetId();
-  _o.ownerId = this.ownerId();
-  _o.projectileId = this.projectileId();
-  _o.damage = this.damage();
-  _o.killed = this.killed();
-  _o.posX = this.posX();
-  _o.posY = this.posY();
-  _o.posZ = this.posZ();
-  _o.velX = this.velX();
-  _o.velY = this.velY();
-  _o.velZ = this.velZ();
-  _o.ttl = this.ttl();
+  _o.serverTick = this.serverTick();
+  _o.eventsType = this.bb!.createScalarList<FxEvent>(this.eventsType.bind(this), this.eventsTypeLength());
+  _o.events = (() => {
+    const ret: (HitConfirmedFxT|NearMissFxT|OverheatFxT|ProjectileImpactFxT|ProjectileRemoveFxT|ProjectileSpawnFxT|ReloadFxT|ShotFiredFxT|ShotTraceFxT|VentFxT)[] = [];
+    for(let targetEnumIndex = 0; targetEnumIndex < this.eventsTypeLength(); ++targetEnumIndex) {
+      const targetEnum = this.eventsType(targetEnumIndex);
+      if(targetEnum === null || FxEvent[targetEnum!] === 'NONE') { continue; }
+
+      const temp = unionListToFxEvent(targetEnum, this.events.bind(this), targetEnumIndex);
+      if(temp === null) { continue; }
+      ret.push(temp.unpack());
+    }
+    return ret;
+  })();
 }
 }
 
 export class GameEventT implements flatbuffers.IGeneratedObject {
 constructor(
-  public eventType: GameEventType = GameEventType.HitConfirmed,
-  public targetId: string|Uint8Array|null = null,
-  public ownerId: string|Uint8Array|null = null,
-  public projectileId: number = 0,
-  public damage: number = 0.0,
-  public killed: boolean = false,
-  public posX: number = 0.0,
-  public posY: number = 0.0,
-  public posZ: number = 0.0,
-  public velX: number = 0.0,
-  public velY: number = 0.0,
-  public velZ: number = 0.0,
-  public ttl: number = 0.0
+  public serverTick: number = 0,
+  public eventsType: (FxEvent)[] = [],
+  public events: (HitConfirmedFxT|NearMissFxT|OverheatFxT|ProjectileImpactFxT|ProjectileRemoveFxT|ProjectileSpawnFxT|ReloadFxT|ShotFiredFxT|ShotTraceFxT|VentFxT)[] = []
 ){}
 
 
 pack(builder:flatbuffers.Builder): flatbuffers.Offset {
-  const targetId = (this.targetId !== null ? builder.createString(this.targetId!) : 0);
-  const ownerId = (this.ownerId !== null ? builder.createString(this.ownerId!) : 0);
+  const eventsType = GameEvent.createEventsTypeVector(builder, this.eventsType);
+  const events = GameEvent.createEventsVector(builder, builder.createObjectOffsetList(this.events));
 
   return GameEvent.createGameEvent(builder,
-    this.eventType,
-    targetId,
-    ownerId,
-    this.projectileId,
-    this.damage,
-    this.killed,
-    this.posX,
-    this.posY,
-    this.posZ,
-    this.velX,
-    this.velY,
-    this.velZ,
-    this.ttl
+    this.serverTick,
+    eventsType,
+    events
   );
 }
 }

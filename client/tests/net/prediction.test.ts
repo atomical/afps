@@ -177,6 +177,167 @@ describe('ClientPrediction', () => {
     expect(state.velZ).toBeCloseTo(0);
   });
 
+  it('clamps to the ceiling when lowering arena bounds with non-positive velocity', () => {
+    const sim = createJsPredictionSim({
+      ...SIM_CONFIG,
+      moveSpeed: 0,
+      accel: 0,
+      friction: 0,
+      gravity: 0,
+      arenaHalfSize: 5,
+      playerHeight: 0.8
+    });
+    sim.setState(0, 0, 0.5, 0, 0, 0, 0);
+    sim.setConfig({
+      ...SIM_CONFIG,
+      moveSpeed: 0,
+      accel: 0,
+      friction: 0,
+      gravity: 0,
+      arenaHalfSize: 1,
+      playerHeight: 0.8
+    });
+
+    sim.step({ moveX: 0, moveY: 0, sprint: false, jump: false, dash: false, grapple: false, shield: false, shockwave: false }, 1 / 60);
+
+    const state = sim.getState();
+    expect(state.z).toBeCloseTo(0.2);
+    expect(state.velZ).toBeCloseTo(0);
+  });
+
+  it('clamps Y bounds without cancelling upward velocity', () => {
+    const sim = createJsPredictionSim({
+      ...SIM_CONFIG,
+      moveSpeed: 0,
+      accel: 0,
+      friction: 0,
+      gravity: 0,
+      arenaHalfSize: 1,
+      playerRadius: 0
+    });
+    sim.setState(0, -2, 0, 0, 1, 0, 0);
+
+    sim.step({ moveX: 0, moveY: 0, sprint: false, jump: false, dash: false, grapple: false, shield: false, shockwave: false }, 1 / 60);
+
+    const state = sim.getState();
+    expect(state.y).toBeGreaterThanOrEqual(-1);
+    expect(state.velY).toBeGreaterThan(0);
+  });
+
+  it('ignores invalid config values when updating', () => {
+    const sim = createJsPredictionSim();
+
+    sim.setConfig({
+      ...SIM_CONFIG,
+      moveSpeed: -1,
+      sprintMultiplier: Number.NaN,
+      accel: -1,
+      friction: -1,
+      gravity: -1,
+      jumpVelocity: -1,
+      dashImpulse: -1,
+      dashCooldown: -1,
+      grappleMaxDistance: -1,
+      grapplePullStrength: -1,
+      grappleDamping: -1,
+      grappleCooldown: -1,
+      grappleMinAttachNormalY: Number.NaN,
+      grappleRopeSlack: -1,
+      shieldDuration: -1,
+      shieldCooldown: -1,
+      shieldDamageMultiplier: Number.NaN,
+      shockwaveRadius: -1,
+      shockwaveImpulse: -1,
+      shockwaveCooldown: -1,
+      shockwaveDamage: -1,
+      arenaHalfSize: -1,
+      playerRadius: Number.NaN,
+      playerHeight: -1,
+      obstacleMinX: Number.NaN,
+      obstacleMaxX: Number.NaN,
+      obstacleMinY: Number.NaN,
+      obstacleMaxY: Number.NaN
+    });
+
+    sim.step({ moveX: 0, moveY: 0, sprint: false, jump: false, dash: false, grapple: false, shield: false, shockwave: false }, 1 / 60);
+
+    const state = sim.getState();
+    expect(Number.isFinite(state.x)).toBe(true);
+    expect(Number.isFinite(state.y)).toBe(true);
+  });
+
+  it('handles non-finite view yaw when grappling', () => {
+    const sim = createJsPredictionSim({
+      ...SIM_CONFIG,
+      moveSpeed: 0,
+      accel: 0,
+      friction: 0,
+      grappleMaxDistance: 1,
+      grappleCooldown: 0
+    });
+
+    sim.step(
+      { moveX: 0, moveY: 0, sprint: false, jump: false, dash: false, grapple: true, shield: false, shockwave: false, viewYaw: Number.NaN, viewPitch: 0 },
+      1 / 60
+    );
+
+    const state = sim.getState();
+    expect(Number.isFinite(state.x)).toBe(true);
+    expect(Number.isFinite(state.y)).toBe(true);
+  });
+
+  it('clamps non-finite movement inputs', () => {
+    const sim = createJsPredictionSim({
+      ...SIM_CONFIG,
+      moveSpeed: 0,
+      accel: 0,
+      friction: 0,
+      gravity: 0
+    });
+
+    sim.step(
+      { moveX: Number.NaN, moveY: Number.NaN, sprint: false, jump: false, dash: false, grapple: false, shield: false, shockwave: false },
+      1 / 60
+    );
+
+    const state = sim.getState();
+    expect(state.velX).toBeCloseTo(0);
+    expect(state.velY).toBeCloseTo(0);
+  });
+
+  it('clamps to the ceiling with invalid player height and downward velocity', () => {
+    const sim = createJsPredictionSim({
+      ...SIM_CONFIG,
+      moveSpeed: 0,
+      accel: 0,
+      friction: 0,
+      gravity: 0,
+      arenaHalfSize: 1,
+      playerHeight: -1
+    });
+    sim.setState(0, 0, 2, 0, 0, -1, 0);
+
+    sim.step({ moveX: 0, moveY: 0, sprint: false, jump: false, dash: false, grapple: false, shield: false, shockwave: false }, 1 / 60);
+
+    const state = sim.getState();
+    expect(state.z).toBeCloseTo(0);
+    expect(state.velZ).toBe(0);
+  });
+
+  it('clamps setState when player height is invalid', () => {
+    const sim = createJsPredictionSim({
+      ...SIM_CONFIG,
+      moveSpeed: 0,
+      accel: 0,
+      friction: 0,
+      arenaHalfSize: 1,
+      playerHeight: Number.NaN
+    });
+
+    sim.setState(0, 0, 5, 0, 0, 0, 0);
+    expect(sim.getState().z).toBeCloseTo(0);
+  });
+
   it('resets non-finite vertical state', () => {
     const sim = createJsPredictionSim({
       ...SIM_CONFIG,
@@ -293,6 +454,40 @@ describe('ClientPrediction', () => {
     expect(sim.getState().dashCooldown).toBeCloseTo(0.3);
   });
 
+  it('dashes using velocity direction when no input is provided', () => {
+    const sim = createJsPredictionSim({
+      ...SIM_CONFIG,
+      moveSpeed: 0,
+      accel: 0,
+      friction: 0,
+      dashImpulse: 2,
+      dashCooldown: 0
+    });
+    sim.setState(0, 0, 0, 1, 0, 0, 0);
+
+    sim.step({ moveX: 0, moveY: 0, sprint: false, jump: false, dash: true, grapple: false, shield: false, shockwave: false }, 1 / 60);
+
+    expect(sim.getState().velX).toBeGreaterThan(1);
+  });
+
+  it('skips dashing when direction cannot be resolved', () => {
+    const sim = createJsPredictionSim({
+      ...SIM_CONFIG,
+      moveSpeed: 0,
+      accel: 0,
+      friction: 0,
+      dashImpulse: 2,
+      dashCooldown: 0
+    });
+    sim.setState(0, 0, 0, 0, 0, 0, 0);
+
+    sim.step({ moveX: 0, moveY: 0, sprint: false, jump: false, dash: true, grapple: false, shield: false, shockwave: false }, 1 / 60);
+
+    const state = sim.getState();
+    expect(state.velX).toBe(0);
+    expect(state.velY).toBe(0);
+  });
+
   it('tracks shield duration and cooldown', () => {
     const sim = createJsPredictionSim({
       ...SIM_CONFIG,
@@ -366,6 +561,38 @@ describe('ClientPrediction', () => {
     expect(state.shieldActive).toBe(false);
   });
 
+  it('clamps non-finite shield cooldowns', () => {
+    const sim = createJsPredictionSim({
+      ...SIM_CONFIG,
+      moveSpeed: 0,
+      accel: 0,
+      friction: 0,
+      gravity: 0
+    });
+    const debugSim = sim as typeof sim & { __setShieldCooldown?: (value: number) => void };
+    debugSim.__setShieldCooldown?.(Number.NaN);
+
+    sim.step({ moveX: 0, moveY: 0, sprint: false, jump: false, dash: false, grapple: false, shield: false, shockwave: false }, 0.1);
+    const state = sim.getState();
+    expect(state.shieldCooldown).toBe(0);
+  });
+
+  it('clamps non-finite grapple cooldowns', () => {
+    const sim = createJsPredictionSim({
+      ...SIM_CONFIG,
+      moveSpeed: 0,
+      accel: 0,
+      friction: 0,
+      gravity: 0
+    });
+    const debugSim = sim as typeof sim & { __setGrappleCooldown?: (value: number) => void };
+    debugSim.__setGrappleCooldown?.(Number.NaN);
+
+    sim.step({ moveX: 0, moveY: 0, sprint: false, jump: false, dash: false, grapple: false, shield: false, shockwave: false }, 0.1);
+    const state = sim.getState();
+    expect(state.grappleCooldown).toBe(0);
+  });
+
   it('triggers and decays shockwave cooldown', () => {
     const sim = createJsPredictionSim({
       ...SIM_CONFIG,
@@ -384,6 +611,51 @@ describe('ClientPrediction', () => {
     sim.step({ moveX: 0, moveY: 0, sprint: false, jump: false, dash: false, grapple: false, shield: false, shockwave: false }, 0.2);
     state = sim.getState();
     expect(state.shockwaveCooldown).toBeCloseTo(0.3);
+  });
+
+  it('resets non-finite shockwave cooldowns', () => {
+    const sim = createJsPredictionSim({
+      ...SIM_CONFIG,
+      moveSpeed: 0,
+      accel: 0,
+      friction: 0,
+      shockwaveRadius: 6,
+      shockwaveImpulse: 10,
+      shockwaveCooldown: 0.5
+    });
+
+    sim.step({ moveX: 0, moveY: 0, sprint: false, jump: false, dash: false, grapple: false, shield: false, shockwave: true }, 0.1);
+    let state = sim.getState();
+    const originalIsFinite = Number.isFinite;
+    const cooldownSample = state.shockwaveCooldown;
+    const isFiniteSpy = vi.spyOn(Number, 'isFinite').mockImplementation((value) => {
+      if (typeof value === 'number' && Math.abs(value - cooldownSample) < 1e-6) {
+        return false;
+      }
+      return originalIsFinite(value);
+    });
+
+    sim.step({ moveX: 0, moveY: 0, sprint: false, jump: false, dash: false, grapple: false, shield: false, shockwave: false }, 0.1);
+    isFiniteSpy.mockRestore();
+    state = sim.getState();
+    expect(state.shockwaveCooldown).toBe(0);
+  });
+
+  it('requires shockwave radius plus impulse or damage to trigger', () => {
+    const sim = createJsPredictionSim({
+      ...SIM_CONFIG,
+      moveSpeed: 0,
+      accel: 0,
+      friction: 0,
+      shockwaveRadius: 6,
+      shockwaveImpulse: 0,
+      shockwaveDamage: 0,
+      shockwaveCooldown: 0.5
+    });
+
+    sim.step({ moveX: 0, moveY: 0, sprint: false, jump: false, dash: false, grapple: false, shield: false, shockwave: true }, 0.1);
+    const state = sim.getState();
+    expect(state.shockwaveCooldown).toBe(0);
   });
 
   it('applies dash impulse in the input direction', () => {
@@ -470,7 +742,7 @@ describe('ClientPrediction', () => {
     sim.setState(0.6, 0, 0, 1, -2, 0, 0);
     sim.step({ moveX: 0, moveY: 0, sprint: false, jump: false, dash: false, grapple: false, shield: false, shockwave: false }, 1);
 
-    expect(sim.getState()).toEqual({
+    expect(sim.getState()).toMatchObject({
       x: 0.8,
       y: -0.8,
       z: 0,
@@ -905,6 +1177,117 @@ describe('ClientPrediction', () => {
     expect(state.velX).toBeGreaterThan(0);
   });
 
+  it('clamps grapple anchor height against arena ceiling', () => {
+    const config = {
+      ...SIM_CONFIG,
+      moveSpeed: 0,
+      accel: 0,
+      friction: 0,
+      gravity: 0,
+      arenaHalfSize: 1,
+      playerRadius: 0.2,
+      grappleMaxDistance: 5,
+      grappleCooldown: 0
+    };
+    const sim = createJsPredictionSim(config);
+    const dt = 1 / 60;
+
+    sim.step({ moveX: 0, moveY: 0, sprint: false, jump: false, dash: false, grapple: true, shield: false, shockwave: false, viewYaw: 0, viewPitch: 0 }, dt);
+
+    const state = sim.getState() as ReturnType<typeof sim.getState> & { grappleAnchorZ: number; grappleActive: boolean };
+    expect(state.grappleActive).toBe(true);
+    expect(state.grappleAnchorZ).toBe(0);
+  });
+
+  it('grapple defaults view angles when unspecified', () => {
+    const sim = createJsPredictionSim({
+      ...SIM_CONFIG,
+      moveSpeed: 0,
+      accel: 0,
+      friction: 0,
+      gravity: 0,
+      arenaHalfSize: 5,
+      playerRadius: 0.2,
+      grappleMaxDistance: 5,
+      grappleCooldown: 0
+    });
+    const dt = 1 / 60;
+
+    sim.step({ moveX: 0, moveY: 0, sprint: false, jump: false, dash: false, grapple: true, shield: false, shockwave: false }, dt);
+
+    const state = sim.getState() as ReturnType<typeof sim.getState> & { grappleActive: boolean };
+    expect(state.grappleActive).toBe(true);
+  });
+
+  it('skips grappling when max distance is zero', () => {
+    const sim = createJsPredictionSim({
+      ...SIM_CONFIG,
+      moveSpeed: 0,
+      accel: 0,
+      friction: 0,
+      gravity: 0,
+      grappleMaxDistance: 0,
+      grappleCooldown: 0
+    });
+    const dt = 1 / 60;
+
+    sim.step({ moveX: 0, moveY: 0, sprint: false, jump: false, dash: false, grapple: true, shield: false, shockwave: false, viewYaw: 0, viewPitch: 0 }, dt);
+
+    const state = sim.getState() as ReturnType<typeof sim.getState> & { grappleActive: boolean };
+    expect(state.grappleActive).toBe(false);
+  });
+
+  it('allows grappling without arena bounds when hitting obstacles', () => {
+    const sim = createJsPredictionSim({
+      ...SIM_CONFIG,
+      moveSpeed: 0,
+      accel: 0,
+      friction: 0,
+      gravity: 0,
+      arenaHalfSize: 0,
+      obstacleMinX: 2,
+      obstacleMaxX: 3,
+      obstacleMinY: -1,
+      obstacleMaxY: 1,
+      grappleMaxDistance: 10,
+      grappleCooldown: 0
+    });
+    const dt = 1 / 60;
+
+    sim.step({ moveX: 0, moveY: 0, sprint: false, jump: false, dash: false, grapple: true, shield: false, shockwave: false, viewYaw: Math.PI / 2, viewPitch: 0 }, dt);
+
+    const state = sim.getState() as ReturnType<typeof sim.getState> & { grappleActive: boolean; grappleAnchorZ: number };
+    expect(state.grappleActive).toBe(true);
+    expect(state.grappleAnchorZ).toBeCloseTo(1.6);
+  });
+
+  it('grapple skips acceleration when pull strength is zero', () => {
+    const config = {
+      ...SIM_CONFIG,
+      moveSpeed: 0,
+      accel: 0,
+      friction: 0,
+      gravity: 0,
+      arenaHalfSize: 5,
+      playerRadius: 0.2,
+      grappleMaxDistance: 10,
+      grapplePullStrength: 0,
+      grappleDamping: 0,
+      grappleCooldown: 1,
+      grappleRopeSlack: 0
+    };
+    const sim = createJsPredictionSim(config);
+    const yaw = Math.PI / 2;
+    const dt = 1 / 60;
+
+    sim.step({ moveX: 0, moveY: 0, sprint: false, jump: false, dash: false, grapple: true, shield: false, shockwave: false, viewYaw: yaw, viewPitch: 0 }, dt);
+    sim.setState(-1, 0, 0, 0, 0, 0, 0);
+    sim.step({ moveX: 0, moveY: 0, sprint: false, jump: false, dash: false, grapple: true, shield: false, shockwave: false, viewYaw: yaw, viewPitch: 0 }, dt);
+
+    const state = sim.getState();
+    expect(state.velX).toBeCloseTo(0);
+  });
+
   it('grapple releases on input release and respects cooldown', () => {
     const config = {
       ...SIM_CONFIG,
@@ -1161,6 +1544,29 @@ describe('ClientPrediction', () => {
     expect(simWrapped.getState().velX).toBeCloseTo(0);
   });
 
+  it('sanitizes non-finite view pitch inputs', () => {
+    const config = {
+      ...SIM_CONFIG,
+      moveSpeed: 0,
+      accel: 0,
+      friction: 0,
+      gravity: 0,
+      grappleMaxDistance: 5,
+      arenaHalfSize: 5
+    };
+    const dt = 1 / 60;
+    const sim = createJsPredictionSim(config);
+
+    sim.step(
+      { moveX: 0, moveY: 0, sprint: false, jump: false, dash: false, grapple: true, shield: false, shockwave: false, viewYaw: 0, viewPitch: Number.NaN },
+      dt
+    );
+
+    const state = sim.getState();
+    expect(Number.isFinite(state.z)).toBe(true);
+    expect(Number.isFinite(state.velZ)).toBe(true);
+  });
+
   it('grapple raycast skips non-finite direction input', () => {
     const config = {
       ...SIM_CONFIG,
@@ -1282,7 +1688,7 @@ describe('ClientPrediction', () => {
     };
     internal.sim.reset();
 
-    expect(internal.sim.getState()).toEqual({
+    expect(internal.sim.getState()).toMatchObject({
       x: 0,
       y: 0,
       z: 0,

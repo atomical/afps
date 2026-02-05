@@ -19,8 +19,9 @@ export interface CasingPool {
   dispose: () => void;
 }
 
-const BASE_URL = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
-const NORMALIZED_BASE = BASE_URL.endsWith('/') ? BASE_URL : `${BASE_URL}/`;
+const resolveBaseUrl = (env?: { BASE_URL?: string }) => env?.BASE_URL ?? '/';
+const BASE_URL = resolveBaseUrl((import.meta as { env?: { BASE_URL?: string } }).env);
+const NORMALIZED_BASE = BASE_URL.replace(/\/?$/, '/');
 const CASING_MODEL_URLS = [
   `${NORMALIZED_BASE}assets/weapons/cc0/kenney_blaster_kit/bullet-foam.glb`,
   `${NORMALIZED_BASE}assets/weapons/cc0/kenney_blaster_kit/Models/GLB%20format/bullet-foam.glb`
@@ -109,14 +110,12 @@ export const createCasingPool = ({
       return null;
     }
     if (pool.length > 0) {
-      return pool.pop() ?? null;
+      return pool.pop()!;
     }
     if (active.length >= MAX_POOL) {
-      const recycled = active.shift();
-      if (recycled) {
-        scene.remove?.(recycled.mesh);
-        return recycled;
-      }
+      const recycled = active.shift()!;
+      scene.remove?.(recycled.mesh);
+      return recycled;
     }
     const mesh = cloneObject(baseModel);
     if (mesh.scale?.set) {
@@ -219,3 +218,5 @@ export const createCasingPool = ({
 
   return { ready, spawn, update, dispose };
 };
+
+export const __test = { resolveBaseUrl };

@@ -97,6 +97,12 @@ describe('wasm sim wrapper', () => {
     expect(module._sim_step).toHaveBeenCalledWith(42, 0.016, 1, -1, 1, 1, 1, 1, 0, 0, 0, 0);
 
     sim.step(
+      { moveX: 0, moveY: 0, sprint: false, jump: false, dash: false, grapple: false, shield: true, shockwave: true },
+      0.016
+    );
+    expect(module._sim_step).toHaveBeenCalledWith(42, 0.016, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0);
+
+    sim.step(
       {
         moveX: Number.NaN,
         moveY: Number.POSITIVE_INFINITY,

@@ -44,6 +44,7 @@ export interface SceneLike extends Object3DLike {
 
 export interface CameraLike extends Object3DLike {
   aspect: number;
+  fov?: number;
   updateProjectionMatrix: () => void;
 }
 
@@ -171,6 +172,11 @@ export interface NetworkSnapshot {
   health: number;
   kills: number;
   deaths: number;
+  viewYawQ: number;
+  viewPitchQ: number;
+  playerFlags: number;
+  weaponHeatQ: number;
+  loadoutBits: number;
   clientId?: string;
 }
 
@@ -227,8 +233,38 @@ export interface App {
     dir: { x: number; y: number; z: number };
     length?: number;
   }) => void;
+  spawnMuzzleFlashVfx: (payload: {
+    position: { x: number; y: number; z: number };
+    dir: { x: number; y: number; z: number };
+    seed: number;
+    size?: number;
+    ttl?: number;
+  }) => void;
+  spawnImpactVfx: (payload: {
+    position: { x: number; y: number; z: number };
+    normal: { x: number; y: number; z: number };
+    surfaceType: number;
+    seed: number;
+    size?: number;
+    ttl?: number;
+  }) => void;
+  spawnDecalVfx: (payload: {
+    position: { x: number; y: number; z: number };
+    normal: { x: number; y: number; z: number };
+    surfaceType: number;
+    seed: number;
+    size?: number;
+    ttl?: number;
+  }) => void;
+  getFxPoolStats: () => {
+    tracers: { active: number; free: number; max: number };
+    muzzleFlashes: { active: number; free: number; max: number };
+    impacts: { active: number; free: number; max: number };
+    decals: { active: number; free: number; max: number };
+  };
   getWeaponCooldown: (slot: number) => number;
   getAbilityCooldowns: () => AbilityCooldowns;
+  getRenderTick: () => number | null;
   setWeaponViewmodel: (weaponId?: string) => void;
   setTickRate: (tickRate: number) => void;
   setPredictionSim: (sim: PredictionSim) => void;

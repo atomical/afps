@@ -1,7 +1,5 @@
 import type {
-  GameEvent,
-  WeaponFiredEvent,
-  WeaponReloadEvent,
+  GameEventBatch,
   PlayerProfile,
   PongMessage,
   StateSnapshot
@@ -26,9 +24,7 @@ export interface NetworkRuntimeConfig {
   ) => Uint8Array;
   onSnapshot?: (snapshot: StateSnapshot) => void;
   onPong?: (pong: PongMessage) => void;
-  onGameEvent?: (event: GameEvent) => void;
-  onWeaponFired?: (event: WeaponFiredEvent) => void;
-  onWeaponReload?: (event: WeaponReloadEvent) => void;
+  onGameEvent?: (event: GameEventBatch) => void;
   onPlayerProfile?: (profile: PlayerProfile) => void;
 }
 
@@ -55,9 +51,7 @@ interface RuntimeDependencies {
     ) => Uint8Array;
     onSnapshot?: (snapshot: StateSnapshot) => void;
     onPong?: (pong: PongMessage) => void;
-    onGameEvent?: (event: GameEvent) => void;
-    onWeaponFired?: (event: WeaponFiredEvent) => void;
-    onWeaponReload?: (event: WeaponReloadEvent) => void;
+    onGameEvent?: (event: GameEventBatch) => void;
     onPlayerProfile?: (profile: PlayerProfile) => void;
   }) => { connect: () => Promise<WebRtcSession> };
   fetcher?: typeof fetch;
@@ -92,8 +86,6 @@ export const connectIfConfigured = async (
     onSnapshot: config.onSnapshot,
     onPong: config.onPong,
     onGameEvent: config.onGameEvent,
-    onWeaponFired: config.onWeaponFired,
-    onWeaponReload: config.onWeaponReload,
     onPlayerProfile: config.onPlayerProfile
   });
 

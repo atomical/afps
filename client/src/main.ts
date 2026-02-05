@@ -12,14 +12,12 @@ import {
   getWasmSimParity,
   getWasmSimUrl
 } from './net/env';
-import { buildClientHello, buildPing, encodeFireWeaponRequest } from './net/protocol';
+import { buildClientHello, buildPing, encodeFireWeaponRequest, encodeSetLoadoutRequest } from './net/protocol';
 import type {
-  GameEvent,
+  GameEventBatch,
   PlayerProfile as NetPlayerProfile,
   PongMessage,
-  StateSnapshot,
-  WeaponFiredEvent,
-  WeaponReloadEvent
+  StateSnapshot
 } from './net/protocol';
 import { createStatusOverlay } from './ui/status';
 import { createInputSampler } from './input/sampler';
@@ -37,7 +35,8 @@ import { loadAudioSettings, saveAudioSettings } from './audio/settings';
 import { loadWasmSimFromUrl } from './sim/wasm';
 import { createWasmPredictionSim } from './sim/wasm_adapter';
 import { runWasmParityCheck } from './sim/parity';
-import { WEAPON_BY_ID, WEAPON_CONFIG, WEAPON_DEFS } from './weapons/config';
+import { WEAPON_CONFIG, WEAPON_DEFS } from './weapons/config';
+import { LOADOUT_BITS, hasLoadoutBit, loadLoadoutBits, saveLoadoutBits } from './weapons/loadout';
 import { exposeWeaponDebug } from './weapons/debug';
 import { generateWeaponSfx } from './weapons/sfx';
 import {
@@ -51,6 +50,9 @@ import { createPrejoinOverlay } from './ui/prejoin';
 import type { LocalPlayerProfile } from './profile/types';
 import { loadProfile, saveProfile } from './profile/storage';
 import { createRemoteAvatarManager } from './players/remote_avatars';
+import { decodeOct16, decodePitchQ, decodeUnitU16, decodeYawQ, dequantizeI16, dequantizeU16 } from './net/quantization';
+import { GameEventQueue } from './net/event_queue';
+import { loadFxSettings, saveFxSettings } from './rendering/fx_settings';
 
 const three = {
   ...THREE,
@@ -69,17 +71,67 @@ const AUDIO_ASSETS = {
   footstep: `${AUDIO_ROOT}footstep.wav`,
   uiClick: `${AUDIO_ROOT}ui_click.wav`
 };
+const ADS_BLEND_SPEED = 8;
+const ADS_SENSITIVITY_MULTIPLIER = 0.55;
+const ADS_FOV_MULTIPLIER = 0.78;
+const ADS_OPTIC_FOV_MULTIPLIER = 0.68;
+const RECOIL_RECOVERY_SPEED = 10;
+const RECOIL_RECOVERY_MIN = 4;
 
-const savedSensitivity = loadSensitivity(window.localStorage);
+const createMemoryStorage = (): Storage => {
+  const entries = new Map<string, string>();
+  return {
+    getItem: (key) => entries.get(key) ?? null,
+    setItem: (key, value) => {
+      entries.set(key, value);
+    },
+    removeItem: (key) => {
+      entries.delete(key);
+    },
+    clear: () => {
+      entries.clear();
+    },
+    key: (index) => Array.from(entries.keys())[index] ?? null,
+    get length() {
+      return entries.size;
+    }
+  };
+};
+
+const ensureStorage = (storage?: Storage) => {
+  if (storage && typeof storage.getItem === 'function' && typeof storage.setItem === 'function') {
+    return storage;
+  }
+  const memoryStorage = createMemoryStorage();
+  if (storage && typeof storage === 'object') {
+    try {
+      Object.assign(storage, memoryStorage);
+    } catch {}
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      Object.defineProperty(window, 'localStorage', { value: memoryStorage, configurable: true });
+    } catch {}
+  }
+  return memoryStorage;
+};
+
+const localStorageRef =
+  typeof window !== 'undefined' ? ensureStorage(window.localStorage) : ensureStorage(undefined);
+
+const savedSensitivity = loadSensitivity(localStorageRef);
 const lookSensitivity = savedSensitivity ?? getLookSensitivity();
-const savedInvertX = loadInvertX(window.localStorage);
-const savedInvertY = loadInvertY(window.localStorage);
+const savedInvertX = loadInvertX(localStorageRef);
+const savedInvertY = loadInvertY(localStorageRef);
 let invertLookX = savedInvertX ?? false;
 let invertLookY = savedInvertY ?? false;
-const savedMetricsVisible = loadMetricsVisibility(window.localStorage);
+const savedMetricsVisible = loadMetricsVisibility(localStorageRef);
 let metricsVisible = savedMetricsVisible;
-let currentBindings = loadBindings(window.localStorage);
-const savedAudioSettings = loadAudioSettings(window.localStorage);
+let currentBindings = loadBindings(localStorageRef);
+const savedAudioSettings = loadAudioSettings(localStorageRef);
+const savedFxSettings = loadFxSettings(localStorageRef);
+let fxSettings = savedFxSettings;
+let localLoadoutBits = loadLoadoutBits(localStorageRef);
 const audio = createAudioManager({ settings: savedAudioSettings });
 void audio.preload({
   impact: AUDIO_ASSETS.impact,
@@ -110,6 +162,7 @@ if (shouldValidateWeapons) {
   }
 }
 const { app, canvas } = startApp({ three, document, window, lookSensitivity, loadEnvironment: true });
+const baseFov = app.state.camera?.fov ?? 70;
 const debugAudio = (import.meta.env?.VITE_DEBUG_AUDIO ?? '') === 'true';
 if (debugAudio) {
   (window as unknown as { __afpsAudio?: unknown }).__afpsAudio = {
@@ -125,6 +178,7 @@ if (debugAudio) {
   };
 }
 const remoteAvatars = createRemoteAvatarManager({ three, scene: app.state.scene });
+remoteAvatars.setAimDebugEnabled(fxSettings.aimDebug);
 const casingPool = createCasingPool({
   three,
   scene: app.state.scene,
@@ -146,6 +200,8 @@ let remotePruneInterval: number | null = null;
 let localConnectionId: string | null = null;
 let localAvatarActive = false;
 let lastLocalAvatarSample: { x: number; y: number; z: number; time: number } | null = null;
+let gameEventQueue: GameEventQueue | null = null;
+let processQueuedEventBatch: ((batch: GameEventBatch) => void) | null = null;
 const debugLocalAvatar = (import.meta.env?.VITE_DEBUG_LOCAL_AVATAR ?? '') === 'true';
 const createLocalAvatarDebug = (doc: Document) => {
   const panel = doc.createElement('div');
@@ -284,16 +340,51 @@ const updateLocalAvatar = (nowMs: number) => {
 };
 app.setBeforeRender((deltaSeconds, nowMs) => {
   updateLocalAvatar(nowMs);
-  remoteAvatars.update(deltaSeconds);
-  casingPool.update(deltaSeconds);
+  const safeDelta = Math.max(0, deltaSeconds);
+  if (safeDelta > 0) {
+    const blend = 1 - Math.exp(-ADS_BLEND_SPEED * safeDelta);
+    adsBlend += (adsTarget - adsBlend) * blend;
+    adsBlend = Math.max(0, Math.min(1, adsBlend));
+    recoilRecovery = resolveRecoilRecovery(localLoadoutBits, adsBlend);
+    const decay = Math.exp(-recoilRecovery * safeDelta);
+    recoilPitch *= decay;
+    recoilYaw *= decay;
+    if (Math.abs(recoilPitch) < 1e-4) {
+      recoilPitch = 0;
+    }
+    if (Math.abs(recoilYaw) < 1e-4) {
+      recoilYaw = 0;
+    }
+  }
+  const baseAngles = app.getLookAngles();
+  const viewAngles = { yaw: baseAngles.yaw + recoilYaw, pitch: baseAngles.pitch + recoilPitch };
+  const cameraRef = app.state.camera;
+  if (cameraRef?.rotation) {
+    cameraRef.rotation.y = -viewAngles.yaw;
+    cameraRef.rotation.x = -viewAngles.pitch;
+  }
+  if (cameraRef && typeof cameraRef.fov === 'number') {
+    const targetFov = baseFov * (1 - adsBlend * (1 - resolveAdsFovMultiplier(localLoadoutBits)));
+    if (Math.abs(cameraRef.fov - targetFov) > 0.01) {
+      cameraRef.fov = targetFov;
+      cameraRef.updateProjectionMatrix();
+    }
+  }
+  if (gameEventQueue && processQueuedEventBatch) {
+    const due = gameEventQueue.drain(app.getRenderTick());
+    for (const batch of due) {
+      processQueuedEventBatch(batch);
+    }
+  }
+  remoteAvatars.update(safeDelta);
+  casingPool.update(safeDelta);
   const cameraPos = app.state.camera?.position;
   if (cameraPos) {
-    const angles = app.getLookAngles();
-    const cosPitch = Math.cos(angles.pitch);
+    const cosPitch = Math.cos(viewAngles.pitch);
     const forward = {
-      x: Math.sin(angles.yaw) * cosPitch,
-      y: Math.sin(angles.pitch),
-      z: -Math.cos(angles.yaw) * cosPitch
+      x: Math.sin(viewAngles.yaw) * cosPitch,
+      y: Math.sin(viewAngles.pitch),
+      z: -Math.cos(viewAngles.yaw) * cosPitch
     };
     audio.setListenerPosition({ x: cameraPos.x, y: cameraPos.y, z: cameraPos.z }, forward);
   }
@@ -354,9 +445,28 @@ const anglesToDirection = (angles: { yaw: number; pitch: number }) => {
     z: -Math.cos(angles.yaw) * cosPitch
   };
 };
+const resolveAdsFovMultiplier = (bits: number) =>
+  hasLoadoutBit(bits, LOADOUT_BITS.optic) ? ADS_OPTIC_FOV_MULTIPLIER : ADS_FOV_MULTIPLIER;
+const resolveRecoilRecovery = (bits: number, adsAmount: number) => {
+  let speed = RECOIL_RECOVERY_SPEED;
+  if (hasLoadoutBit(bits, LOADOUT_BITS.compensator)) {
+    speed *= 1.25;
+  }
+  if (hasLoadoutBit(bits, LOADOUT_BITS.grip)) {
+    speed *= 1.2;
+  }
+  speed *= 1 + Math.max(0, Math.min(1, adsAmount)) * 0.1;
+  return Math.max(RECOIL_RECOVERY_MIN, speed);
+};
 let currentWeaponSlot = 0;
 let sampler: ReturnType<typeof createInputSampler> | null = null;
 let lastFire = false;
+let adsTarget = 0;
+let adsBlend = 0;
+let recoilPitch = 0;
+let recoilYaw = 0;
+let recoilRecovery = 0;
+let sendLoadoutBits: ((bits: number) => void) | null = null;
 let footstepDistance = 0;
 let lastFootstepAt = 0;
 let lastFootstepPos: { x: number; y: number } | null = null;
@@ -367,28 +477,30 @@ const settings = createSettingsOverlay(document, {
   initialInvertLookX: invertLookX,
   initialInvertLookY: invertLookY,
   initialAudioSettings: savedAudioSettings,
+  initialFxSettings: fxSettings,
+  initialLoadoutBits: localLoadoutBits,
   onSensitivityChange: (value) => {
     app.setLookSensitivity(value);
     hudStore.dispatch({ type: 'sensitivity', value });
-    saveSensitivity(value, window.localStorage);
+    saveSensitivity(value, localStorageRef);
   },
   onInvertLookXChange: (value) => {
     invertLookX = value;
-    saveInvertX(value, window.localStorage);
+    saveInvertX(value, localStorageRef);
   },
   onInvertLookYChange: (value) => {
     invertLookY = value;
-    saveInvertY(value, window.localStorage);
+    saveInvertY(value, localStorageRef);
   },
   onBindingsChange: (bindings) => {
     currentBindings = bindings;
-    saveBindings(bindings, window.localStorage);
+    saveBindings(bindings, localStorageRef);
     sampler?.setBindings(bindings);
   },
   onShowMetricsChange: (visible) => {
     metricsVisible = visible;
     status.setMetricsVisible(visible);
-    saveMetricsVisibility(visible, window.localStorage);
+    saveMetricsVisibility(visible, localStorageRef);
   },
   onAudioSettingsChange: (next) => {
     audio.setMuted(next.muted);
@@ -396,7 +508,17 @@ const settings = createSettingsOverlay(document, {
     audio.setVolume('sfx', next.sfx);
     audio.setVolume('ui', next.ui);
     audio.setVolume('music', next.music);
-    saveAudioSettings(next, window.localStorage);
+    saveAudioSettings(next, localStorageRef);
+  },
+  onFxSettingsChange: (next) => {
+    fxSettings = next;
+    saveFxSettings(next, localStorageRef);
+    remoteAvatars.setAimDebugEnabled(next.aimDebug);
+  },
+  onLoadoutBitsChange: (nextBits) => {
+    localLoadoutBits = nextBits;
+    saveLoadoutBits(nextBits, localStorageRef);
+    sendLoadoutBits?.(nextBits);
   }
 });
 settings.setLookInversion(invertLookX, invertLookY);
@@ -500,7 +622,7 @@ if (!signalingUrl) {
   status.setState('disabled', 'Set VITE_SIGNALING_AUTH_TOKEN');
 } else {
   status.setState('idle', 'Awaiting pre-join');
-  const storedProfile = loadProfile(window.localStorage);
+  const storedProfile = loadProfile(localStorageRef);
   const playerProfiles = new Map<string, NetPlayerProfile>();
   const lastSnapshots = new Map<string, StateSnapshot>();
   const handlePlayerProfile = (profile: NetPlayerProfile) => {
@@ -515,6 +637,9 @@ if (!signalingUrl) {
     let lastRttMs = 0;
     let lastPredictionError = 0;
     let snapshotKeyframeInterval: number | null = null;
+    let lastEventSampleAt = 0;
+    let lastEventReceived = 0;
+    let lastEventRateText = '--';
 
     const updateMetrics = () => {
       const now = window.performance.now();
@@ -523,7 +648,39 @@ if (!signalingUrl) {
       const snapshotText = snapshotAge !== null ? `${Math.round(snapshotAge)}ms` : '--';
       const driftText = lastPredictionError > 0 ? lastPredictionError.toFixed(2) : '0.00';
       const keyframeText = snapshotKeyframeInterval !== null ? `${snapshotKeyframeInterval}` : '--';
-      status.setMetrics?.(`rtt ${rttText} · snap ${snapshotText} · drift ${driftText} · kf ${keyframeText}`);
+      let eventRateText = lastEventRateText;
+      let lateText = '--';
+      let dropText = '--';
+      const eventStats = gameEventQueue?.getStats();
+      if (eventStats) {
+        lateText = `${eventStats.lateEvents}`;
+        dropText = `${eventStats.droppedEvents}`;
+        if (lastEventSampleAt <= 0) {
+          lastEventSampleAt = now;
+          lastEventReceived = eventStats.receivedEvents;
+          lastEventRateText = '0/s';
+        } else {
+          const deltaMs = now - lastEventSampleAt;
+          if (deltaMs >= 200) {
+            const deltaEvents = eventStats.receivedEvents - lastEventReceived;
+            const ratePerSec = deltaMs > 0 ? deltaEvents / (deltaMs / 1000) : 0;
+            lastEventRateText = `${Math.max(0, Math.round(ratePerSec))}/s`;
+            lastEventSampleAt = now;
+            lastEventReceived = eventStats.receivedEvents;
+          }
+        }
+        eventRateText = lastEventRateText;
+      } else {
+        lastEventSampleAt = 0;
+        lastEventReceived = 0;
+        lastEventRateText = '--';
+        eventRateText = lastEventRateText;
+      }
+      const poolStats = app.getFxPoolStats();
+      const poolText = `pool m ${poolStats.muzzleFlashes.active}/${poolStats.muzzleFlashes.free} t ${poolStats.tracers.active}/${poolStats.tracers.free} i ${poolStats.impacts.active}/${poolStats.impacts.free} d ${poolStats.decals.active}/${poolStats.decals.free}`;
+      status.setMetrics?.(
+        `rtt ${rttText} · snap ${snapshotText} · drift ${driftText} · kf ${keyframeText} · ev ${eventRateText} · late ${lateText} · drop ${dropText} · ${poolText}`
+      );
     };
 
     const onSnapshot = (snapshot: StateSnapshot) => {
@@ -548,35 +705,53 @@ if (!signalingUrl) {
       hudStore.dispatch({ type: 'score', value: { kills: snapshot.kills, deaths: snapshot.deaths } });
     };
 
-    const onGameEvent = (event: GameEvent) => {
-      if (event.event === 'HitConfirmed') {
-        hudStore.dispatch({ type: 'hitmarker', killed: event.killed });
-        app.triggerOutlineFlash({ killed: event.killed });
-        audio.play('impact', { group: 'sfx', volume: 0.8 });
-        return;
-      }
-      if (event.event === 'ProjectileSpawn') {
-        const origin = swapYZ({ x: event.posX, y: event.posY, z: event.posZ });
-        const velocity = swapYZ({ x: event.velX, y: event.velY, z: event.velZ });
-        app.spawnProjectileVfx({
-          origin,
-          velocity,
-          ttl: event.ttl,
-          projectileId: event.projectileId
-        });
-        return;
-      }
-      if (event.event === 'ProjectileRemove') {
-        app.removeProjectileVfx(event.projectileId);
-      }
-    };
+    const HIT_DISTANCE_STEP_METERS = 0.01;
+    const PROJECTILE_POS_STEP_METERS = 0.01;
+    const PROJECTILE_VEL_STEP_METERS_PER_SECOND = 0.01;
+    const PROJECTILE_TTL_STEP_SECONDS = 0.01;
+    const PLAYER_EYE_HEIGHT = 1.6;
+    const MUZZLE_FORWARD_OFFSET = 0.2;
 
-    const resolveWeapon = (weaponId: string) => WEAPON_BY_ID[weaponId];
+    const resolveWeaponForSlot = (weaponSlot: number) => WEAPON_DEFS[resolveWeaponSlot(weaponSlot)] ?? null;
     const resolveFireSound = (weapon: typeof WEAPON_DEFS[number], shotSeq: number) => {
       if (weapon.sounds.fireVariant2) {
         return shotSeq % 2 === 0 ? weapon.sounds.fire : weapon.sounds.fireVariant2;
       }
       return weapon.sounds.fire;
+    };
+    const resolveRecoilKick = (
+      weapon: typeof WEAPON_DEFS[number],
+      loadoutBits: number,
+      adsAmount: number,
+      shotSeq: number
+    ) => {
+      const cooldown = Math.max(0.05, weapon.cooldownSeconds);
+      const rateFactor = Math.min(1.4, Math.max(0.6, 0.18 / cooldown));
+      let pitchKick = 0.007 + weapon.damage * 0.00045;
+      if (weapon.kind === 'projectile') {
+        pitchKick *= 1.5;
+      }
+      if (weapon.fireMode === 'SEMI') {
+        pitchKick *= 1.1;
+      }
+      pitchKick *= rateFactor;
+      pitchKick *= 1 - Math.max(0, Math.min(1, adsAmount)) * 0.25;
+      if (hasLoadoutBit(loadoutBits, LOADOUT_BITS.compensator)) {
+        pitchKick *= 0.75;
+      }
+      if (hasLoadoutBit(loadoutBits, LOADOUT_BITS.grip)) {
+        pitchKick *= 0.85;
+      }
+      if (hasLoadoutBit(loadoutBits, LOADOUT_BITS.suppressor)) {
+        pitchKick *= 0.95;
+      }
+      pitchKick = Math.min(pitchKick, 0.08);
+      let yawKick = pitchKick * 0.35;
+      if (hasLoadoutBit(loadoutBits, LOADOUT_BITS.grip)) {
+        yawKick *= 0.8;
+      }
+      const yawSign = shotSeq % 2 === 0 ? 1 : -1;
+      return { pitch: pitchKick, yaw: yawKick * yawSign };
     };
 
     const resolveSnapshotPosition = (clientId?: string | null) => {
@@ -590,55 +765,496 @@ if (!signalingUrl) {
       return swapYZ({ x: snapshot.posX, y: snapshot.posY, z: snapshot.posZ });
     };
 
-    const onWeaponFired = (event: WeaponFiredEvent) => {
-      const weapon = resolveWeapon(event.weaponId);
-      if (!weapon) {
+    const resolveLoadoutBits = (clientId: string) => {
+      if (localConnectionId && clientId === localConnectionId) {
+        return localLoadoutBits;
+      }
+      const snapshot = lastSnapshots.get(clientId);
+      return snapshot?.loadoutBits ?? 0;
+    };
+
+    const resolveWeaponHeat = (clientId: string) => {
+      const snapshot = lastSnapshots.get(clientId);
+      if (!snapshot) {
+        return 0;
+      }
+      return decodeUnitU16(snapshot.weaponHeatQ);
+    };
+
+    const resolveSnapshotAim = (clientId: string) => {
+      const snapshot = lastSnapshots.get(clientId);
+      if (!snapshot) {
+        return null;
+      }
+      const yaw = decodeYawQ(snapshot.viewYawQ);
+      const pitch = decodePitchQ(snapshot.viewPitchQ);
+      const dir = anglesToDirection({ yaw, pitch });
+      const origin = swapYZ({
+        x: snapshot.posX,
+        y: snapshot.posY,
+        z: snapshot.posZ + PLAYER_EYE_HEIGHT
+      });
+      const muzzle = {
+        x: origin.x + dir.x * MUZZLE_FORWARD_OFFSET,
+        y: origin.y + dir.y * MUZZLE_FORWARD_OFFSET,
+        z: origin.z + dir.z * MUZZLE_FORWARD_OFFSET
+      };
+      return { dir, origin, muzzle };
+    };
+
+    const hashString = (value: string) => {
+      let hash = 2166136261;
+      for (let i = 0; i < value.length; i += 1) {
+        hash ^= value.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+      }
+      return hash >>> 0;
+    };
+
+    const createRandom = (seed: number) => {
+      let state = seed >>> 0;
+      return () => {
+        state += 0x6d2b79f5;
+        let t = state;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    };
+
+    const cross = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) => ({
+      x: a.y * b.z - a.z * b.y,
+      y: a.z * b.x - a.x * b.z,
+      z: a.x * b.y - a.y * b.x
+    });
+
+    const dot = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) =>
+      a.x * b.x + a.y * b.y + a.z * b.z;
+
+    const normalize = (v: { x: number; y: number; z: number }) => {
+      const len = Math.hypot(v.x, v.y, v.z);
+      if (!Number.isFinite(len) || len <= 1e-8) {
+        return { x: 0, y: 0, z: -1 };
+      }
+      return { x: v.x / len, y: v.y / len, z: v.z / len };
+    };
+
+    const makeOrthonormalBasis = (forward: { x: number; y: number; z: number }) => {
+      const fwd = normalize(forward);
+      const up = { x: 0, y: 1, z: 0 };
+      let right = cross(up, fwd);
+      if (dot(right, right) < 1e-6) {
+        right = cross({ x: 0, y: 0, z: 1 }, fwd);
+      }
+      right = normalize(right);
+      const trueUp = normalize(cross(fwd, right));
+      return { forward: fwd, right, up: trueUp };
+    };
+
+    const resolveOriginServer = (clientId: string) => {
+      const snapshot = lastSnapshots.get(clientId);
+      if (snapshot) {
+        return { x: snapshot.posX, y: snapshot.posY, z: snapshot.posZ + PLAYER_EYE_HEIGHT };
+      }
+      if (localConnectionId && clientId === localConnectionId) {
+        const cameraPos = app.state.camera?.position;
+        if (cameraPos && Number.isFinite(cameraPos.x) && Number.isFinite(cameraPos.y) && Number.isFinite(cameraPos.z)) {
+          return swapYZ({ x: cameraPos.x, y: cameraPos.y, z: cameraPos.z });
+        }
+      }
+      return null;
+    };
+
+    const resolveMuzzlePos = (clientId: string, dirServer: { x: number; y: number; z: number }) => {
+      const originServer = resolveOriginServer(clientId);
+      if (!originServer) {
+        return null;
+      }
+      const muzzleServer = {
+        x: originServer.x + dirServer.x * MUZZLE_FORWARD_OFFSET,
+        y: originServer.y + dirServer.y * MUZZLE_FORWARD_OFFSET,
+        z: originServer.z + dirServer.z * MUZZLE_FORWARD_OFFSET
+      };
+      return swapYZ(muzzleServer);
+    };
+
+    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+    const sampleRange = (rand: () => number, min: [number, number, number], max: [number, number, number]) => ({
+      x: lerp(min[0], max[0], rand()),
+      y: lerp(min[1], max[1], rand()),
+      z: lerp(min[2], max[2], rand())
+    });
+
+    const transformLocalToWorld = (
+      basis: { right: { x: number; y: number; z: number }; up: { x: number; y: number; z: number }; forward: { x: number; y: number; z: number } },
+      local: { x: number; y: number; z: number }
+    ) => ({
+      x: basis.right.x * local.x + basis.up.x * local.y + basis.forward.x * local.z,
+      y: basis.right.y * local.x + basis.up.y * local.y + basis.forward.y * local.z,
+      z: basis.right.z * local.x + basis.up.z * local.y + basis.forward.z * local.z
+    });
+
+    const spawnCasingFromShot = (
+      weapon: typeof WEAPON_DEFS[number],
+      muzzlePos: { x: number; y: number; z: number },
+      dir: { x: number; y: number; z: number },
+      shooterId: string,
+      shotSeq: number
+    ) => {
+      if (!weapon.ejectShellsWhileFiring) {
         return;
       }
-      const muzzlePos = swapYZ({ x: event.muzzlePosX, y: event.muzzlePosY, z: event.muzzlePosZ });
-      const dir = swapYZ({ x: event.dirX, y: event.dirY, z: event.dirZ });
-      if (event.dryFire) {
-        audio.playPositional(weapon.sounds.dryFire, muzzlePos, { group: 'sfx', volume: 0.55 });
-      } else {
-        const fireKey = resolveFireSound(weapon, event.shotSeq);
-        audio.playPositional(fireKey, muzzlePos, { group: 'sfx', volume: 0.85 });
-        if (weapon.kind === 'hitscan') {
-          app.spawnTracerVfx({
-            origin: muzzlePos,
-            dir,
-            length: weapon.range
+      const seed = (hashString(shooterId) ^ (shotSeq >>> 0)) >>> 0;
+      const rand = createRandom(seed);
+      const basis = makeOrthonormalBasis(dir);
+      const localOffset = {
+        x: weapon.casingEject.localOffset[0],
+        y: weapon.casingEject.localOffset[1],
+        z: weapon.casingEject.localOffset[2]
+      };
+      const offsetWorld = transformLocalToWorld(basis, localOffset);
+      const velocityLocal = sampleRange(rand, weapon.casingEject.velocityMin, weapon.casingEject.velocityMax);
+      const velocityWorld = transformLocalToWorld(basis, velocityLocal);
+      const angularVelocity = sampleRange(
+        rand,
+        weapon.casingEject.angularVelocityMin,
+        weapon.casingEject.angularVelocityMax
+      );
+      const rotation = {
+        x: weapon.casingEject.localRotation[0],
+        y: weapon.casingEject.localRotation[1],
+        z: weapon.casingEject.localRotation[2]
+      };
+      casingPool.spawn({
+        position: {
+          x: muzzlePos.x + offsetWorld.x,
+          y: muzzlePos.y + offsetWorld.y,
+          z: muzzlePos.z + offsetWorld.z
+        },
+        rotation,
+        velocity: velocityWorld,
+        angularVelocity,
+        lifetimeSeconds: weapon.casingEject.lifetimeSeconds,
+        seed
+      });
+    };
+
+    const processGameEventBatch = (batch: GameEventBatch) => {
+      const traceByShot = new Map<
+        string,
+        {
+          dirServer: { x: number; y: number; z: number };
+          dir: { x: number; y: number; z: number };
+          normal: { x: number; y: number; z: number };
+          hitDistance: number;
+          hitKind: number;
+          surfaceType: number;
+          showTracer: boolean;
+          muzzlePos: { x: number; y: number; z: number } | null;
+        }
+      >();
+      const projectileMuzzleByShot = new Map<
+        string,
+        {
+          muzzlePos: { x: number; y: number; z: number };
+          dir: { x: number; y: number; z: number };
+        }
+      >();
+
+      for (const event of batch.events) {
+        if (event.type === 'ShotTraceFx') {
+          const dirServer = decodeOct16(event.dirOctX, event.dirOctY);
+          const normalServer = decodeOct16(event.normalOctX, event.normalOctY);
+          const muzzlePos = resolveMuzzlePos(event.shooterId, dirServer);
+          traceByShot.set(`${event.shooterId}:${event.shotSeq}`, {
+            dirServer,
+            dir: swapYZ(dirServer),
+            normal: swapYZ(normalServer),
+            hitDistance: dequantizeU16(event.hitDistQ, HIT_DISTANCE_STEP_METERS),
+            hitKind: event.hitKind,
+            surfaceType: event.surfaceType,
+            showTracer: event.showTracer,
+            muzzlePos
+          });
+        } else if (event.type === 'ProjectileSpawnFx') {
+          const originServer = {
+            x: dequantizeI16(event.posXQ, PROJECTILE_POS_STEP_METERS),
+            y: dequantizeI16(event.posYQ, PROJECTILE_POS_STEP_METERS),
+            z: dequantizeI16(event.posZQ, PROJECTILE_POS_STEP_METERS)
+          };
+          const velocityServer = {
+            x: dequantizeI16(event.velXQ, PROJECTILE_VEL_STEP_METERS_PER_SECOND),
+            y: dequantizeI16(event.velYQ, PROJECTILE_VEL_STEP_METERS_PER_SECOND),
+            z: dequantizeI16(event.velZQ, PROJECTILE_VEL_STEP_METERS_PER_SECOND)
+          };
+          const velocity = swapYZ(velocityServer);
+          projectileMuzzleByShot.set(`${event.shooterId}:${event.shotSeq}`, {
+            muzzlePos: swapYZ(originServer),
+            dir: normalize(velocity)
           });
         }
       }
-      if (event.casingEnabled) {
-        const rotation = swapYZ({ x: event.casingRotX, y: event.casingRotY, z: event.casingRotZ });
-        const velocity = swapYZ({ x: event.casingVelX, y: event.casingVelY, z: event.casingVelZ });
-        const angularVelocity = swapYZ({ x: event.casingAngX, y: event.casingAngY, z: event.casingAngZ });
-        casingPool.spawn({
-          position: swapYZ({ x: event.casingPosX, y: event.casingPosY, z: event.casingPosZ }),
-          rotation,
-          velocity,
-          angularVelocity,
-          lifetimeSeconds: weapon.casingEject.lifetimeSeconds,
-          seed: event.casingSeed
-        });
-      }
-      if (localConnectionId && event.shooterId === localConnectionId) {
-        app.recordWeaponFired(event.weaponSlot, weapon.cooldownSeconds);
-        hudStore.dispatch({ type: 'weaponCooldown', value: app.getWeaponCooldown(currentWeaponSlot) });
+
+      const advance = (
+        origin: { x: number; y: number; z: number },
+        dir: { x: number; y: number; z: number },
+        distance: number
+      ) => ({
+        x: origin.x + dir.x * distance,
+        y: origin.y + dir.y * distance,
+        z: origin.z + dir.z * distance
+      });
+
+      for (const event of batch.events) {
+        switch (event.type) {
+          case 'HitConfirmedFx': {
+            hudStore.dispatch({ type: 'hitmarker', killed: event.killed });
+            app.triggerOutlineFlash({ killed: event.killed });
+            audio.play('impact', { group: 'sfx', volume: 0.8 });
+            break;
+          }
+          case 'ProjectileSpawnFx': {
+            const originServer = {
+              x: dequantizeI16(event.posXQ, PROJECTILE_POS_STEP_METERS),
+              y: dequantizeI16(event.posYQ, PROJECTILE_POS_STEP_METERS),
+              z: dequantizeI16(event.posZQ, PROJECTILE_POS_STEP_METERS)
+            };
+            const velocityServer = {
+              x: dequantizeI16(event.velXQ, PROJECTILE_VEL_STEP_METERS_PER_SECOND),
+              y: dequantizeI16(event.velYQ, PROJECTILE_VEL_STEP_METERS_PER_SECOND),
+              z: dequantizeI16(event.velZQ, PROJECTILE_VEL_STEP_METERS_PER_SECOND)
+            };
+            app.spawnProjectileVfx({
+              origin: swapYZ(originServer),
+              velocity: swapYZ(velocityServer),
+              ttl: dequantizeU16(event.ttlQ, PROJECTILE_TTL_STEP_SECONDS),
+              projectileId: event.projectileId
+            });
+            break;
+          }
+          case 'ProjectileImpactFx': {
+            const impactPosServer = {
+              x: dequantizeI16(event.posXQ, PROJECTILE_POS_STEP_METERS),
+              y: dequantizeI16(event.posYQ, PROJECTILE_POS_STEP_METERS),
+              z: dequantizeI16(event.posZQ, PROJECTILE_POS_STEP_METERS)
+            };
+            const impactPos = swapYZ(impactPosServer);
+            const normal = swapYZ(decodeOct16(event.normalOctX, event.normalOctY));
+            audio.playPositional('impact', impactPos, { group: 'sfx', volume: 0.5 });
+            app.spawnImpactVfx({
+              position: impactPos,
+              normal,
+              surfaceType: event.surfaceType,
+              seed: event.projectileId >>> 0,
+              size: 0.5,
+              ttl: 0.16
+            });
+            if (fxSettings.decals && event.hitWorld) {
+              app.spawnDecalVfx({
+                position: impactPos,
+                normal,
+                surfaceType: event.surfaceType,
+                seed: event.projectileId >>> 0
+              });
+            }
+            app.removeProjectileVfx(event.projectileId);
+            break;
+          }
+          case 'ProjectileRemoveFx': {
+            app.removeProjectileVfx(event.projectileId);
+            break;
+          }
+          case 'ReloadFx': {
+            const weapon = resolveWeaponForSlot(event.weaponSlot);
+            if (!weapon) {
+              break;
+            }
+            const position = resolveSnapshotPosition(event.shooterId);
+            if (position) {
+              audio.playPositional(weapon.sounds.reload, position, { group: 'sfx', volume: 0.65 });
+            } else {
+              audio.play(weapon.sounds.reload, { group: 'sfx', volume: 0.65 });
+            }
+            break;
+          }
+          case 'NearMissFx': {
+            const strength = Number.isFinite(event.strength) ? Math.max(0, Math.min(255, Math.floor(event.strength))) : 0;
+            const volume = 0.15 + 0.25 * (strength / 255);
+            audio.play(event.shotSeq % 2 === 0 ? 'fx:whiz:1' : 'fx:whiz:2', { group: 'sfx', volume });
+            break;
+          }
+          case 'OverheatFx': {
+            if (!resolveWeaponForSlot(event.weaponSlot)) {
+              break;
+            }
+            const aim = resolveSnapshotAim(event.shooterId);
+            const muzzlePos = aim?.muzzle ?? resolveSnapshotPosition(event.shooterId);
+            const dir = aim?.dir ?? { x: 0, y: 0, z: -1 };
+            if (muzzlePos) {
+              audio.playPositional('fx:overheat', muzzlePos, { group: 'sfx', volume: 0.65 });
+              if (fxSettings.muzzleFlash) {
+                app.spawnImpactVfx({
+                  position: muzzlePos,
+                  normal: dir,
+                  surfaceType: 3,
+                  seed: (hashString(event.shooterId) ^ (event.weaponSlot >>> 0)) >>> 0,
+                  size: 0.7,
+                  ttl: 0.22
+                });
+              }
+            } else {
+              audio.play('fx:overheat', { group: 'sfx', volume: 0.65 });
+            }
+            break;
+          }
+          case 'VentFx': {
+            if (!resolveWeaponForSlot(event.weaponSlot)) {
+              break;
+            }
+            const aim = resolveSnapshotAim(event.shooterId);
+            const muzzlePos = aim?.muzzle ?? resolveSnapshotPosition(event.shooterId);
+            const dir = aim?.dir ?? { x: 0, y: 0, z: -1 };
+            if (muzzlePos) {
+              audio.playPositional('fx:vent', muzzlePos, { group: 'sfx', volume: 0.6 });
+              app.spawnImpactVfx({
+                position: muzzlePos,
+                normal: dir,
+                surfaceType: 3,
+                seed: (hashString(event.shooterId) ^ (event.weaponSlot >>> 0) ^ 0x9e3779b9) >>> 0,
+                size: 0.6,
+                ttl: 0.2
+              });
+            } else {
+              audio.play('fx:vent', { group: 'sfx', volume: 0.6 });
+            }
+            break;
+          }
+          case 'ShotFiredFx': {
+            const weapon = resolveWeaponForSlot(event.weaponSlot);
+            if (!weapon) {
+              break;
+            }
+            const shooterLoadout = resolveLoadoutBits(event.shooterId);
+            const hasSuppressor = hasLoadoutBit(shooterLoadout, LOADOUT_BITS.suppressor);
+            const hasCompensator = hasLoadoutBit(shooterLoadout, LOADOUT_BITS.compensator);
+            const hasOptic = hasLoadoutBit(shooterLoadout, LOADOUT_BITS.optic);
+            const isEnergy = weapon.id.startsWith('ENERGY') || weapon.sfxProfile.startsWith('ENERGY');
+            const heatAmount = isEnergy ? resolveWeaponHeat(event.shooterId) : 0;
+            const traceKey = `${event.shooterId}:${event.shotSeq}`;
+            const trace = traceByShot.get(traceKey) ?? null;
+            const projectileMuzzle = projectileMuzzleByShot.get(traceKey) ?? null;
+            const snapshotAim = resolveSnapshotAim(event.shooterId);
+            const dir = trace?.dir ?? projectileMuzzle?.dir ?? snapshotAim?.dir ?? null;
+            const muzzlePos =
+              trace?.muzzlePos ??
+              projectileMuzzle?.muzzlePos ??
+              (snapshotAim?.origin && dir ? advance(snapshotAim.origin, dir, MUZZLE_FORWARD_OFFSET) : snapshotAim?.muzzle) ??
+              resolveSnapshotPosition(event.shooterId);
+            if (event.dryFire) {
+              if (muzzlePos) {
+                audio.playPositional(weapon.sounds.dryFire, muzzlePos, { group: 'sfx', volume: 0.55 });
+              } else {
+                audio.play(weapon.sounds.dryFire, { group: 'sfx', volume: 0.55 });
+              }
+            } else {
+              const fireKey = resolveFireSound(weapon, event.shotSeq);
+              const baseVolume = hasSuppressor ? 0.6 : hasCompensator ? 0.95 : 0.85;
+              const playbackRate = isEnergy ? 0.95 + heatAmount * 0.25 : 1;
+              if (muzzlePos) {
+                audio.playPositional(fireKey, muzzlePos, {
+                  group: 'sfx',
+                  volume: baseVolume,
+                  playbackRate
+                });
+              } else {
+                audio.play(fireKey, { group: 'sfx', volume: baseVolume, playbackRate });
+              }
+              if (fxSettings.muzzleFlash && muzzlePos && dir) {
+                const seed = (hashString(event.shooterId) ^ (event.shotSeq >>> 0)) >>> 0;
+                let size = weapon.kind === 'projectile' ? 0.42 : 0.34;
+                if (hasSuppressor) {
+                  size *= 0.6;
+                }
+                if (hasCompensator) {
+                  size *= 1.15;
+                }
+                if (hasOptic) {
+                  size *= 0.95;
+                }
+                app.spawnMuzzleFlashVfx({ position: muzzlePos, dir, seed, size });
+              }
+              if (weapon.kind === 'hitscan' && trace && trace.showTracer && muzzlePos && fxSettings.tracers) {
+                const hitDistance = trace.hitDistance > 0 ? trace.hitDistance : weapon.range;
+                let length = Math.max(0, hitDistance - MUZZLE_FORWARD_OFFSET);
+                if (hasSuppressor) {
+                  length *= 0.7;
+                } else if (hasCompensator) {
+                  length *= 1.1;
+                }
+                app.spawnTracerVfx({
+                  origin: muzzlePos,
+                  dir: trace.dir,
+                  length
+                });
+              }
+              if (dir && muzzlePos) {
+                spawnCasingFromShot(weapon, muzzlePos, dir, event.shooterId, event.shotSeq);
+              }
+              remoteAvatars.pulseWeaponRecoil(event.shooterId, event.shotSeq, shooterLoadout);
+            }
+            if (localConnectionId && event.shooterId === localConnectionId) {
+              app.recordWeaponFired(event.weaponSlot, weapon.cooldownSeconds);
+              hudStore.dispatch({ type: 'weaponCooldown', value: app.getWeaponCooldown(currentWeaponSlot) });
+            }
+            break;
+          }
+          case 'ShotTraceFx': {
+            const traceKey = `${event.shooterId}:${event.shotSeq}`;
+            const trace = traceByShot.get(traceKey);
+            if (!trace || !trace.muzzlePos) {
+              break;
+            }
+            if (trace.hitKind === 0) {
+              break;
+            }
+            const hitDistance = trace.hitDistance > 0 ? trace.hitDistance : resolveWeaponForSlot(event.weaponSlot)?.range ?? 0;
+            const length = Math.max(0, hitDistance - MUZZLE_FORWARD_OFFSET);
+            const hitPos = advance(trace.muzzlePos, trace.dir, length);
+            const seed = (hashString(event.shooterId) ^ (event.shotSeq >>> 0)) >>> 0;
+            app.spawnImpactVfx({
+              position: hitPos,
+              normal: trace.normal,
+              surfaceType: trace.surfaceType,
+              seed
+            });
+            if (fxSettings.decals && trace.hitKind === 1) {
+              app.spawnDecalVfx({
+                position: hitPos,
+                normal: trace.normal,
+                surfaceType: trace.surfaceType,
+                seed
+              });
+            }
+            break;
+          }
+          default: {
+            const exhaustiveCheck: never = event;
+            void exhaustiveCheck;
+          }
+        }
       }
     };
 
-    const onWeaponReload = (event: WeaponReloadEvent) => {
-      const weapon = resolveWeapon(event.weaponId);
-      if (!weapon) {
-        return;
-      }
-      const position = resolveSnapshotPosition(event.shooterId);
-      if (position) {
-        audio.playPositional(weapon.sounds.reload, position, { group: 'sfx', volume: 0.65 });
-      } else {
-        audio.play(weapon.sounds.reload, { group: 'sfx', volume: 0.65 });
+    const queue = new GameEventQueue();
+    gameEventQueue = queue;
+    processQueuedEventBatch = processGameEventBatch;
+
+    const onGameEvent = (batch: GameEventBatch) => {
+      const now = window.performance.now();
+      const immediate = queue.push(batch, now, app.getRenderTick());
+      for (const dueBatch of immediate) {
+        processGameEventBatch(dueBatch);
       }
     };
 
@@ -669,8 +1285,6 @@ if (!signalingUrl) {
       onSnapshot,
       onPong,
       onGameEvent,
-      onWeaponFired,
-      onWeaponReload,
       onPlayerProfile: handlePlayerProfile
     })
       .then((session) => {
@@ -696,10 +1310,20 @@ if (!signalingUrl) {
         status.setState('connected', `conn ${session.connectionId}${keyframeDetail}`);
         app.setSnapshotRate(session.serverHello.snapshotRate);
         app.setTickRate(session.serverHello.serverTickRate);
+        queue.setTickRate(session.serverHello.serverTickRate);
         snapshotKeyframeInterval = session.serverHello.snapshotKeyframeInterval ?? null;
         updateMetrics();
         hudStore.dispatch({ type: 'weaponCooldown', value: app.getWeaponCooldown(currentWeaponSlot) });
         hudStore.dispatch({ type: 'abilityCooldowns', value: app.getAbilityCooldowns() });
+
+        sendLoadoutBits = (bits: number) => {
+          const channel = session.reliableChannel;
+          if (!channel || channel.readyState !== 'open') {
+            return;
+          }
+          channel.send(encodeSetLoadoutRequest(bits, session.nextClientMessageSeq(), session.getServerSeqAck()));
+        };
+        sendLoadoutBits(localLoadoutBits);
 
         sampler = createInputSampler({ target: window, bindings: currentBindings, weaponSlots: WEAPON_DEFS.length });
         const lastFireTimes = new Map<number, number>();
@@ -714,10 +1338,14 @@ if (!signalingUrl) {
           onSend: (cmd) => {
             const lookX = invertLookX ? -cmd.lookDeltaX : cmd.lookDeltaX;
             const lookY = invertLookY ? -cmd.lookDeltaY : cmd.lookDeltaY;
-            cmd.lookDeltaX = lookX;
-            cmd.lookDeltaY = lookY;
+            adsTarget = cmd.ads ? 1 : 0;
+            const adsSensitivity = 1 - adsBlend * (1 - ADS_SENSITIVITY_MULTIPLIER);
+            const scaledLookX = lookX * adsSensitivity;
+            const scaledLookY = lookY * adsSensitivity;
+            cmd.lookDeltaX = scaledLookX;
+            cmd.lookDeltaY = scaledLookY;
             if (shouldApplyLook()) {
-              app.applyLookDelta(lookX, lookY);
+              app.applyLookDelta(scaledLookX, scaledLookY);
             }
             const angles = app.getLookAngles();
             cmd.viewYaw = angles.yaw;
@@ -778,6 +1406,9 @@ if (!signalingUrl) {
                       session.getServerSeqAck()
                     )
                   );
+                  const kick = resolveRecoilKick(weapon, localLoadoutBits, adsBlend, clientShotSeq);
+                  recoilPitch = Math.min(recoilPitch + kick.pitch, 0.6);
+                  recoilYaw = Math.max(-0.6, Math.min(0.6, recoilYaw + kick.yaw));
                 }
               }
             }
@@ -804,12 +1435,18 @@ if (!signalingUrl) {
           sampler?.dispose();
           sampler = null;
           localAvatarDebug?.dispose();
+          queue.clear();
+          if (gameEventQueue === queue) {
+            gameEventQueue = null;
+            processQueuedEventBatch = null;
+          }
           window.clearInterval(pingInterval);
           window.clearInterval(metricsInterval);
           if (remotePruneInterval !== null) {
             window.clearInterval(remotePruneInterval);
             remotePruneInterval = null;
           }
+          sendLoadoutBits = null;
           remoteAvatars.dispose();
           casingPool.dispose();
           window.removeEventListener('beforeunload', cleanup);
@@ -834,7 +1471,7 @@ if (!signalingUrl) {
     const prejoin = createPrejoinOverlay(document, {
       catalog,
       initialProfile: storedProfile ?? undefined,
-      onSubmit: (profile) => saveProfile(window.localStorage, profile)
+      onSubmit: (profile) => saveProfile(localStorageRef, profile)
     });
     const profile = await prejoin.waitForSubmit();
     // Free the WebGL context used for the 3D preview so the main renderer stays stable.

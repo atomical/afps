@@ -11,8 +11,14 @@ import {
   SNAPSHOT_MASK_HEALTH,
   SNAPSHOT_MASK_KILLS,
   SNAPSHOT_MASK_DEATHS,
+  SNAPSHOT_MASK_VIEW_YAW_Q,
+  SNAPSHOT_MASK_VIEW_PITCH_Q,
+  SNAPSHOT_MASK_PLAYER_FLAGS,
+  SNAPSHOT_MASK_WEAPON_HEAT_Q,
+  SNAPSHOT_MASK_LOADOUT_BITS,
   type SnapshotMessage,
-  type StateSnapshot
+  type StateSnapshot,
+  type StateSnapshotDelta
 } from './protocol';
 
 export class SnapshotDecoder {
@@ -23,6 +29,8 @@ export class SnapshotDecoder {
     this.baseByClient.clear();
   }
 
+  apply(message: StateSnapshot): StateSnapshot;
+  apply(message: StateSnapshotDelta): StateSnapshot | null;
   apply(message: SnapshotMessage): StateSnapshot | null {
     if (message.type === 'StateSnapshot') {
       const key = message.clientId ?? this.defaultKey;
@@ -32,11 +40,9 @@ export class SnapshotDecoder {
     let key = message.clientId ?? this.defaultKey;
     let base = this.baseByClient.get(key);
     if (!base && !message.clientId && this.baseByClient.size === 1) {
-      const first = this.baseByClient.entries().next();
-      if (!first.done) {
-        key = first.value[0];
-        base = first.value[1];
-      }
+      const [onlyKey, onlyBase] = this.baseByClient.entries().next().value as [string, StateSnapshot];
+      key = onlyKey;
+      base = onlyBase;
     }
     if (!base) {
       return null;
@@ -64,6 +70,16 @@ export class SnapshotDecoder {
       health: mask & SNAPSHOT_MASK_HEALTH ? (message.health ?? base.health) : base.health,
       kills: mask & SNAPSHOT_MASK_KILLS ? (message.kills ?? base.kills) : base.kills,
       deaths: mask & SNAPSHOT_MASK_DEATHS ? (message.deaths ?? base.deaths) : base.deaths,
+      viewYawQ:
+        mask & SNAPSHOT_MASK_VIEW_YAW_Q ? (message.viewYawQ ?? base.viewYawQ) : base.viewYawQ,
+      viewPitchQ:
+        mask & SNAPSHOT_MASK_VIEW_PITCH_Q ? (message.viewPitchQ ?? base.viewPitchQ) : base.viewPitchQ,
+      playerFlags:
+        mask & SNAPSHOT_MASK_PLAYER_FLAGS ? (message.playerFlags ?? base.playerFlags) : base.playerFlags,
+      weaponHeatQ:
+        mask & SNAPSHOT_MASK_WEAPON_HEAT_Q ? (message.weaponHeatQ ?? base.weaponHeatQ) : base.weaponHeatQ,
+      loadoutBits:
+        mask & SNAPSHOT_MASK_LOADOUT_BITS ? (message.loadoutBits ?? base.loadoutBits) : base.loadoutBits,
       clientId: message.clientId ?? base.clientId
     };
   }

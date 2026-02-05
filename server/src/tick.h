@@ -47,6 +47,8 @@ private:
     int ammo_in_mag = 0;
     double cooldown = 0.0;
     double reload_timer = 0.0;
+    double heat = 0.0;
+    double overheat_timer = 0.0;
   };
 
   struct PlayerWeaponState {
@@ -68,6 +70,7 @@ private:
   std::unordered_map<std::string, StateSnapshot> last_full_snapshots_;
   std::unordered_map<std::string, int> snapshot_sequence_;
   std::unordered_map<std::string, PlayerWeaponState> weapon_states_;
+  std::unordered_map<std::string, uint32_t> loadout_bits_;
   std::unordered_map<std::string, afps::combat::PoseHistory> pose_histories_;
   std::unordered_map<std::string, afps::combat::CombatState> combat_states_;
   std::vector<afps::combat::ProjectileState> projectiles_;

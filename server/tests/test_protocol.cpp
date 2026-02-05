@@ -127,20 +127,24 @@ TEST_CASE("BuildPong echoes client time") {
   CHECK(parsed->client_time_ms() == doctest::Approx(55.25));
 }
 
-TEST_CASE("BuildGameEvent emits projectile spawn fields") {
-  GameEvent event;
-  event.event = "ProjectileSpawn";
-  event.owner_id = "owner-1";
-  event.projectile_id = 9;
-  event.pos_x = 1.0;
-  event.pos_y = 2.0;
-  event.pos_z = 3.0;
-  event.vel_x = 4.0;
-  event.vel_y = 5.0;
-  event.vel_z = 6.0;
-  event.ttl = 0.5;
+TEST_CASE("BuildGameEventBatch emits projectile spawn fields") {
+  GameEventBatch batch;
+  batch.server_tick = 77;
+  ProjectileSpawnFx spawn;
+  spawn.shooter_id = "owner-1";
+  spawn.weapon_slot = 1;
+  spawn.shot_seq = 7;
+  spawn.projectile_id = 9;
+  spawn.pos_x_q = 101;
+  spawn.pos_y_q = -202;
+  spawn.pos_z_q = 303;
+  spawn.vel_x_q = 404;
+  spawn.vel_y_q = -505;
+  spawn.vel_z_q = 606;
+  spawn.ttl_q = 707;
+  batch.events.push_back(spawn);
 
-  const auto payload = BuildGameEvent(event, 3, 1);
+  const auto payload = BuildGameEventBatch(batch, 3, 1);
   DecodedEnvelope envelope;
   std::string error;
   REQUIRE(DecodeEnvelope(payload, envelope, error));
@@ -149,16 +153,25 @@ TEST_CASE("BuildGameEvent emits projectile spawn fields") {
   flatbuffers::Verifier verifier(envelope.payload.data(), envelope.payload.size());
   const auto *parsed = flatbuffers::GetRoot<afps::protocol::GameEvent>(envelope.payload.data());
   CHECK(parsed->Verify(verifier));
-  CHECK(parsed->event_type() == afps::protocol::GameEventType::ProjectileSpawn);
-  CHECK(parsed->owner_id()->str() == "owner-1");
-  CHECK(parsed->projectile_id() == 9);
-  CHECK(parsed->pos_x() == doctest::Approx(1.0));
-  CHECK(parsed->pos_y() == doctest::Approx(2.0));
-  CHECK(parsed->pos_z() == doctest::Approx(3.0));
-  CHECK(parsed->vel_x() == doctest::Approx(4.0));
-  CHECK(parsed->vel_y() == doctest::Approx(5.0));
-  CHECK(parsed->vel_z() == doctest::Approx(6.0));
-  CHECK(parsed->ttl() == doctest::Approx(0.5));
+  CHECK(parsed->server_tick() == 77);
+  REQUIRE(parsed->events_type());
+  REQUIRE(parsed->events());
+  REQUIRE(parsed->events_type()->size() == 1);
+  REQUIRE(parsed->events()->size() == 1);
+  CHECK(parsed->events_type()->Get(0) == afps::protocol::FxEvent::ProjectileSpawnFx);
+  const auto *payload_spawn = parsed->events()->GetAs<afps::protocol::ProjectileSpawnFx>(0);
+  REQUIRE(payload_spawn);
+  CHECK(payload_spawn->shooter_id()->str() == "owner-1");
+  CHECK(payload_spawn->weapon_slot() == 1);
+  CHECK(payload_spawn->shot_seq() == 7);
+  CHECK(payload_spawn->projectile_id() == 9);
+  CHECK(payload_spawn->pos_x_q() == 101);
+  CHECK(payload_spawn->pos_y_q() == -202);
+  CHECK(payload_spawn->pos_z_q() == 303);
+  CHECK(payload_spawn->vel_x_q() == 404);
+  CHECK(payload_spawn->vel_y_q() == -505);
+  CHECK(payload_spawn->vel_z_q() == 606);
+  CHECK(payload_spawn->ttl_q() == 707);
 }
 
 TEST_CASE("BuildStateSnapshot emits expected fields") {
@@ -178,6 +191,11 @@ TEST_CASE("BuildStateSnapshot emits expected fields") {
   snapshot.health = 75.0;
   snapshot.kills = 2;
   snapshot.deaths = 1;
+  snapshot.view_yaw_q = 1234;
+  snapshot.view_pitch_q = -2345;
+  snapshot.player_flags = 0x2;
+  snapshot.weapon_heat_q = 3456;
+  snapshot.loadout_bits = 0xDEADBEEFu;
 
   const auto payload = BuildStateSnapshot(snapshot, 5, 2);
   DecodedEnvelope envelope;
@@ -202,6 +220,11 @@ TEST_CASE("BuildStateSnapshot emits expected fields") {
   CHECK(parsed->health() == doctest::Approx(75.0));
   CHECK(parsed->kills() == 2);
   CHECK(parsed->deaths() == 1);
+  CHECK(parsed->view_yaw_q() == 1234);
+  CHECK(parsed->view_pitch_q() == -2345);
+  CHECK(parsed->player_flags() == 0x2);
+  CHECK(parsed->weapon_heat_q() == 3456);
+  CHECK(parsed->loadout_bits() == 0xDEADBEEFu);
 }
 
 TEST_CASE("BuildStateSnapshotDelta emits expected fields") {

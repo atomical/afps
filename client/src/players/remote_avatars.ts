@@ -2,7 +2,9 @@ import type { NetworkSnapshot, Object3DLike, SceneLike, ThreeLike, DataTextureLi
 import type { CharacterCatalog, WeaponOffset } from '../characters/catalog';
 import { resolveCharacterEntry } from '../characters/catalog';
 import { WEAPON_DEFS } from '../weapons/config';
+import { LOADOUT_BITS, hasLoadoutBit } from '../weapons/loadout';
 import type { PlayerProfile } from '../net/protocol';
+import { decodePitchQ, decodeYawQ } from '../net/quantization';
 
 type AnimationActionLike = {
   play: () => void;
@@ -38,6 +40,18 @@ type RemoteAvatar = {
   velocity?: { x: number; y: number; z: number };
   height?: number;
   lastJumpMs?: number;
+  viewYaw?: number;
+  viewPitch?: number;
+  playerFlags?: number;
+  loadoutBits?: number;
+  adsBlend?: number;
+  sprintBlend?: number;
+  reloadBlend?: number;
+  overheatBlend?: number;
+  aimPitch?: number;
+  recoilPitch?: number;
+  recoilYaw?: number;
+  aimDebug?: Object3DLike;
   mixer?: AnimationMixerLike;
   idleAction?: AnimationActionLike;
   runAction?: AnimationActionLike;
@@ -60,6 +74,8 @@ export interface RemoteAvatarManager {
   setLocalClientId: (clientId: string | null) => void;
   setProfile: (profile: PlayerProfile) => void;
   setCatalog: (catalog: CharacterCatalog) => void;
+  pulseWeaponRecoil: (clientId: string, shotSeq: number, loadoutBits?: number) => void;
+  setAimDebugEnabled: (enabled: boolean) => void;
   update: (deltaSeconds: number) => void;
   prune: (nowMs?: number) => void;
   listAvatars: () => Array<{
@@ -86,6 +102,35 @@ const NAMEPLATE_WIDTH = 256;
 const NAMEPLATE_HEIGHT = 64;
 const NAMEPLATE_SCALE = { x: 1.6, y: 0.4 };
 const NAMEPLATE_OFFSET_Y = BODY_HEIGHT + 0.45;
+const PLAYER_FLAG_ADS = 1 << 0;
+const PLAYER_FLAG_SPRINT = 1 << 1;
+const PLAYER_FLAG_RELOAD = 1 << 2;
+const PLAYER_FLAG_OVERHEAT = 1 << 4;
+const ADS_BLEND_SPEED = 12;
+const SPRINT_BLEND_SPEED = 10;
+const RELOAD_BLEND_SPEED = 8;
+const OVERHEAT_BLEND_SPEED = 7;
+const AIM_PITCH_BLEND_SPEED = 16;
+const RECOIL_DECAY_SPEED = 18;
+const THIRD_PERSON_RECOIL_SCALE = 0.6;
+const RECOIL_POSITION_BACK = 0.06;
+const RECOIL_POSITION_UP = 0.02;
+const ADS_POSE = {
+  position: { x: 0.0, y: 0.03, z: -0.05 },
+  rotation: { x: -0.08, y: 0.0, z: 0.0 }
+};
+const SPRINT_POSE = {
+  position: { x: 0.06, y: -0.08, z: 0.1 },
+  rotation: { x: 0.55, y: 0.15, z: 0.15 }
+};
+const RELOAD_POSE = {
+  position: { x: -0.05, y: -0.02, z: 0.08 },
+  rotation: { x: 0.25, y: -0.45, z: 0.25 }
+};
+const OVERHEAT_POSE = {
+  position: { x: -0.04, y: -0.04, z: 0.06 },
+  rotation: { x: 0.4, y: -0.25, z: 0.2 }
+};
 const HAND_DEFAULT_OFFSET: WeaponOffset = {
   position: [0.08, 0.02, 0],
   rotation: [0, Math.PI / 2, 0],
@@ -165,8 +210,16 @@ const WEAPON_MODELS_BY_ID: Record<string, { file: string; scale: number }> = {
   }
 };
 
+const resolveWeaponSlot = (slot: number) => {
+  const maxSlot = Math.max(0, WEAPON_DEFS.length - 1);
+  if (!Number.isFinite(slot)) {
+    return 0;
+  }
+  return Math.min(maxSlot, Math.max(0, Math.floor(slot)));
+};
+
 const weaponScaleForSlot = (slot: number) => {
-  if (slot === 1) {
+  if (resolveWeaponSlot(slot) === 1) {
     return { length: 0.9, thickness: 0.12 };
   }
   return { length: 0.7, thickness: 0.1 };
@@ -186,6 +239,8 @@ export const createRemoteAvatarManager = ({
   const bodyGeometry = new three.BoxGeometry(0.6, BODY_HEIGHT, 0.4);
   const bodyMaterial = new three.MeshToonMaterial({ color: 0x6d6d6d });
   const weaponMaterial = new three.MeshToonMaterial({ color: 0x2b2b2b });
+  const aimDebugGeometry = new three.BoxGeometry(1, 1, 1);
+  const aimDebugMaterial = new three.MeshStandardMaterial({ color: 0xff5d6c });
   const canRenderNameplate = Boolean(three.Sprite && three.SpriteMaterial && three.CanvasTexture);
   const modelCache = new Map<string, Promise<{ root: Object3DLike; animations: unknown[] } | null>>();
   const animationCache = new Map<string, Promise<unknown[]>>();
@@ -193,6 +248,7 @@ export const createRemoteAvatarManager = ({
   const weaponModelFailures = new Set<string>();
   let gltfLoaderPromise: Promise<{ load: Function } | null> | null = null;
   let skeletonClonePromise: Promise<((root: Object3DLike) => Object3DLike) | null> | null = null;
+  let aimDebugEnabled = false;
 
   const getGltfLoader = async () => {
     if (!gltfLoaderPromise) {
@@ -289,7 +345,7 @@ export const createRemoteAvatarManager = ({
   };
 
   const resolveWeaponModelSpec = (slot: number) => {
-    const weaponId = WEAPON_DEFS[slot]?.id;
+    const weaponId = WEAPON_DEFS[resolveWeaponSlot(slot)]?.id;
     if (weaponId && WEAPON_MODELS_BY_ID[weaponId]) {
       return WEAPON_MODELS_BY_ID[weaponId];
     }
@@ -307,7 +363,7 @@ export const createRemoteAvatarManager = ({
   };
 
   const loadWeaponModel = async (slot: number) => {
-    const spec = resolveWeaponModelSpec(slot);
+    const spec = resolveWeaponModelSpec(resolveWeaponSlot(slot));
     let promise = weaponModelCache.get(spec.file);
     if (!promise) {
       promise = loadModelRoot(spec.file)
@@ -522,7 +578,7 @@ export const createRemoteAvatarManager = ({
       applyWeaponOffset(placeholder, offset);
       return placeholder;
     }
-    const { length, thickness } = weaponScaleForSlot(slot);
+    const { length, thickness } = weaponScaleForSlot(resolveWeaponSlot(slot));
     const geometry = new three.BoxGeometry(thickness, thickness, length);
     const mesh = new three.Mesh(geometry, weaponMaterial);
     // Prefer an invisible placeholder over a visible box so missing models are obvious.
@@ -592,6 +648,16 @@ export const createRemoteAvatarManager = ({
       }
     }
     applyWeaponOffset(weapon, offset);
+    (weapon as unknown as { __afpsBaseRotation?: { x: number; y: number; z: number } }).__afpsBaseRotation = {
+      x: weapon.rotation.x ?? 0,
+      y: weapon.rotation.y ?? 0,
+      z: weapon.rotation.z ?? 0
+    };
+    (weapon as unknown as { __afpsBasePosition?: { x: number; y: number; z: number } }).__afpsBasePosition = {
+      x: weapon.position.x ?? 0,
+      y: weapon.position.y ?? 0,
+      z: weapon.position.z ?? 0
+    };
     return parent;
   };
 
@@ -771,10 +837,42 @@ export const createRemoteAvatarManager = ({
     avatar.activeState = state;
   };
 
+  const updateAimDebug = (avatar: RemoteAvatar) => {
+    if (!aimDebugEnabled) {
+      if (avatar.aimDebug && avatar.weapon?.remove) {
+        avatar.weapon.remove(avatar.aimDebug);
+      }
+      avatar.aimDebug = undefined;
+      return;
+    }
+    const weapon = avatar.weapon;
+    if (!weapon) {
+      return;
+    }
+    let debug = avatar.aimDebug;
+    if (!debug) {
+      debug = new three.Mesh(aimDebugGeometry, aimDebugMaterial) as unknown as Object3DLike;
+      avatar.aimDebug = debug;
+    }
+    weapon.add?.(debug);
+    const scale = weaponScaleForSlot(avatar.weaponSlot);
+    const debugLength = Math.max(0.6, scale.length * 2.6);
+    const debugThickness = Math.max(0.01, scale.thickness * 0.2);
+    debug.scale?.set?.(debugThickness, debugThickness, debugLength);
+    if (debug.position?.set) {
+      debug.position.set(0, 0, -debugLength * 0.5);
+    } else {
+      debug.position.x = 0;
+      debug.position.y = 0;
+      debug.position.z = -debugLength * 0.5;
+    }
+  };
+
   const requestWeaponModel = async (avatar: RemoteAvatar, slot: number) => {
+    const safeSlot = resolveWeaponSlot(slot);
     const token = (avatar.weaponLoadToken ?? 0) + 1;
     avatar.weaponLoadToken = token;
-    const loaded = await loadWeaponModel(slot);
+    const loaded = await loadWeaponModel(safeSlot);
     const current = avatars.get(avatar.id);
     if (!loaded || !current || current.weaponLoadToken !== token) {
       if (current && current.weaponLoadToken === token && !loaded) {
@@ -783,10 +881,10 @@ export const createRemoteAvatarManager = ({
         if (failures < 3) {
           window.setTimeout(() => {
             const retry = avatars.get(current.id);
-            if (!retry || retry.weaponSlot !== slot) {
+            if (!retry || retry.weaponSlot !== safeSlot) {
               return;
             }
-            void requestWeaponModel(retry, slot);
+            void requestWeaponModel(retry, safeSlot);
           }, 1500);
         }
       }
@@ -798,9 +896,14 @@ export const createRemoteAvatarManager = ({
     }
     current.weaponModelKey = loaded.key;
     detachWeapon(current);
+    if (current.aimDebug && current.weapon?.remove) {
+      current.weapon.remove(current.aimDebug);
+    }
+    current.aimDebug = undefined;
     const parent = attachWeapon(current.root, loaded.root, current.weaponOffset, current.handBone);
     current.weapon = loaded.root;
     current.weaponParent = parent;
+    updateAimDebug(current);
   };
 
   const createAvatar = (
@@ -834,32 +937,50 @@ export const createRemoteAvatarManager = ({
       nameplate: nameplate ?? undefined,
       groundOffsetY: computeGroundOffset(body),
       weaponSlot: slot,
+      viewYaw: 0,
+      viewPitch: 0,
+      playerFlags: 0,
+      loadoutBits: 0,
+      adsBlend: 0,
+      sprintBlend: 0,
+      reloadBlend: 0,
+      overheatBlend: 0,
+      aimPitch: 0,
+      recoilPitch: 0,
+      recoilYaw: 0,
       lastSeenMs: nowMs
     };
     applyVisibility(avatar);
     avatars.set(id, avatar);
     void requestWeaponModel(avatar, slot);
+    updateAimDebug(avatar);
     return avatar;
   };
 
   const updateWeapon = (avatar: RemoteAvatar, slot: number) => {
-    if (avatar.weaponSlot === slot) {
+    const safeSlot = resolveWeaponSlot(slot);
+    if (avatar.weaponSlot === safeSlot) {
       return;
     }
+    if (avatar.aimDebug && avatar.weapon?.remove) {
+      avatar.weapon.remove(avatar.aimDebug);
+    }
+    avatar.aimDebug = undefined;
     detachWeapon(avatar);
-    const nextWeapon = createWeaponMesh(slot, avatar.weaponOffset);
+    const nextWeapon = createWeaponMesh(safeSlot, avatar.weaponOffset);
     const parent = attachWeapon(avatar.root, nextWeapon, avatar.weaponOffset, avatar.handBone);
     avatar.weapon = nextWeapon;
     avatar.weaponParent = parent;
-    avatar.weaponSlot = slot;
-    void requestWeaponModel(avatar, slot);
+    avatar.weaponSlot = safeSlot;
+    updateAimDebug(avatar);
+    void requestWeaponModel(avatar, safeSlot);
   };
 
   const upsertSnapshot = (snapshot: NetworkSnapshot, nowMs = performance.now()) => {
     if (!snapshot.clientId) {
       return;
     }
-    const slot = Number.isFinite(snapshot.weaponSlot) ? Math.max(0, Math.floor(snapshot.weaponSlot)) : 0;
+    const slot = resolveWeaponSlot(snapshot.weaponSlot);
     const profile = profiles.get(snapshot.clientId);
     const entry = catalog && profile ? resolveCharacterEntry(catalog, profile.characterId) : null;
     const desiredCharacterId = profile?.characterId;
@@ -870,9 +991,17 @@ export const createRemoteAvatarManager = ({
     avatar.lastSeenMs = nowMs;
     avatar.velocity = { x: snapshot.velX, y: snapshot.velY, z: snapshot.velZ };
     avatar.height = snapshot.posZ;
+    avatar.viewYaw = decodeYawQ(snapshot.viewYawQ);
+    avatar.viewPitch = decodePitchQ(snapshot.viewPitchQ);
+    avatar.playerFlags = snapshot.playerFlags;
+    avatar.loadoutBits = snapshot.loadoutBits;
     updateWeapon(avatar, slot);
     const groundOffset = avatar.groundOffsetY ?? BODY_HALF;
     avatar.root.position.set(snapshot.posX, groundOffset + snapshot.posZ, snapshot.posY);
+    const yaw = avatar.viewYaw ?? 0;
+    if (avatar.root.rotation) {
+      avatar.root.rotation.y = -yaw;
+    }
     if (desiredModelUrl && desiredCharacterId && avatar.characterId === desiredCharacterId) {
       const needsModel =
         avatar.modelUrl !== desiredModelUrl || avatar.modelCharacterId !== desiredCharacterId;
@@ -914,6 +1043,142 @@ export const createRemoteAvatarManager = ({
         })();
       }
     }
+  };
+
+  const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+
+  const approachBlend = (current: number, target: number, speed: number, deltaSeconds: number) => {
+    const safeDelta = Math.max(0, deltaSeconds);
+    const blend = 1 - Math.exp(-speed * safeDelta);
+    return current + (target - current) * blend;
+  };
+
+  const resolveThirdPersonRecoilKick = (
+    weapon: (typeof WEAPON_DEFS)[number],
+    loadoutBits: number,
+    adsAmount: number,
+    shotSeq: number
+  ) => {
+    const cooldown = Math.max(0.05, weapon.cooldownSeconds);
+    const rateFactor = Math.min(1.4, Math.max(0.6, 0.18 / cooldown));
+    let pitchKick = 0.007 + weapon.damage * 0.00045;
+    if (weapon.kind === 'projectile') {
+      pitchKick *= 1.5;
+    }
+    if (weapon.fireMode === 'SEMI') {
+      pitchKick *= 1.1;
+    }
+    pitchKick *= rateFactor;
+    pitchKick *= 1 - clamp01(adsAmount) * 0.25;
+    if (hasLoadoutBit(loadoutBits, LOADOUT_BITS.compensator)) {
+      pitchKick *= 0.75;
+    }
+    if (hasLoadoutBit(loadoutBits, LOADOUT_BITS.grip)) {
+      pitchKick *= 0.85;
+    }
+    if (hasLoadoutBit(loadoutBits, LOADOUT_BITS.suppressor)) {
+      pitchKick *= 0.95;
+    }
+    pitchKick = Math.min(pitchKick, 0.08) * THIRD_PERSON_RECOIL_SCALE;
+    let yawKick = pitchKick * 0.35;
+    if (hasLoadoutBit(loadoutBits, LOADOUT_BITS.grip)) {
+      yawKick *= 0.8;
+    }
+    const yawSign = shotSeq % 2 === 0 ? 1 : -1;
+    return { pitch: pitchKick, yaw: yawKick * yawSign };
+  };
+
+  const updateWeaponPose = (avatar: RemoteAvatar, deltaSeconds: number) => {
+    const weapon = avatar.weapon;
+    if (!weapon || !weapon.rotation || !weapon.position) {
+      return;
+    }
+    const weaponTag = weapon as unknown as {
+      __afpsBaseRotation?: { x: number; y: number; z: number };
+      __afpsBasePosition?: { x: number; y: number; z: number };
+    };
+    const baseRotation = weaponTag.__afpsBaseRotation;
+    const basePosition = weaponTag.__afpsBasePosition;
+    if (!baseRotation || !basePosition) {
+      return;
+    }
+    const flags = avatar.playerFlags ?? 0;
+    const wantsOverheat = (flags & PLAYER_FLAG_OVERHEAT) !== 0;
+    const wantsReload = (flags & PLAYER_FLAG_RELOAD) !== 0 && !wantsOverheat;
+    const wantsSprint = (flags & PLAYER_FLAG_SPRINT) !== 0 && !wantsReload && !wantsOverheat;
+    const wantsAds = (flags & PLAYER_FLAG_ADS) !== 0 && !wantsSprint && !wantsReload && !wantsOverheat;
+    avatar.adsBlend = approachBlend(avatar.adsBlend ?? 0, wantsAds ? 1 : 0, ADS_BLEND_SPEED, deltaSeconds);
+    avatar.sprintBlend = approachBlend(avatar.sprintBlend ?? 0, wantsSprint ? 1 : 0, SPRINT_BLEND_SPEED, deltaSeconds);
+    avatar.reloadBlend = approachBlend(avatar.reloadBlend ?? 0, wantsReload ? 1 : 0, RELOAD_BLEND_SPEED, deltaSeconds);
+    avatar.overheatBlend = approachBlend(avatar.overheatBlend ?? 0, wantsOverheat ? 1 : 0, OVERHEAT_BLEND_SPEED, deltaSeconds);
+    const targetPitch = avatar.viewPitch ?? 0;
+    const startingPitch = Number.isFinite(avatar.aimPitch) ? (avatar.aimPitch as number) : targetPitch;
+    avatar.aimPitch = approachBlend(startingPitch, targetPitch, AIM_PITCH_BLEND_SPEED, deltaSeconds);
+    const recoilPitch = (avatar.recoilPitch ?? 0) * Math.exp(-RECOIL_DECAY_SPEED * Math.max(0, deltaSeconds));
+    const recoilYaw = (avatar.recoilYaw ?? 0) * Math.exp(-RECOIL_DECAY_SPEED * Math.max(0, deltaSeconds));
+    avatar.recoilPitch = Math.abs(recoilPitch) < 1e-4 ? 0 : recoilPitch;
+    avatar.recoilYaw = Math.abs(recoilYaw) < 1e-4 ? 0 : recoilYaw;
+    const scale = weaponScaleForSlot(avatar.weaponSlot);
+    const lengthScale = scale.length;
+    const adsBlend = avatar.adsBlend ?? 0;
+    const sprintBlend = avatar.sprintBlend ?? 0;
+    const reloadBlend = avatar.reloadBlend ?? 0;
+    const overheatBlend = avatar.overheatBlend ?? 0;
+    const adsPosX = ADS_POSE.position.x * lengthScale;
+    const adsPosY = ADS_POSE.position.y * lengthScale;
+    const adsPosZ = ADS_POSE.position.z * lengthScale;
+    const sprintPosX = SPRINT_POSE.position.x * lengthScale;
+    const sprintPosY = SPRINT_POSE.position.y * lengthScale;
+    const sprintPosZ = SPRINT_POSE.position.z * lengthScale;
+    const reloadPosX = RELOAD_POSE.position.x * lengthScale;
+    const reloadPosY = RELOAD_POSE.position.y * lengthScale;
+    const reloadPosZ = RELOAD_POSE.position.z * lengthScale;
+    const overheatPosX = OVERHEAT_POSE.position.x * lengthScale;
+    const overheatPosY = OVERHEAT_POSE.position.y * lengthScale;
+    const overheatPosZ = OVERHEAT_POSE.position.z * lengthScale;
+    const positionOffsetX =
+      adsBlend * adsPosX +
+      sprintBlend * sprintPosX +
+      reloadBlend * reloadPosX +
+      overheatBlend * overheatPosX;
+    const positionOffsetY =
+      adsBlend * adsPosY +
+      sprintBlend * sprintPosY +
+      reloadBlend * reloadPosY +
+      overheatBlend * overheatPosY;
+    const positionOffsetZ =
+      adsBlend * adsPosZ +
+      sprintBlend * sprintPosZ +
+      reloadBlend * reloadPosZ +
+      overheatBlend * overheatPosZ;
+    const rotationOffsetX =
+      adsBlend * ADS_POSE.rotation.x +
+      sprintBlend * SPRINT_POSE.rotation.x +
+      reloadBlend * RELOAD_POSE.rotation.x +
+      overheatBlend * OVERHEAT_POSE.rotation.x;
+    const rotationOffsetY =
+      adsBlend * ADS_POSE.rotation.y +
+      sprintBlend * SPRINT_POSE.rotation.y +
+      reloadBlend * RELOAD_POSE.rotation.y +
+      overheatBlend * OVERHEAT_POSE.rotation.y;
+    const rotationOffsetZ =
+      adsBlend * ADS_POSE.rotation.z +
+      sprintBlend * SPRINT_POSE.rotation.z +
+      reloadBlend * RELOAD_POSE.rotation.z +
+      overheatBlend * OVERHEAT_POSE.rotation.z;
+    const poseSuppression = Math.min(1, reloadBlend + overheatBlend);
+    const pitchScale = Math.max(0.35, 1 - poseSuppression * 0.55 - sprintBlend * 0.2);
+    const aimPitch = (avatar.aimPitch ?? 0) * pitchScale;
+    const recoilPosBack = -(avatar.recoilPitch ?? 0) * RECOIL_POSITION_BACK * lengthScale;
+    const recoilPosUp = (avatar.recoilPitch ?? 0) * RECOIL_POSITION_UP * lengthScale;
+    weapon.position.set(
+      basePosition.x + positionOffsetX,
+      basePosition.y + positionOffsetY + recoilPosUp,
+      basePosition.z + positionOffsetZ + recoilPosBack
+    );
+    weapon.rotation.x = baseRotation.x - aimPitch + rotationOffsetX + (avatar.recoilPitch ?? 0);
+    weapon.rotation.y = baseRotation.y + rotationOffsetY + (avatar.recoilYaw ?? 0);
+    weapon.rotation.z = baseRotation.z + rotationOffsetZ;
   };
 
   const setLocalClientId = (clientId: string | null) => {
@@ -1035,6 +1300,32 @@ export const createRemoteAvatarManager = ({
           setAnimationState(avatar, 'idle');
         }
       }
+      updateWeaponPose(avatar, deltaSeconds);
+    }
+  };
+
+  const pulseWeaponRecoil = (clientId: string, shotSeq: number, loadoutBits?: number) => {
+    const avatar = avatars.get(clientId);
+    if (!avatar) {
+      return;
+    }
+    const weapon = WEAPON_DEFS[resolveWeaponSlot(avatar.weaponSlot)];
+    if (!weapon) {
+      return;
+    }
+    const bits = loadoutBits ?? avatar.loadoutBits ?? 0;
+    const adsAmount = avatar.adsBlend ?? ((avatar.playerFlags ?? 0) & PLAYER_FLAG_ADS ? 1 : 0);
+    const kick = resolveThirdPersonRecoilKick(weapon, bits, adsAmount, shotSeq);
+    const nextPitch = Math.min(0.35, (avatar.recoilPitch ?? 0) + kick.pitch);
+    const nextYaw = Math.max(-0.3, Math.min(0.3, (avatar.recoilYaw ?? 0) + kick.yaw));
+    avatar.recoilPitch = nextPitch;
+    avatar.recoilYaw = nextYaw;
+  };
+
+  const setAimDebugEnabled = (enabled: boolean) => {
+    aimDebugEnabled = enabled === true;
+    for (const avatar of avatars.values()) {
+      updateAimDebug(avatar);
     }
   };
 
@@ -1106,6 +1397,8 @@ export const createRemoteAvatarManager = ({
     setLocalClientId,
     setProfile,
     setCatalog,
+    pulseWeaponRecoil,
+    setAimDebugEnabled,
     update,
     prune,
     listAvatars,

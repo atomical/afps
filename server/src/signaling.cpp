@@ -18,6 +18,7 @@ namespace {
 constexpr int kMaxClientHelloAttempts = 3;
 constexpr size_t kMaxPendingInputs = 128;
 constexpr size_t kMaxPendingFireRequests = 128;
+constexpr size_t kMaxPendingLoadoutRequests = 8;
 
 std::string TrimWhitespace(const std::string &value) {
   const auto start = value.find_first_not_of(" \t\r\n");
@@ -506,6 +507,34 @@ std::vector<FireRequestBatch> SignalingStore::DrainAllFireRequests() {
       }
       batch.connection_id = connection->id;
       batch.requests.swap(connection->pending_fire_requests);
+    }
+    batches.push_back(std::move(batch));
+  }
+
+  return batches;
+}
+
+std::vector<LoadoutRequestBatch> SignalingStore::DrainAllLoadoutRequests() {
+  std::vector<std::shared_ptr<ConnectionState>> connections;
+  {
+    std::scoped_lock lock(mutex_);
+    PruneExpiredSessionsLocked();
+    connections.reserve(connections_.size());
+    for (const auto &entry : connections_) {
+      connections.push_back(entry.second);
+    }
+  }
+
+  std::vector<LoadoutRequestBatch> batches;
+  for (const auto &connection : connections) {
+    LoadoutRequestBatch batch;
+    {
+      std::scoped_lock lock(connection->mutex);
+      if (connection->pending_loadout_requests.empty()) {
+        continue;
+      }
+      batch.connection_id = connection->id;
+      batch.requests.swap(connection->pending_loadout_requests);
     }
     batches.push_back(std::move(batch));
   }
@@ -1072,6 +1101,23 @@ void SignalingStore::HandleClientMessage(const std::shared_ptr<ConnectionState> 
         connection->pending_fire_requests.erase(connection->pending_fire_requests.begin());
       }
       connection->pending_fire_requests.push_back(std::move(request));
+    }
+    return;
+  }
+
+  if (envelope.header.msg_type == MessageType::SetLoadoutRequest) {
+    SetLoadoutRequest request;
+    std::string error;
+    if (!ParseSetLoadoutRequestPayload(envelope.payload, request, error)) {
+      record_invalid("invalid_set_loadout_request");
+      return;
+    }
+    {
+      std::scoped_lock lock(connection->mutex);
+      if (connection->pending_loadout_requests.size() >= kMaxPendingLoadoutRequests) {
+        connection->pending_loadout_requests.erase(connection->pending_loadout_requests.begin());
+      }
+      connection->pending_loadout_requests.push_back(std::move(request));
     }
     return;
   }

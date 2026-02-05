@@ -3,20 +3,31 @@ import { ClientHello } from './fbs/afps/protocol/client-hello';
 import { Error as ProtocolError } from './fbs/afps/protocol/error';
 import { FireWeaponRequestT } from './fbs/afps/protocol/fire-weapon-request';
 import { GameEvent as GameEventFbs } from './fbs/afps/protocol/game-event';
-import { GameEventType } from './fbs/afps/protocol/game-event-type';
+import { FxEvent as FxEventType, unionListToFxEvent } from './fbs/afps/protocol/fx-event';
+import { HitConfirmedFx } from './fbs/afps/protocol/hit-confirmed-fx';
+import { HitKind } from './fbs/afps/protocol/hit-kind';
 import { InputCmdT } from './fbs/afps/protocol/input-cmd';
+import { NearMissFx } from './fbs/afps/protocol/near-miss-fx';
+import { OverheatFx } from './fbs/afps/protocol/overheat-fx';
 import { Ping } from './fbs/afps/protocol/ping';
 import { PlayerProfile as PlayerProfileFbs } from './fbs/afps/protocol/player-profile';
 import { Pong } from './fbs/afps/protocol/pong';
+import { ProjectileImpactFx } from './fbs/afps/protocol/projectile-impact-fx';
+import { ProjectileRemoveFx } from './fbs/afps/protocol/projectile-remove-fx';
+import { ProjectileSpawnFx } from './fbs/afps/protocol/projectile-spawn-fx';
+import { ReloadFx } from './fbs/afps/protocol/reload-fx';
 import { ServerHello as ServerHelloFbs } from './fbs/afps/protocol/server-hello';
+import { SetLoadoutRequestT } from './fbs/afps/protocol/set-loadout-request';
+import { ShotFiredFx } from './fbs/afps/protocol/shot-fired-fx';
+import { ShotTraceFx } from './fbs/afps/protocol/shot-trace-fx';
 import { StateSnapshot as StateSnapshotFbs } from './fbs/afps/protocol/state-snapshot';
 import { StateSnapshotDelta as StateSnapshotDeltaFbs } from './fbs/afps/protocol/state-snapshot-delta';
-import { WeaponFiredEvent as WeaponFiredEventFbs } from './fbs/afps/protocol/weapon-fired-event';
-import { WeaponReloadEvent as WeaponReloadEventFbs } from './fbs/afps/protocol/weapon-reload-event';
+import { SurfaceType } from './fbs/afps/protocol/surface-type';
+import { VentFx } from './fbs/afps/protocol/vent-fx';
 import { MessageType } from './fbs/afps/protocol/message-type';
 import type { InputCmd } from './input_cmd';
 
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 export const SNAPSHOT_MASK_POS_X = 1 << 0;
 export const SNAPSHOT_MASK_POS_Y = 1 << 1;
 export const SNAPSHOT_MASK_POS_Z = 1 << 2;
@@ -29,6 +40,11 @@ export const SNAPSHOT_MASK_KILLS = 1 << 8;
 export const SNAPSHOT_MASK_DEATHS = 1 << 9;
 export const SNAPSHOT_MASK_WEAPON_SLOT = 1 << 10;
 export const SNAPSHOT_MASK_AMMO_IN_MAG = 1 << 11;
+export const SNAPSHOT_MASK_VIEW_YAW_Q = 1 << 12;
+export const SNAPSHOT_MASK_VIEW_PITCH_Q = 1 << 13;
+export const SNAPSHOT_MASK_PLAYER_FLAGS = 1 << 14;
+export const SNAPSHOT_MASK_WEAPON_HEAT_Q = 1 << 15;
+export const SNAPSHOT_MASK_LOADOUT_BITS = 1 << 16;
 const SNAPSHOT_MASK_ALL =
   SNAPSHOT_MASK_POS_X |
   SNAPSHOT_MASK_POS_Y |
@@ -41,7 +57,12 @@ const SNAPSHOT_MASK_ALL =
   SNAPSHOT_MASK_KILLS |
   SNAPSHOT_MASK_DEATHS |
   SNAPSHOT_MASK_WEAPON_SLOT |
-  SNAPSHOT_MASK_AMMO_IN_MAG;
+  SNAPSHOT_MASK_AMMO_IN_MAG |
+  SNAPSHOT_MASK_VIEW_YAW_Q |
+  SNAPSHOT_MASK_VIEW_PITCH_Q |
+  SNAPSHOT_MASK_PLAYER_FLAGS |
+  SNAPSHOT_MASK_WEAPON_HEAT_Q |
+  SNAPSHOT_MASK_LOADOUT_BITS;
 
 const MAGIC = new Uint8Array([0x41, 0x46, 0x50, 0x53]);
 const HEADER_BYTES = 20;
@@ -97,6 +118,11 @@ export interface StateSnapshot {
   health: number;
   kills: number;
   deaths: number;
+  viewYawQ: number;
+  viewPitchQ: number;
+  playerFlags: number;
+  weaponHeatQ: number;
+  loadoutBits: number;
   clientId?: string;
 }
 
@@ -118,6 +144,11 @@ export interface StateSnapshotDelta {
   health?: number;
   kills?: number;
   deaths?: number;
+  viewYawQ?: number;
+  viewPitchQ?: number;
+  playerFlags?: number;
+  weaponHeatQ?: number;
+  loadoutBits?: number;
   clientId?: string;
 }
 
@@ -157,76 +188,91 @@ export interface ProtocolErrorMessage {
   message: string;
 }
 
-export type GameEventName = 'HitConfirmed' | 'ProjectileSpawn' | 'ProjectileRemove';
+export type FxEvent =
+  | {
+      type: 'ShotFiredFx';
+      shooterId: string;
+      weaponSlot: number;
+      shotSeq: number;
+      dryFire: boolean;
+    }
+  | {
+      type: 'ShotTraceFx';
+      shooterId: string;
+      weaponSlot: number;
+      shotSeq: number;
+      dirOctX: number;
+      dirOctY: number;
+      hitDistQ: number;
+      hitKind: HitKind;
+      surfaceType: SurfaceType;
+      normalOctX: number;
+      normalOctY: number;
+      showTracer: boolean;
+    }
+  | {
+      type: 'ReloadFx';
+      shooterId: string;
+      weaponSlot: number;
+    }
+  | {
+      type: 'NearMissFx';
+      shooterId: string;
+      shotSeq: number;
+      strength: number;
+    }
+  | {
+      type: 'OverheatFx';
+      shooterId: string;
+      weaponSlot: number;
+      heatQ: number;
+    }
+  | {
+      type: 'VentFx';
+      shooterId: string;
+      weaponSlot: number;
+    }
+  | {
+      type: 'HitConfirmedFx';
+      targetId: string;
+      damage: number;
+      killed: boolean;
+    }
+  | {
+      type: 'ProjectileSpawnFx';
+      shooterId: string;
+      weaponSlot: number;
+      shotSeq: number;
+      projectileId: number;
+      posXQ: number;
+      posYQ: number;
+      posZQ: number;
+      velXQ: number;
+      velYQ: number;
+      velZQ: number;
+      ttlQ: number;
+    }
+  | {
+      type: 'ProjectileImpactFx';
+      projectileId: number;
+      hitWorld: boolean;
+      targetId?: string;
+      posXQ: number;
+      posYQ: number;
+      posZQ: number;
+      normalOctX: number;
+      normalOctY: number;
+      surfaceType: SurfaceType;
+    }
+  | {
+      type: 'ProjectileRemoveFx';
+      projectileId: number;
+    };
 
-export interface HitConfirmedEvent {
-  type: 'GameEvent';
-  event: 'HitConfirmed';
-  targetId?: string;
-  damage?: number;
-  killed?: boolean;
-}
-
-export interface ProjectileSpawnEvent {
-  type: 'GameEvent';
-  event: 'ProjectileSpawn';
-  ownerId: string;
-  projectileId?: number;
-  posX: number;
-  posY: number;
-  posZ: number;
-  velX: number;
-  velY: number;
-  velZ: number;
-  ttl: number;
-}
-
-export interface ProjectileRemoveEvent {
-  type: 'GameEvent';
-  event: 'ProjectileRemove';
-  ownerId?: string;
-  projectileId: number;
-}
-
-export type GameEvent = HitConfirmedEvent | ProjectileSpawnEvent | ProjectileRemoveEvent;
-
-export interface WeaponFiredEvent {
-  type: 'WeaponFiredEvent';
-  shooterId: string;
-  weaponId: string;
-  weaponSlot: number;
+export interface GameEventBatch {
+  type: 'GameEventBatch';
   serverTick: number;
-  shotSeq: number;
-  muzzlePosX: number;
-  muzzlePosY: number;
-  muzzlePosZ: number;
-  dirX: number;
-  dirY: number;
-  dirZ: number;
-  dryFire: boolean;
-  casingEnabled: boolean;
-  casingPosX: number;
-  casingPosY: number;
-  casingPosZ: number;
-  casingRotX: number;
-  casingRotY: number;
-  casingRotZ: number;
-  casingVelX: number;
-  casingVelY: number;
-  casingVelZ: number;
-  casingAngX: number;
-  casingAngY: number;
-  casingAngZ: number;
-  casingSeed: number;
-}
-
-export interface WeaponReloadEvent {
-  type: 'WeaponReloadEvent';
-  shooterId: string;
-  weaponId: string;
-  weaponSlot: number;
-  serverTick: number;
-  reloadSeconds: number;
+  events: FxEvent[];
 }
 
 export type SnapshotMessage = StateSnapshot | StateSnapshotDelta;
@@ -237,7 +283,7 @@ const toUint8Array = (data: ArrayBuffer | Uint8Array) =>
   data instanceof Uint8Array ? data : new Uint8Array(data);
 
 const isMessageType = (value: number): value is MessageType =>
-  value >= MessageType.ClientHello && value <= MessageType.WeaponReloadEvent;
+  value >= MessageType.ClientHello && value <= MessageType.SetLoadoutRequest;
 
 export const decodeEnvelope = (data: ArrayBuffer | Uint8Array): DecodedEnvelope | null => {
   const bytes = toUint8Array(data);
@@ -335,6 +381,7 @@ export const encodeInputCmd = (cmd: InputCmd, msgSeq = 1, serverSeqAck = 0) => {
     cmd.weaponSlot,
     cmd.jump,
     cmd.fire,
+    cmd.ads,
     cmd.sprint,
     cmd.dash,
     cmd.grapple,
@@ -343,6 +390,13 @@ export const encodeInputCmd = (cmd: InputCmd, msgSeq = 1, serverSeqAck = 0) => {
   ).pack(builder);
   builder.finish(payload);
   return encodeEnvelope(MessageType.InputCmd, builder.asUint8Array(), msgSeq, serverSeqAck);
+};
+
+export const encodeSetLoadoutRequest = (loadoutBits: number, msgSeq = 1, serverSeqAck = 0) => {
+  const builder = new flatbuffers.Builder(64);
+  const payload = new SetLoadoutRequestT(loadoutBits >>> 0).pack(builder);
+  builder.finish(payload);
+  return encodeEnvelope(MessageType.SetLoadoutRequest, builder.asUint8Array(), msgSeq, serverSeqAck);
 };
 
 export const encodeFireWeaponRequest = (
@@ -462,7 +516,12 @@ export const parseStateSnapshotPayload = (payload: Uint8Array): StateSnapshot | 
     dashCooldown,
     health,
     kills: message.kills(),
-    deaths: message.deaths()
+    deaths: message.deaths(),
+    viewYawQ: message.viewYawQ(),
+    viewPitchQ: message.viewPitchQ(),
+    playerFlags: message.playerFlags(),
+    weaponHeatQ: message.weaponHeatQ(),
+    loadoutBits: message.loadoutBits()
   };
   const clientId = message.clientId();
   if (clientId && clientId.length > 0) {
@@ -507,6 +566,11 @@ export const parseStateSnapshotDeltaPayload = (payload: Uint8Array): StateSnapsh
   if (mask & SNAPSHOT_MASK_HEALTH) snapshot.health = message.health();
   if (mask & SNAPSHOT_MASK_KILLS) snapshot.kills = message.kills();
   if (mask & SNAPSHOT_MASK_DEATHS) snapshot.deaths = message.deaths();
+  if (mask & SNAPSHOT_MASK_VIEW_YAW_Q) snapshot.viewYawQ = message.viewYawQ();
+  if (mask & SNAPSHOT_MASK_VIEW_PITCH_Q) snapshot.viewPitchQ = message.viewPitchQ();
+  if (mask & SNAPSHOT_MASK_PLAYER_FLAGS) snapshot.playerFlags = message.playerFlags();
+  if (mask & SNAPSHOT_MASK_WEAPON_HEAT_Q) snapshot.weaponHeatQ = message.weaponHeatQ();
+  if (mask & SNAPSHOT_MASK_LOADOUT_BITS) snapshot.loadoutBits = message.loadoutBits();
 
   const numericValues = [
     snapshot.posX,
@@ -517,7 +581,12 @@ export const parseStateSnapshotDeltaPayload = (payload: Uint8Array): StateSnapsh
     snapshot.velZ,
     snapshot.ammoInMag,
     snapshot.dashCooldown,
-    snapshot.health
+    snapshot.health,
+    snapshot.viewYawQ,
+    snapshot.viewPitchQ,
+    snapshot.playerFlags,
+    snapshot.weaponHeatQ,
+    snapshot.loadoutBits
   ].filter((value) => typeof value === 'number') as number[];
   if (!numericValues.every(isFiniteNumber)) {
     return null;
@@ -525,128 +594,181 @@ export const parseStateSnapshotDeltaPayload = (payload: Uint8Array): StateSnapsh
   return snapshot;
 };
 
-export const parseWeaponFiredEventPayload = (payload: Uint8Array): WeaponFiredEvent | null => {
-  const bb = new flatbuffers.ByteBuffer(payload);
-  const message = WeaponFiredEventFbs.getRootAsWeaponFiredEvent(bb);
-  const shooterId = message.shooterId();
-  const weaponId = message.weaponId();
-  if (!shooterId || !weaponId) {
-    return null;
-  }
-  return {
-    type: 'WeaponFiredEvent',
-    shooterId,
-    weaponId,
-    weaponSlot: message.weaponSlot(),
-    serverTick: message.serverTick(),
-    shotSeq: message.shotSeq(),
-    muzzlePosX: message.muzzlePosX(),
-    muzzlePosY: message.muzzlePosY(),
-    muzzlePosZ: message.muzzlePosZ(),
-    dirX: message.dirX(),
-    dirY: message.dirY(),
-    dirZ: message.dirZ(),
-    dryFire: message.dryFire(),
-    casingEnabled: message.casingEnabled(),
-    casingPosX: message.casingPosX(),
-    casingPosY: message.casingPosY(),
-    casingPosZ: message.casingPosZ(),
-    casingRotX: message.casingRotX(),
-    casingRotY: message.casingRotY(),
-    casingRotZ: message.casingRotZ(),
-    casingVelX: message.casingVelX(),
-    casingVelY: message.casingVelY(),
-    casingVelZ: message.casingVelZ(),
-    casingAngX: message.casingAngX(),
-    casingAngY: message.casingAngY(),
-    casingAngZ: message.casingAngZ(),
-    casingSeed: message.casingSeed()
-  };
-};
-
-export const parseWeaponReloadEventPayload = (payload: Uint8Array): WeaponReloadEvent | null => {
-  const bb = new flatbuffers.ByteBuffer(payload);
-  const message = WeaponReloadEventFbs.getRootAsWeaponReloadEvent(bb);
-  const shooterId = message.shooterId();
-  const weaponId = message.weaponId();
-  if (!shooterId || !weaponId) {
-    return null;
-  }
-  return {
-    type: 'WeaponReloadEvent',
-    shooterId,
-    weaponId,
-    weaponSlot: message.weaponSlot(),
-    serverTick: message.serverTick(),
-    reloadSeconds: message.reloadSeconds()
-  };
-};
-
-export const parseGameEventPayload = (payload: Uint8Array): GameEvent | null => {
+export const parseGameEventPayload = (payload: Uint8Array): GameEventBatch | null => {
   const bb = new flatbuffers.ByteBuffer(payload);
   const message = GameEventFbs.getRootAsGameEvent(bb);
-  const eventType = message.eventType();
-  switch (eventType) {
-    case GameEventType.HitConfirmed: {
-      const damage = message.damage();
-      const killed = message.killed();
-      if (!isFiniteNumber(damage)) {
-        return null;
-      }
-      const targetId = message.targetId() ?? undefined;
-      return {
-        type: 'GameEvent',
-        event: 'HitConfirmed',
-        targetId: targetId && targetId.length > 0 ? targetId : undefined,
-        damage,
-        killed
-      };
-    }
-    case GameEventType.ProjectileSpawn: {
-      const ownerId = message.ownerId();
-      const posX = message.posX();
-      const posY = message.posY();
-      const posZ = message.posZ();
-      const velX = message.velX();
-      const velY = message.velY();
-      const velZ = message.velZ();
-      const ttl = message.ttl();
-      if (!ownerId || !ownerId.length) {
-        return null;
-      }
-      if (![posX, posY, posZ, velX, velY, velZ, ttl].every(isFiniteNumber)) {
-        return null;
-      }
-      return {
-        type: 'GameEvent',
-        event: 'ProjectileSpawn',
-        ownerId,
-        projectileId: message.projectileId() || undefined,
-        posX,
-        posY,
-        posZ,
-        velX,
-        velY,
-        velZ,
-        ttl
-      };
-    }
-    case GameEventType.ProjectileRemove: {
-      const projectileId = message.projectileId();
-      if (projectileId <= 0) {
-        return null;
-      }
-      const ownerId = message.ownerId() ?? undefined;
-      return {
-        type: 'GameEvent',
-        event: 'ProjectileRemove',
-        ownerId: ownerId && ownerId.length > 0 ? ownerId : undefined,
-        projectileId
-      };
-    }
-    default:
-      return null;
+  const serverTick = message.serverTick();
+  if (!Number.isFinite(serverTick) || serverTick < 0) {
+    return null;
   }
+  const events: FxEvent[] = [];
+  const accessor = message.events.bind(message);
+  for (let i = 0; i < message.eventsTypeLength(); i += 1) {
+    const type = message.eventsType(i);
+    if (type === null || type === FxEventType.NONE) {
+      continue;
+    }
+    const event = unionListToFxEvent(type, accessor, i);
+    if (!event) {
+      continue;
+    }
+    switch (type) {
+      case FxEventType.ShotFiredFx: {
+        const typed = event as ShotFiredFx;
+        const shooterId = typed.shooterId();
+        if (!shooterId) {
+          return null;
+        }
+        events.push({
+          type: 'ShotFiredFx',
+          shooterId,
+          weaponSlot: typed.weaponSlot(),
+          shotSeq: typed.shotSeq(),
+          dryFire: typed.dryFire()
+        });
+        break;
+      }
+      case FxEventType.ShotTraceFx: {
+        const typed = event as ShotTraceFx;
+        const shooterId = typed.shooterId();
+        if (!shooterId) {
+          return null;
+        }
+        events.push({
+          type: 'ShotTraceFx',
+          shooterId,
+          weaponSlot: typed.weaponSlot(),
+          shotSeq: typed.shotSeq(),
+          dirOctX: typed.dirOctX(),
+          dirOctY: typed.dirOctY(),
+          hitDistQ: typed.hitDistQ(),
+          hitKind: typed.hitKind(),
+          surfaceType: typed.surfaceType(),
+          normalOctX: typed.normalOctX(),
+          normalOctY: typed.normalOctY(),
+          showTracer: typed.showTracer()
+        });
+        break;
+      }
+      case FxEventType.ReloadFx: {
+        const typed = event as ReloadFx;
+        const shooterId = typed.shooterId();
+        if (!shooterId) {
+          return null;
+        }
+        events.push({
+          type: 'ReloadFx',
+          shooterId,
+          weaponSlot: typed.weaponSlot()
+        });
+        break;
+      }
+      case FxEventType.NearMissFx: {
+        const typed = event as NearMissFx;
+        const shooterId = typed.shooterId();
+        if (!shooterId) {
+          return null;
+        }
+        events.push({
+          type: 'NearMissFx',
+          shooterId,
+          shotSeq: typed.shotSeq(),
+          strength: typed.strength()
+        });
+        break;
+      }
+      case FxEventType.OverheatFx: {
+        const typed = event as OverheatFx;
+        const shooterId = typed.shooterId();
+        if (!shooterId) {
+          return null;
+        }
+        events.push({
+          type: 'OverheatFx',
+          shooterId,
+          weaponSlot: typed.weaponSlot(),
+          heatQ: typed.heatQ()
+        });
+        break;
+      }
+      case FxEventType.VentFx: {
+        const typed = event as VentFx;
+        const shooterId = typed.shooterId();
+        if (!shooterId) {
+          return null;
+        }
+        events.push({
+          type: 'VentFx',
+          shooterId,
+          weaponSlot: typed.weaponSlot()
+        });
+        break;
+      }
+      case FxEventType.HitConfirmedFx: {
+        const typed = event as HitConfirmedFx;
+        const targetId = typed.targetId();
+        const damage = typed.damage();
+        if (!targetId || !isFiniteNumber(damage)) {
+          return null;
+        }
+        events.push({
+          type: 'HitConfirmedFx',
+          targetId,
+          damage,
+          killed: typed.killed()
+        });
+        break;
+      }
+      case FxEventType.ProjectileSpawnFx: {
+        const typed = event as ProjectileSpawnFx;
+        const shooterId = typed.shooterId();
+        if (!shooterId) {
+          return null;
+        }
+        events.push({
+          type: 'ProjectileSpawnFx',
+          shooterId,
+          weaponSlot: typed.weaponSlot(),
+          shotSeq: typed.shotSeq(),
+          projectileId: typed.projectileId(),
+          posXQ: typed.posXQ(),
+          posYQ: typed.posYQ(),
+          posZQ: typed.posZQ(),
+          velXQ: typed.velXQ(),
+          velYQ: typed.velYQ(),
+          velZQ: typed.velZQ(),
+          ttlQ: typed.ttlQ()
+        });
+        break;
+      }
+      case FxEventType.ProjectileImpactFx: {
+        const typed = event as ProjectileImpactFx;
+        const targetId = typed.targetId() ?? undefined;
+        events.push({
+          type: 'ProjectileImpactFx',
+          projectileId: typed.projectileId(),
+          hitWorld: typed.hitWorld(),
+          targetId: targetId && targetId.length > 0 ? targetId : undefined,
+          posXQ: typed.posXQ(),
+          posYQ: typed.posYQ(),
+          posZQ: typed.posZQ(),
+          normalOctX: typed.normalOctX(),
+          normalOctY: typed.normalOctY(),
+          surfaceType: typed.surfaceType()
+        });
+        break;
+      }
+      case FxEventType.ProjectileRemoveFx: {
+        const typed = event as ProjectileRemoveFx;
+        events.push({
+          type: 'ProjectileRemoveFx',
+          projectileId: typed.projectileId()
+        });
+        break;
+      }
+    }
+  }
+  return { type: 'GameEventBatch', serverTick, events };
 };
 
 export const parseErrorPayload = (payload: Uint8Array): ProtocolErrorMessage | null => {
@@ -714,7 +836,7 @@ export const parseSnapshotMessage = (data: ArrayBuffer | Uint8Array): SnapshotMe
   return null;
 };
 
-export const parseGameEvent = (data: ArrayBuffer | Uint8Array): GameEvent | null => {
+export const parseGameEvent = (data: ArrayBuffer | Uint8Array): GameEventBatch | null => {
   const envelope = decodeEnvelope(data);
   if (!envelope || envelope.header.msgType !== MessageType.GameEvent) {
     return null;
@@ -736,4 +858,4 @@ export const __test = {
   MAGIC
 };
 
-export { MessageType, GameEventType };
+export { MessageType, FxEventType, HitKind, SurfaceType };

@@ -35,6 +35,7 @@ export class FakeVector2 {
 export class FakeObject3D {
   position = new FakeVector3();
   rotation = new FakeEuler();
+  scale = new FakeVector3();
 }
 
 export class FakeColor {

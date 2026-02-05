@@ -65,6 +65,44 @@ describe('weapon config', () => {
     );
   });
 
+  it('defaults display names when missing', () => {
+    const config = parseWeaponConfig({
+      weapons: [
+        {
+          id: 'plain',
+          kind: 'hitscan',
+          damage: 5,
+          spreadDeg: 0,
+          range: 10,
+          projectileSpeed: 0,
+          explosionRadius: 0,
+          maxAmmoInMag: 5,
+          cooldownSeconds: 0.2,
+          fireMode: 'SEMI',
+          ejectShellsWhileFiring: false,
+          reloadSeconds: 0.5,
+          sfxProfile: 'PISTOL_9MM',
+          casingEject: {
+            localOffset: [0, 0, 0],
+            localRotation: [0, 0, 0],
+            velocityMin: [0, 0, 0],
+            velocityMax: [0, 0, 0],
+            angularVelocityMin: [0, 0, 0],
+            angularVelocityMax: [0, 0, 0],
+            lifetimeSeconds: 1
+          },
+          sounds: {
+            fire: 'plain:fire',
+            dryFire: 'plain:dry',
+            reload: 'plain:reload'
+          }
+        }
+      ]
+    });
+
+    expect(config.weapons[0]?.displayName).toBe('plain');
+  });
+
   it('rejects invalid weapon fields', () => {
     const config = parseWeaponConfig({
       weapons: [

@@ -5,6 +5,7 @@ import { SnapshotBuffer } from './net/snapshot_buffer';
 import { loadRetroUrbanMap } from './environment/retro_urban_map';
 import { attachWeaponViewmodel, loadWeaponViewmodel } from './environment/weapon_viewmodel';
 import { WEAPON_DEFS } from './weapons/config';
+import { generateDecalTexture, generateImpactTexture, generateMuzzleFlashTexture, hashString } from './rendering/procedural_textures';
 
 export interface CreateAppOptions {
   three: ThreeLike;
@@ -37,6 +38,17 @@ const DEFAULTS = {
   tracerThickness: 0.03,
   tracerTtl: 0.08,
   tracerLength: 24,
+  muzzleFlashSize: 0.34,
+  muzzleFlashTtl: 0.06,
+  impactSize: 0.32,
+  impactTtl: 0.12,
+  decalSize: 0.26,
+  decalTtlMin: 6,
+  decalTtlMax: 12,
+  maxTracers: 36,
+  maxMuzzleFlashes: 28,
+  maxImpacts: 30,
+  maxDecals: 90,
   ambientColor: 0xfff2d8,
   ambientIntensity: 0.55,
   keyLightColor: 0xfff7df,
@@ -73,6 +85,12 @@ type TracerVfx = {
   ttl: number;
 };
 
+type TimedMeshVfx = {
+  mesh: AppState['cube'];
+  ttl: number;
+  seed: number;
+};
+
 export const createApp = ({
   three,
   canvas,
@@ -89,9 +107,7 @@ export const createApp = ({
 
   const camera = new three.PerspectiveCamera(DEFAULTS.fov, width / height, DEFAULTS.near, DEFAULTS.far);
   camera.position.set(0, DEFAULTS.cameraHeight, 0);
-  if (camera.rotation) {
-    camera.rotation.order = 'YXZ';
-  }
+  camera.rotation.order = 'YXZ';
 
   const renderer = new three.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(devicePixelRatio);
@@ -159,8 +175,7 @@ export const createApp = ({
     return Math.max(0, Math.min(outlineTeamCount - 1, Math.floor(team)));
   };
 
-  const getOutlineTeamColor = (colors: typeof outlineTeamVisibleColors, index: number) =>
-    colors[index] ?? colors[0];
+  const getOutlineTeamColor = (colors: typeof outlineTeamVisibleColors, index: number) => colors[index];
 
   const applyOutlineBase = (pass: ReturnType<NonNullable<typeof three.OutlinePass>>, team: number) => {
     pass.edgeStrength = DEFAULTS.outlineStrength;
@@ -213,9 +228,7 @@ export const createApp = ({
     }
     outlineFlashActive = false;
     const pass = outlinePasses[outlineFlashTeamIndex];
-    if (pass) {
-      applyOutlineBase(pass, outlineFlashTeamIndex);
-    }
+    applyOutlineBase(pass, outlineFlashTeamIndex);
   };
 
   const setOutlineTeam = (team: number) => {
@@ -229,9 +242,7 @@ export const createApp = ({
     }
     if (outlineFlashActive && outlineFlashTeamIndex === outlineTeamIndex) {
       const pass = outlinePasses[outlineFlashTeamIndex];
-      if (pass) {
-        applyOutlineBase(pass, outlineFlashTeamIndex);
-      }
+      applyOutlineBase(pass, outlineFlashTeamIndex);
       outlineFlashActive = false;
     }
     outlineTeamIndex = next;
@@ -240,9 +251,7 @@ export const createApp = ({
 
   const setLocalProxyVisible = (visible: boolean) => {
     const next = visible !== false;
-    if (cube.visible !== undefined) {
-      cube.visible = next;
-    }
+    cube.visible = next;
     refreshOutlineSelection();
   };
 
@@ -256,10 +265,9 @@ export const createApp = ({
       return;
     }
     const now = options?.nowMs ?? performance.now();
+    const rawDuration = options?.durationMs;
     const durationMs =
-      Number.isFinite(options?.durationMs) && (options?.durationMs ?? 0) > 0
-        ? (options?.durationMs as number)
-        : DEFAULTS.outlineFlashDurationMs;
+      Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : DEFAULTS.outlineFlashDurationMs;
     const team = clampOutlineTeam(options?.team ?? outlineTeamIndex);
     const flashStrength = options?.killed ? DEFAULTS.outlineFlashStrength * 1.2 : DEFAULTS.outlineFlashStrength;
     const flashThickness = options?.killed ? DEFAULTS.outlineFlashThickness * 1.1 : DEFAULTS.outlineFlashThickness;
@@ -268,9 +276,7 @@ export const createApp = ({
     outlineFlashUntil = now + durationMs;
     outlineFlashActive = true;
     const pass = outlinePasses[team];
-    if (pass) {
-      applyOutlineFlash(pass, flashStrength, flashThickness);
-    }
+    applyOutlineFlash(pass, flashStrength, flashThickness);
   };
 
   if (supportsOutlines && three.EffectComposer && three.RenderPass && three.OutlinePass && three.Vector2) {
@@ -310,10 +316,127 @@ export const createApp = ({
     gradientMap: toonRamp
   });
   const tracerMaterial = new three.MeshToonMaterial({ color: DEFAULTS.tracerColor, gradientMap: toonRamp });
+  const tracerGeometry = new three.BoxGeometry(DEFAULTS.tracerThickness, DEFAULTS.tracerThickness, 1);
   const projectiles: ProjectileVfx[] = [];
   const projectileIndex = new Map<number, ProjectileVfx>();
   const tracers: TracerVfx[] = [];
+  const freeTracers: TracerVfx[] = [];
+  const muzzleFlashes: TimedMeshVfx[] = [];
+  const freeMuzzleFlashes: TimedMeshVfx[] = [];
+  const impacts: TimedMeshVfx[] = [];
+  const freeImpacts: TimedMeshVfx[] = [];
+  const decals: TimedMeshVfx[] = [];
+  const freeDecals: TimedMeshVfx[] = [];
   const fireCooldowns = new Map<number, number>();
+
+  const createRandom = (seed: number) => {
+    let state = seed >>> 0;
+    return () => {
+      state |= 0;
+      state = (state + 0x6d2b79f5) | 0;
+      let t = Math.imul(state ^ (state >>> 15), 1 | state);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  };
+
+  const lerp = (min: number, max: number, t: number) => min + (max - min) * t;
+
+  const makeDataTexture = (pixels: { data: Uint8Array; width: number; height: number }) => {
+    const texture = new three.DataTexture(pixels.data, pixels.width, pixels.height);
+    texture.minFilter = three.NearestFilter;
+    texture.magFilter = three.NearestFilter;
+    texture.generateMipmaps = false;
+    (texture as unknown as { colorSpace?: unknown }).colorSpace = three.SRGBColorSpace;
+    texture.needsUpdate = true;
+    return texture;
+  };
+
+  const makeDecalMaterial = (color: number, map?: unknown) => {
+    const BasicCtor = (three as unknown as { MeshBasicMaterial?: new (params: { color: number }) => unknown })
+      .MeshBasicMaterial;
+    const material = BasicCtor ? new BasicCtor({ color }) : new three.MeshToonMaterial({ color, gradientMap: toonRamp });
+    (material as unknown as { map?: unknown }).map = map;
+    (material as unknown as { transparent?: boolean }).transparent = true;
+    (material as unknown as { depthWrite?: boolean }).depthWrite = false;
+    (material as unknown as { depthTest?: boolean }).depthTest = true;
+    (material as unknown as { opacity?: number }).opacity = 0.95;
+    (material as unknown as { polygonOffset?: boolean }).polygonOffset = true;
+    (material as unknown as { polygonOffsetFactor?: number }).polygonOffsetFactor = -1;
+    (material as unknown as { polygonOffsetUnits?: number }).polygonOffsetUnits = -1;
+    const DoubleSide = (three as unknown as { DoubleSide?: unknown }).DoubleSide;
+    if (DoubleSide !== undefined) {
+      (material as unknown as { side?: unknown }).side = DoubleSide;
+    }
+    return material;
+  };
+
+  const muzzleFlashTextures = [
+    makeDataTexture(generateMuzzleFlashTexture({ seed: 0xabc001 })),
+    makeDataTexture(generateMuzzleFlashTexture({ seed: 0xabc002 })),
+    makeDataTexture(generateMuzzleFlashTexture({ seed: 0xabc003 })),
+    makeDataTexture(generateMuzzleFlashTexture({ seed: 0xabc004 }))
+  ];
+  const impactTextures = [
+    makeDataTexture(generateImpactTexture({ seed: 0x110001 })),
+    makeDataTexture(generateImpactTexture({ seed: 0x110002 }))
+  ];
+  const decalTextures = {
+    bullet: [
+      makeDataTexture(generateDecalTexture('bullet', { seed: 0x220001 })),
+      makeDataTexture(generateDecalTexture('bullet', { seed: 0x220002 }))
+    ],
+    scorch: [
+      makeDataTexture(generateDecalTexture('scorch', { seed: 0x230001 })),
+      makeDataTexture(generateDecalTexture('scorch', { seed: 0x230002 }))
+    ],
+    dust: [
+      makeDataTexture(generateDecalTexture('dust', { seed: 0x240001 })),
+      makeDataTexture(generateDecalTexture('dust', { seed: 0x240002 }))
+    ],
+    energy: [
+      makeDataTexture(generateDecalTexture('energy', { seed: 0x250001 })),
+      makeDataTexture(generateDecalTexture('energy', { seed: 0x250002 }))
+    ]
+  };
+
+  const makeVfxMaterial = (color: number, map?: unknown) => {
+    const BasicCtor = (three as unknown as { MeshBasicMaterial?: new (params: { color: number }) => unknown })
+      .MeshBasicMaterial;
+    const material = BasicCtor ? new BasicCtor({ color }) : new three.MeshToonMaterial({ color, gradientMap: toonRamp });
+    (material as unknown as { map?: unknown }).map = map;
+    (material as unknown as { transparent?: boolean }).transparent = true;
+    (material as unknown as { depthWrite?: boolean }).depthWrite = false;
+    (material as unknown as { depthTest?: boolean }).depthTest = true;
+    (material as unknown as { opacity?: number }).opacity = 1;
+    const blending = (three as unknown as { AdditiveBlending?: unknown }).AdditiveBlending;
+    if (blending !== undefined) {
+      (material as unknown as { blending?: unknown }).blending = blending;
+    }
+    const DoubleSide = (three as unknown as { DoubleSide?: unknown }).DoubleSide;
+    if (DoubleSide !== undefined) {
+      (material as unknown as { side?: unknown }).side = DoubleSide;
+    }
+    return material;
+  };
+
+  const muzzleFlashMaterials = muzzleFlashTextures.map((texture) => makeVfxMaterial(0xffffff, texture));
+  const impactMaterialsBySurface = {
+    stone: impactTextures.map((texture) => makeVfxMaterial(0xffffff, texture)),
+    metal: impactTextures.map((texture) => makeVfxMaterial(0xffd27d, texture)),
+    dirt: impactTextures.map((texture) => makeVfxMaterial(0xd2a776, texture)),
+    energy: impactTextures.map((texture) => makeVfxMaterial(0x6bd6ff, texture))
+  };
+  const decalMaterialsByKind = {
+    bullet: decalTextures.bullet.map((texture) => makeDecalMaterial(0xffffff, texture)),
+    scorch: decalTextures.scorch.map((texture) => makeDecalMaterial(0xffffff, texture)),
+    dust: decalTextures.dust.map((texture) => makeDecalMaterial(0xffffff, texture)),
+    energy: decalTextures.energy.map((texture) => makeDecalMaterial(0xffffff, texture))
+  };
+
+  const muzzleFlashGeometry = new three.PlaneGeometry(1, 1);
+  const impactGeometry = new three.PlaneGeometry(1, 1);
+  const decalGeometry = new three.PlaneGeometry(1, 1);
 
   if (loadEnvironment) {
     void loadRetroUrbanMap(scene);
@@ -351,6 +474,8 @@ export const createApp = ({
     });
   };
 
+  refreshViewmodelOutline();
+
   if (loadEnvironment) {
     setWeaponViewmodel(WEAPON_DEFS[0]?.id);
   }
@@ -373,6 +498,7 @@ export const createApp = ({
   const snapshotBuffer = new SnapshotBuffer(DEFAULTS.snapshotRate);
   const prediction = new ClientPrediction();
   prediction.setTickRate(DEFAULTS.tickRate);
+  let lastRenderTick: number | null = null;
   let lastPlayerPose = {
     posX: cube.position.x,
     posY: cube.position.z,
@@ -382,6 +508,10 @@ export const createApp = ({
     velZ: 0
   };
   const resolvePlayerPose = (nowMs: number) => {
+    const timeline = snapshotBuffer.sampleWithRenderTick(nowMs);
+    if (timeline) {
+      lastRenderTick = timeline.renderTick;
+    }
     if (prediction.isActive()) {
       const predicted = prediction.getState();
       return {
@@ -393,7 +523,7 @@ export const createApp = ({
         velZ: predicted.velZ
       };
     }
-    const snapshot = snapshotBuffer.sample(nowMs);
+    const snapshot = timeline?.snapshot ?? null;
     if (snapshot) {
       return {
         posX: snapshot.posX,
@@ -431,12 +561,21 @@ export const createApp = ({
     return Math.min(maxSlot, Math.max(0, Math.floor(slot)));
   };
 
+  const normalizeDirection = (dir: { x: number; y: number; z: number }) => {
+    const x = Number.isFinite(dir.x) ? dir.x : 0;
+    const y = Number.isFinite(dir.y) ? dir.y : 0;
+    const z = Number.isFinite(dir.z) ? dir.z : -1;
+    const len = Math.hypot(x, y, z);
+    if (!Number.isFinite(len) || len <= 1e-6) {
+      return { x: 0, y: 0, z: -1 };
+    }
+    return { x: x / len, y: y / len, z: z / len };
+  };
+
   const directionToAngles = (dir: { x: number; y: number; z: number }) => {
-    const safeX = Number.isFinite(dir.x) ? dir.x : 0;
-    const safeY = Number.isFinite(dir.y) ? dir.y : 0;
-    const safeZ = Number.isFinite(dir.z) ? dir.z : -1;
-    const yaw = Math.atan2(safeX, -safeZ);
-    const pitch = Math.asin(Math.max(-1, Math.min(1, safeY)));
+    const safe = normalizeDirection(dir);
+    const yaw = Math.atan2(safe.x, -safe.z);
+    const pitch = Math.asin(Math.max(-1, Math.min(1, safe.y)));
     return { yaw, pitch };
   };
 
@@ -496,22 +635,207 @@ export const createApp = ({
     length: number
   ) => {
     const safeLength = Number.isFinite(length) && length > 0 ? length : DEFAULTS.tracerLength;
-    const tracerGeometry = new three.BoxGeometry(
-      DEFAULTS.tracerThickness,
-      DEFAULTS.tracerThickness,
-      safeLength
-    );
-    const mesh = new three.Mesh(tracerGeometry, tracerMaterial);
-    mesh.rotation.y = Number.isFinite(yaw) ? yaw : 0;
-    mesh.rotation.x = Number.isFinite(pitch) ? pitch : 0;
+    const needsAdd = freeTracers.length > 0 || tracers.length < DEFAULTS.maxTracers;
+    const tracer =
+      freeTracers.pop() ??
+      (tracers.length < DEFAULTS.maxTracers
+        ? { mesh: new three.Mesh(tracerGeometry, tracerMaterial), ttl: 0 }
+        : tracers.shift()!);
+    const mesh = tracer.mesh;
+    if (needsAdd) {
+      scene.add(mesh);
+    }
+    mesh.rotation.y = yaw;
+    mesh.rotation.x = pitch;
+    mesh.scale.set(1, 1, safeLength);
     mesh.position.set(
       origin.x + dir.x * safeLength * 0.5,
       origin.y + dir.y * safeLength * 0.5,
       origin.z + dir.z * safeLength * 0.5
     );
-    scene.add(mesh);
-    tracers.push({ mesh, ttl: DEFAULTS.tracerTtl });
+    tracer.ttl = DEFAULTS.tracerTtl;
+    tracers.push(tracer);
   };
+
+  const resolveSurfaceKey = (surfaceType: number): keyof typeof impactMaterialsBySurface => {
+    switch (surfaceType) {
+      case 1:
+        return 'metal';
+      case 2:
+        return 'dirt';
+      case 3:
+        return 'energy';
+      case 0:
+      default:
+        return 'stone';
+    }
+  };
+
+  const resolveDecalKind = (surfaceType: number): keyof typeof decalMaterialsByKind => {
+    switch (surfaceType) {
+      case 2:
+        return 'dust';
+      case 3:
+        return 'energy';
+      case 0:
+      case 1:
+      default:
+        return 'bullet';
+    }
+  };
+
+  const spawnMuzzleFlashVfx = (payload: {
+    position: { x: number; y: number; z: number };
+    dir: { x: number; y: number; z: number };
+    seed: number;
+    size?: number;
+    ttl?: number;
+  }) => {
+    const position = payload.position;
+    if (!Number.isFinite(position.x) || !Number.isFinite(position.y) || !Number.isFinite(position.z)) {
+      return;
+    }
+    const safeDir = normalizeDirection(payload.dir);
+    const seed = Number.isFinite(payload.seed) ? (payload.seed >>> 0) : 0;
+    const rand = createRandom(seed);
+    const size = Number.isFinite(payload.size) && payload.size > 0 ? (payload.size as number) : DEFAULTS.muzzleFlashSize;
+    const ttl = Number.isFinite(payload.ttl) && payload.ttl > 0 ? (payload.ttl as number) : DEFAULTS.muzzleFlashTtl;
+    const materialIndex = Math.floor(rand() * muzzleFlashMaterials.length) % muzzleFlashMaterials.length;
+    const needsAdd = freeMuzzleFlashes.length > 0 || muzzleFlashes.length < DEFAULTS.maxMuzzleFlashes;
+    const vfx =
+      freeMuzzleFlashes.pop() ??
+      (muzzleFlashes.length < DEFAULTS.maxMuzzleFlashes
+        ? { mesh: new three.Mesh(muzzleFlashGeometry, muzzleFlashMaterials[materialIndex] as unknown as never), ttl: 0, seed }
+        : muzzleFlashes.shift()!);
+    const mesh = vfx.mesh;
+    (mesh as unknown as { material?: unknown }).material = muzzleFlashMaterials[materialIndex] as unknown;
+    if (mesh.scale) {
+      const jitter = 0.85 + rand() * 0.3;
+      mesh.scale.set(size * jitter, size * jitter, 1);
+    }
+    const angles = directionToAngles({ x: -safeDir.x, y: -safeDir.y, z: -safeDir.z });
+    mesh.rotation.y = angles.yaw;
+    mesh.rotation.x = angles.pitch;
+    mesh.rotation.z = rand() * Math.PI * 2;
+    const forwardOffset = 0.05 + 0.05 * rand();
+    mesh.position.set(position.x + safeDir.x * forwardOffset, position.y + safeDir.y * forwardOffset, position.z + safeDir.z * forwardOffset);
+    if (needsAdd) {
+      scene.add(mesh);
+    }
+    vfx.ttl = ttl;
+    vfx.seed = seed;
+    muzzleFlashes.push(vfx);
+  };
+
+  const spawnImpactVfx = (payload: {
+    position: { x: number; y: number; z: number };
+    normal: { x: number; y: number; z: number };
+    surfaceType: number;
+    seed: number;
+    size?: number;
+    ttl?: number;
+  }) => {
+    const position = payload.position;
+    if (!Number.isFinite(position.x) || !Number.isFinite(position.y) || !Number.isFinite(position.z)) {
+      return;
+    }
+    const safeNormal = normalizeDirection(payload.normal);
+    const surfaceKey = resolveSurfaceKey(payload.surfaceType);
+    const materials = impactMaterialsBySurface[surfaceKey];
+    const seed = Number.isFinite(payload.seed) ? (payload.seed >>> 0) : 0;
+    const rand = createRandom(seed);
+    const size = Number.isFinite(payload.size) && payload.size > 0 ? (payload.size as number) : DEFAULTS.impactSize;
+    const ttl = Number.isFinite(payload.ttl) && payload.ttl > 0 ? (payload.ttl as number) : DEFAULTS.impactTtl;
+    const materialIndex = Math.floor(rand() * materials.length) % materials.length;
+    const needsAdd = freeImpacts.length > 0 || impacts.length < DEFAULTS.maxImpacts;
+    const vfx =
+      freeImpacts.pop() ??
+      (impacts.length < DEFAULTS.maxImpacts
+        ? { mesh: new three.Mesh(impactGeometry, materials[materialIndex] as unknown as never), ttl: 0, seed }
+        : impacts.shift()!);
+    const mesh = vfx.mesh;
+    (mesh as unknown as { material?: unknown }).material = materials[materialIndex] as unknown;
+    if (mesh.scale) {
+      const jitter = 0.8 + rand() * 0.4;
+      mesh.scale.set(size * jitter, size * jitter, 1);
+    }
+    const angles = directionToAngles({ x: -safeNormal.x, y: -safeNormal.y, z: -safeNormal.z });
+    mesh.rotation.y = angles.yaw;
+    mesh.rotation.x = angles.pitch;
+    mesh.rotation.z = rand() * Math.PI * 2;
+    const offset = 0.02;
+    mesh.position.set(
+      position.x + safeNormal.x * offset,
+      position.y + safeNormal.y * offset,
+      position.z + safeNormal.z * offset
+    );
+    if (needsAdd) {
+      scene.add(mesh);
+    }
+    vfx.ttl = ttl;
+    vfx.seed = seed;
+    impacts.push(vfx);
+  };
+
+  const spawnDecalVfx = (payload: {
+    position: { x: number; y: number; z: number };
+    normal: { x: number; y: number; z: number };
+    surfaceType: number;
+    seed: number;
+    size?: number;
+    ttl?: number;
+  }) => {
+    const position = payload.position;
+    if (!Number.isFinite(position.x) || !Number.isFinite(position.y) || !Number.isFinite(position.z)) {
+      return;
+    }
+    const safeNormal = normalizeDirection(payload.normal);
+    const kind = resolveDecalKind(payload.surfaceType);
+    const materials = decalMaterialsByKind[kind];
+    const seed = Number.isFinite(payload.seed) ? (payload.seed >>> 0) : 0;
+    const rand = createRandom(seed ^ hashString(kind));
+    const size = Number.isFinite(payload.size) && payload.size > 0 ? (payload.size as number) : DEFAULTS.decalSize;
+    const ttl =
+      Number.isFinite(payload.ttl) && payload.ttl > 0
+        ? (payload.ttl as number)
+        : lerp(DEFAULTS.decalTtlMin, DEFAULTS.decalTtlMax, rand());
+    const materialIndex = Math.floor(rand() * materials.length) % materials.length;
+    const needsAdd = freeDecals.length > 0 || decals.length < DEFAULTS.maxDecals;
+    const vfx =
+      freeDecals.pop() ??
+      (decals.length < DEFAULTS.maxDecals
+        ? { mesh: new three.Mesh(decalGeometry, materials[materialIndex] as unknown as never), ttl: 0, seed }
+        : decals.shift()!);
+    const mesh = vfx.mesh;
+    (mesh as unknown as { material?: unknown }).material = materials[materialIndex] as unknown;
+    if (mesh.scale) {
+      const jitter = 0.9 + rand() * 0.25;
+      mesh.scale.set(size * jitter, size * jitter, 1);
+    }
+    const angles = directionToAngles({ x: -safeNormal.x, y: -safeNormal.y, z: -safeNormal.z });
+    mesh.rotation.y = angles.yaw;
+    mesh.rotation.x = angles.pitch;
+    mesh.rotation.z = rand() * Math.PI * 2;
+    const offset = 0.01;
+    mesh.position.set(
+      position.x + safeNormal.x * offset,
+      position.y + safeNormal.y * offset,
+      position.z + safeNormal.z * offset
+    );
+    if (needsAdd) {
+      scene.add(mesh);
+    }
+    vfx.ttl = ttl;
+    vfx.seed = seed;
+    decals.push(vfx);
+  };
+
+  const getFxPoolStats = () => ({
+    tracers: { active: tracers.length, free: freeTracers.length, max: DEFAULTS.maxTracers },
+    muzzleFlashes: { active: muzzleFlashes.length, free: freeMuzzleFlashes.length, max: DEFAULTS.maxMuzzleFlashes },
+    impacts: { active: impacts.length, free: freeImpacts.length, max: DEFAULTS.maxImpacts },
+    decals: { active: decals.length, free: freeDecals.length, max: DEFAULTS.maxDecals }
+  });
 
   const ingestSnapshot = (snapshot: NetworkSnapshot, nowMs: number) => {
     snapshotBuffer.push(snapshot, nowMs);
@@ -542,6 +866,7 @@ export const createApp = ({
     origin: { x: number; y: number; z: number };
     velocity: { x: number; y: number; z: number };
     ttl?: number;
+    projectileId?: number;
   }) => {
     spawnProjectileWithVelocity(
       payload.origin,
@@ -560,10 +885,7 @@ export const createApp = ({
       return;
     }
     removeProjectile(projectile);
-    const index = projectiles.indexOf(projectile);
-    if (index >= 0) {
-      projectiles.splice(index, 1);
-    }
+    projectiles.splice(projectiles.indexOf(projectile), 1);
   };
 
   const spawnTracerVfx = (payload: {
@@ -586,6 +908,7 @@ export const createApp = ({
     const angles = directionToAngles(safeDir);
     spawnTracer(payload.origin, safeDir, angles.yaw, angles.pitch, payload.length ?? DEFAULTS.tracerLength);
   };
+
 
   const setTickRate = (tickRate: number) => {
     prediction.setTickRate(tickRate);
@@ -618,11 +941,12 @@ export const createApp = ({
   };
 
   const getLookAngles = () => ({
-    yaw: Number.isFinite(lookYaw) ? lookYaw : 0,
-    pitch: Number.isFinite(lookPitch) ? lookPitch : 0
+    yaw: lookYaw,
+    pitch: lookPitch
   });
 
   const getPlayerPose = () => ({ ...lastPlayerPose });
+  const getRenderTick = () => lastRenderTick;
 
   const setLookSensitivity = (value: number) => {
     if (Number.isFinite(value) && value > 0) {
@@ -664,7 +988,41 @@ export const createApp = ({
         tracer.ttl -= safeDelta;
         if (tracer.ttl <= 0) {
           scene.remove?.(tracer.mesh);
+          freeTracers.push(tracer);
           tracers.splice(i, 1);
+        }
+      }
+    }
+    if (muzzleFlashes.length > 0 && safeDelta > 0) {
+      for (let i = muzzleFlashes.length - 1; i >= 0; i -= 1) {
+        const vfx = muzzleFlashes[i];
+        vfx.ttl -= safeDelta;
+        if (vfx.ttl <= 0) {
+          scene.remove?.(vfx.mesh);
+          freeMuzzleFlashes.push(vfx);
+          muzzleFlashes.splice(i, 1);
+        }
+      }
+    }
+    if (impacts.length > 0 && safeDelta > 0) {
+      for (let i = impacts.length - 1; i >= 0; i -= 1) {
+        const vfx = impacts[i];
+        vfx.ttl -= safeDelta;
+        if (vfx.ttl <= 0) {
+          scene.remove?.(vfx.mesh);
+          freeImpacts.push(vfx);
+          impacts.splice(i, 1);
+        }
+      }
+    }
+    if (decals.length > 0 && safeDelta > 0) {
+      for (let i = decals.length - 1; i >= 0; i -= 1) {
+        const vfx = decals[i];
+        vfx.ttl -= safeDelta;
+        if (vfx.ttl <= 0) {
+          scene.remove?.(vfx.mesh);
+          freeDecals.push(vfx);
+          decals.splice(i, 1);
         }
       }
     }
@@ -672,12 +1030,10 @@ export const createApp = ({
     cube.rotation.x = state.cubeRotation;
     cube.rotation.y = state.cubeRotation * 0.8;
     const pose = resolvePlayerPose(now);
-    if (pose) {
-      lastPlayerPose = pose;
-      const height = pose.posZ ?? 0;
-      cube.position.set(pose.posX, 0.5 + height, pose.posY);
-      camera.position.set(pose.posX, DEFAULTS.cameraHeight + height, pose.posY);
-    }
+    lastPlayerPose = pose;
+    const height = pose.posZ ?? 0;
+    cube.position.set(pose.posX, 0.5 + height, pose.posY);
+    camera.position.set(pose.posX, DEFAULTS.cameraHeight + height, pose.posY);
     beforeRenderHook?.(safeDelta, now);
     refreshOutlineFlash(now);
     if (composer) {
@@ -718,8 +1074,13 @@ export const createApp = ({
     spawnProjectileVfx,
     removeProjectileVfx,
     spawnTracerVfx,
+    spawnMuzzleFlashVfx,
+    spawnImpactVfx,
+    spawnDecalVfx,
+    getFxPoolStats,
     getWeaponCooldown,
     getAbilityCooldowns,
+    getRenderTick,
     setWeaponViewmodel,
     setTickRate,
     setPredictionSim,

@@ -74,33 +74,38 @@ fire():boolean {
   return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
 }
 
-sprint():boolean {
+ads():boolean {
   const offset = this.bb!.__offset(this.bb_pos, 24);
   return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
 }
 
-dash():boolean {
+sprint():boolean {
   const offset = this.bb!.__offset(this.bb_pos, 26);
   return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
 }
 
-grapple():boolean {
+dash():boolean {
   const offset = this.bb!.__offset(this.bb_pos, 28);
   return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
 }
 
-shield():boolean {
+grapple():boolean {
   const offset = this.bb!.__offset(this.bb_pos, 30);
   return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
 }
 
-shockwave():boolean {
+shield():boolean {
   const offset = this.bb!.__offset(this.bb_pos, 32);
   return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
 }
 
+shockwave():boolean {
+  const offset = this.bb!.__offset(this.bb_pos, 34);
+  return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
+}
+
 static startInputCmd(builder:flatbuffers.Builder) {
-  builder.startObject(15);
+  builder.startObject(16);
 }
 
 static addInputSeq(builder:flatbuffers.Builder, inputSeq:number) {
@@ -143,24 +148,28 @@ static addFire(builder:flatbuffers.Builder, fire:boolean) {
   builder.addFieldInt8(9, +fire, +false);
 }
 
+static addAds(builder:flatbuffers.Builder, ads:boolean) {
+  builder.addFieldInt8(10, +ads, +false);
+}
+
 static addSprint(builder:flatbuffers.Builder, sprint:boolean) {
-  builder.addFieldInt8(10, +sprint, +false);
+  builder.addFieldInt8(11, +sprint, +false);
 }
 
 static addDash(builder:flatbuffers.Builder, dash:boolean) {
-  builder.addFieldInt8(11, +dash, +false);
+  builder.addFieldInt8(12, +dash, +false);
 }
 
 static addGrapple(builder:flatbuffers.Builder, grapple:boolean) {
-  builder.addFieldInt8(12, +grapple, +false);
+  builder.addFieldInt8(13, +grapple, +false);
 }
 
 static addShield(builder:flatbuffers.Builder, shield:boolean) {
-  builder.addFieldInt8(13, +shield, +false);
+  builder.addFieldInt8(14, +shield, +false);
 }
 
 static addShockwave(builder:flatbuffers.Builder, shockwave:boolean) {
-  builder.addFieldInt8(14, +shockwave, +false);
+  builder.addFieldInt8(15, +shockwave, +false);
 }
 
 static endInputCmd(builder:flatbuffers.Builder):flatbuffers.Offset {
@@ -168,7 +177,7 @@ static endInputCmd(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createInputCmd(builder:flatbuffers.Builder, inputSeq:number, moveX:number, moveY:number, lookDeltaX:number, lookDeltaY:number, viewYaw:number, viewPitch:number, weaponSlot:number, jump:boolean, fire:boolean, sprint:boolean, dash:boolean, grapple:boolean, shield:boolean, shockwave:boolean):flatbuffers.Offset {
+static createInputCmd(builder:flatbuffers.Builder, inputSeq:number, moveX:number, moveY:number, lookDeltaX:number, lookDeltaY:number, viewYaw:number, viewPitch:number, weaponSlot:number, jump:boolean, fire:boolean, ads:boolean, sprint:boolean, dash:boolean, grapple:boolean, shield:boolean, shockwave:boolean):flatbuffers.Offset {
   InputCmd.startInputCmd(builder);
   InputCmd.addInputSeq(builder, inputSeq);
   InputCmd.addMoveX(builder, moveX);
@@ -180,6 +189,7 @@ static createInputCmd(builder:flatbuffers.Builder, inputSeq:number, moveX:number
   InputCmd.addWeaponSlot(builder, weaponSlot);
   InputCmd.addJump(builder, jump);
   InputCmd.addFire(builder, fire);
+  InputCmd.addAds(builder, ads);
   InputCmd.addSprint(builder, sprint);
   InputCmd.addDash(builder, dash);
   InputCmd.addGrapple(builder, grapple);
@@ -200,6 +210,7 @@ unpack(): InputCmdT {
     this.weaponSlot(),
     this.jump(),
     this.fire(),
+    this.ads(),
     this.sprint(),
     this.dash(),
     this.grapple(),
@@ -220,6 +231,7 @@ unpackTo(_o: InputCmdT): void {
   _o.weaponSlot = this.weaponSlot();
   _o.jump = this.jump();
   _o.fire = this.fire();
+  _o.ads = this.ads();
   _o.sprint = this.sprint();
   _o.dash = this.dash();
   _o.grapple = this.grapple();
@@ -240,6 +252,7 @@ constructor(
   public weaponSlot: number = 0,
   public jump: boolean = false,
   public fire: boolean = false,
+  public ads: boolean = false,
   public sprint: boolean = false,
   public dash: boolean = false,
   public grapple: boolean = false,
@@ -260,6 +273,7 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
     this.weaponSlot,
     this.jump,
     this.fire,
+    this.ads,
     this.sprint,
     this.dash,
     this.grapple,

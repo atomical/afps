@@ -34,4 +34,31 @@ describe('exposeWeaponDebug', () => {
     logSpy.mockRestore();
     (console as unknown as { table?: typeof console.table }).table = originalTable;
   });
+
+  it('logs non-array debug rows', () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const target: { afpsDebug?: Record<string, unknown> } = {};
+    const debug = exposeWeaponDebug(target, WEAPON_DEFS);
+    if (debug) {
+      debug.listWeapons = () => 'oops' as unknown as Array<{ id: string }>;
+    }
+
+    const rows = (debug?.printWeapons as () => unknown)();
+    expect(logSpy).toHaveBeenCalledWith(rows);
+
+    logSpy.mockRestore();
+  });
+
+  it('skips logging when console is unavailable', () => {
+    const originalConsole = globalThis.console;
+    (globalThis as unknown as { console?: typeof console }).console = undefined;
+    try {
+      const target: { afpsDebug?: Record<string, unknown> } = {};
+      const debug = exposeWeaponDebug(target, WEAPON_DEFS);
+      const rows = (debug?.printWeapons as () => unknown)();
+      expect(rows).toBeDefined();
+    } finally {
+      (globalThis as unknown as { console?: typeof console }).console = originalConsole;
+    }
+  });
 });

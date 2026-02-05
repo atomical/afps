@@ -42,6 +42,11 @@ describe('env', () => {
     expect(getLookSensitivity()).toBeUndefined();
   });
 
+  it('returns undefined when look sensitivity is missing', () => {
+    delete env.VITE_LOOK_SENSITIVITY;
+    expect(getLookSensitivity()).toBeUndefined();
+  });
+
   it('reads wasm sim url from env', () => {
     env.VITE_WASM_SIM_URL = 'https://example.test/afps_sim.js';
     expect(getWasmSimUrl()).toBe('https://example.test/afps_sim.js');

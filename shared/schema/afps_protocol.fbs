@@ -19,14 +19,112 @@ enum MessageType:ushort {
   Error = 12,
   Disconnect = 13,
   FireWeaponRequest = 14,
-  WeaponFiredEvent = 15,
-  WeaponReloadEvent = 16
+  SetLoadoutRequest = 15
 }
 
-enum GameEventType:byte {
-  HitConfirmed = 0,
-  ProjectileSpawn = 1,
-  ProjectileRemove = 2
+enum HitKind:ubyte {
+  None = 0,
+  World = 1,
+  Player = 2
+}
+
+enum SurfaceType:ubyte {
+  Stone = 0,
+  Metal = 1,
+  Dirt = 2,
+  Energy = 3
+}
+
+table ShotFiredFx {
+  shooter_id:string;
+  weapon_slot:ubyte;
+  shot_seq:int;
+  dry_fire:bool;
+}
+
+table ShotTraceFx {
+  shooter_id:string;
+  weapon_slot:ubyte;
+  shot_seq:int;
+  dir_oct_x:short;
+  dir_oct_y:short;
+  hit_dist_q:ushort;
+  hit_kind:HitKind;
+  surface_type:SurfaceType;
+  normal_oct_x:short;
+  normal_oct_y:short;
+  show_tracer:bool;
+}
+
+table ReloadFx {
+  shooter_id:string;
+  weapon_slot:ubyte;
+}
+
+table NearMissFx {
+  shooter_id:string;
+  shot_seq:int;
+  strength:ubyte;
+}
+
+table OverheatFx {
+  shooter_id:string;
+  weapon_slot:ubyte;
+  heat_q:ushort;
+}
+
+table VentFx {
+  shooter_id:string;
+  weapon_slot:ubyte;
+}
+
+table HitConfirmedFx {
+  target_id:string;
+  damage:double;
+  killed:bool;
+}
+
+table ProjectileSpawnFx {
+  shooter_id:string;
+  weapon_slot:ubyte;
+  shot_seq:int;
+  projectile_id:int;
+  pos_x_q:short;
+  pos_y_q:short;
+  pos_z_q:short;
+  vel_x_q:short;
+  vel_y_q:short;
+  vel_z_q:short;
+  ttl_q:ushort;
+}
+
+table ProjectileImpactFx {
+  projectile_id:int;
+  hit_world:bool;
+  target_id:string;
+  pos_x_q:short;
+  pos_y_q:short;
+  pos_z_q:short;
+  normal_oct_x:short;
+  normal_oct_y:short;
+  surface_type:SurfaceType;
+}
+
+table ProjectileRemoveFx {
+  projectile_id:int;
+}
+
+union FxEvent {
+  ShotFiredFx,
+  ShotTraceFx,
+  ReloadFx,
+  NearMissFx,
+  OverheatFx,
+  VentFx,
+  HitConfirmedFx,
+  ProjectileSpawnFx,
+  ProjectileImpactFx,
+  ProjectileRemoveFx
 }
 
 table ClientHello {
@@ -69,6 +167,7 @@ table InputCmd {
   weapon_slot:int;
   jump:bool;
   fire:bool;
+  ads:bool;
   sprint:bool;
   dash:bool;
   grapple:bool;
@@ -88,41 +187,8 @@ table FireWeaponRequest {
   dir_z:double;
 }
 
-table WeaponFiredEvent {
-  shooter_id:string;
-  weapon_id:string;
-  weapon_slot:int;
-  server_tick:int;
-  shot_seq:int;
-  muzzle_pos_x:double;
-  muzzle_pos_y:double;
-  muzzle_pos_z:double;
-  dir_x:double;
-  dir_y:double;
-  dir_z:double;
-  dry_fire:bool;
-  casing_enabled:bool;
-  casing_pos_x:double;
-  casing_pos_y:double;
-  casing_pos_z:double;
-  casing_rot_x:double;
-  casing_rot_y:double;
-  casing_rot_z:double;
-  casing_vel_x:double;
-  casing_vel_y:double;
-  casing_vel_z:double;
-  casing_ang_x:double;
-  casing_ang_y:double;
-  casing_ang_z:double;
-  casing_seed:uint;
-}
-
-table WeaponReloadEvent {
-  shooter_id:string;
-  weapon_id:string;
-  weapon_slot:int;
-  server_tick:int;
-  reload_seconds:double;
+table SetLoadoutRequest {
+  loadout_bits:uint;
 }
 
 table StateSnapshot {
@@ -141,6 +207,11 @@ table StateSnapshot {
   health:double;
   kills:int;
   deaths:int;
+  view_yaw_q:short;
+  view_pitch_q:short;
+  player_flags:ubyte;
+  weapon_heat_q:ushort;
+  loadout_bits:uint;
 }
 
 table StateSnapshotDelta {
@@ -161,6 +232,11 @@ table StateSnapshotDelta {
   health:double;
   kills:int;
   deaths:int;
+  view_yaw_q:short;
+  view_pitch_q:short;
+  player_flags:ubyte;
+  weapon_heat_q:ushort;
+  loadout_bits:uint;
 }
 
 table PlayerProfile {
@@ -170,19 +246,8 @@ table PlayerProfile {
 }
 
 table GameEvent {
-  event_type:GameEventType;
-  target_id:string;
-  owner_id:string;
-  projectile_id:int;
-  damage:double;
-  killed:bool;
-  pos_x:double;
-  pos_y:double;
-  pos_z:double;
-  vel_x:double;
-  vel_y:double;
-  vel_z:double;
-  ttl:double;
+  server_tick:int;
+  events:[FxEvent];
 }
 
 table Ping {

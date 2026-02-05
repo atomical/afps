@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as flatbuffers from 'flatbuffers';
-import { createWebRtcConnector } from '../../src/net/webrtc';
+import { __test as webrtcTest, createWebRtcConnector } from '../../src/net/webrtc';
 import {
   decodeEnvelope,
   encodeEnvelope,
@@ -12,15 +12,17 @@ import {
 } from '../../src/net/protocol';
 import { FakeDataChannel, FakePeerConnection, FakePeerConnectionFactory, FakeSignalingClient } from './fakes';
 import { ClientHello } from '../../src/net/fbs/afps/protocol/client-hello';
-import { GameEvent } from '../../src/net/fbs/afps/protocol/game-event';
-import { GameEventType } from '../../src/net/fbs/afps/protocol/game-event-type';
+import { FxEvent } from '../../src/net/fbs/afps/protocol/fx-event';
+import { GameEventT } from '../../src/net/fbs/afps/protocol/game-event';
+import { HitConfirmedFxT } from '../../src/net/fbs/afps/protocol/hit-confirmed-fx';
+import { Ping } from '../../src/net/fbs/afps/protocol/ping';
 import { PlayerProfile } from '../../src/net/fbs/afps/protocol/player-profile';
 import { Pong } from '../../src/net/fbs/afps/protocol/pong';
+import { ReloadFxT } from '../../src/net/fbs/afps/protocol/reload-fx';
 import { ServerHello } from '../../src/net/fbs/afps/protocol/server-hello';
+import { ShotFiredFxT } from '../../src/net/fbs/afps/protocol/shot-fired-fx';
 import { StateSnapshot } from '../../src/net/fbs/afps/protocol/state-snapshot';
 import { StateSnapshotDelta } from '../../src/net/fbs/afps/protocol/state-snapshot-delta';
-import { WeaponFiredEvent as WeaponFiredEventFbs } from '../../src/net/fbs/afps/protocol/weapon-fired-event';
-import { WeaponReloadEvent as WeaponReloadEventFbs } from '../../src/net/fbs/afps/protocol/weapon-reload-event';
 
 const createTimers = () => ({
   setInterval: (callback: () => void, ms: number) => window.setInterval(callback, ms),
@@ -88,6 +90,11 @@ const buildStateSnapshot = (snapshot: {
   health: number;
   kills: number;
   deaths: number;
+  viewYawQ?: number;
+  viewPitchQ?: number;
+  playerFlags?: number;
+  weaponHeatQ?: number;
+  loadoutBits?: number;
   clientId?: string;
 }, msgSeq = 2) => {
   const builder = new flatbuffers.Builder(256);
@@ -108,7 +115,12 @@ const buildStateSnapshot = (snapshot: {
     snapshot.dashCooldown,
     snapshot.health,
     snapshot.kills,
-    snapshot.deaths
+    snapshot.deaths,
+    snapshot.viewYawQ ?? 0,
+    snapshot.viewPitchQ ?? 0,
+    snapshot.playerFlags ?? 0,
+    snapshot.weaponHeatQ ?? 0,
+    snapshot.loadoutBits ?? 0
   );
   builder.finish(offset);
   return encodeEnvelope(MessageType.StateSnapshot, builder.asUint8Array(), msgSeq, 0);
@@ -131,6 +143,11 @@ const buildStateSnapshotDelta = (delta: {
   health?: number;
   kills?: number;
   deaths?: number;
+  viewYawQ?: number;
+  viewPitchQ?: number;
+  playerFlags?: number;
+  weaponHeatQ?: number;
+  loadoutBits?: number;
   clientId?: string;
 }, msgSeq = 3) => {
   const builder = new flatbuffers.Builder(256);
@@ -153,7 +170,12 @@ const buildStateSnapshotDelta = (delta: {
     delta.dashCooldown ?? 0,
     delta.health ?? 0,
     delta.kills ?? 0,
-    delta.deaths ?? 0
+    delta.deaths ?? 0,
+    delta.viewYawQ ?? 0,
+    delta.viewPitchQ ?? 0,
+    delta.playerFlags ?? 0,
+    delta.weaponHeatQ ?? 0,
+    delta.loadoutBits ?? 0
   );
   builder.finish(offset);
   return encodeEnvelope(MessageType.StateSnapshotDelta, builder.asUint8Array(), msgSeq, 0);
@@ -169,48 +191,30 @@ const buildPlayerProfile = (profile: { clientId: string; nickname: string; chara
   return encodeEnvelope(MessageType.PlayerProfile, builder.asUint8Array(), msgSeq, 0);
 };
 
-const buildGameEventProjectileSpawn = (msgSeq = 4) => {
-  const builder = new flatbuffers.Builder(256);
-  const ownerId = builder.createString('owner-1');
-  const offset = GameEvent.createGameEvent(
-    builder,
-    GameEventType.ProjectileSpawn,
-    0,
-    ownerId,
-    9,
-    0,
-    false,
-    1,
-    2,
-    3,
-    4,
-    5,
-    6,
-    0.5
+const buildGameEventHitConfirmed = (msgSeq = 6) => {
+  const builder = new flatbuffers.Builder(128);
+  const payload = new GameEventT(0, [FxEvent.HitConfirmedFx], [new HitConfirmedFxT('target', 5.5, true)] as never).pack(
+    builder
   );
-  builder.finish(offset);
+  builder.finish(payload);
   return encodeEnvelope(MessageType.GameEvent, builder.asUint8Array(), msgSeq, 0);
 };
 
-const buildGameEventHitConfirmed = (msgSeq = 6) => {
+const buildGameEventWeaponFx = (msgSeq = 7) => {
   const builder = new flatbuffers.Builder(128);
-  const offset = GameEvent.createGameEvent(
-    builder,
-    GameEventType.HitConfirmed,
+  const payload = new GameEventT(
     0,
-    0,
-    0,
-    5.5,
-    true,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0
-  );
-  builder.finish(offset);
+    [FxEvent.ShotFiredFx, FxEvent.ReloadFx],
+    [new ShotFiredFxT('shooter', 0, 10, false), new ReloadFxT('shooter', 0)] as never
+  ).pack(builder);
+  builder.finish(payload);
+  return encodeEnvelope(MessageType.GameEvent, builder.asUint8Array(), msgSeq, 0);
+};
+
+const buildInvalidGameEvent = (msgSeq = 8) => {
+  const builder = new flatbuffers.Builder(128);
+  const payload = new GameEventT(0, [FxEvent.ShotFiredFx], [new ShotFiredFxT('', 0, 0, false)] as never).pack(builder);
+  builder.finish(payload);
   return encodeEnvelope(MessageType.GameEvent, builder.asUint8Array(), msgSeq, 0);
 };
 
@@ -221,50 +225,11 @@ const buildPong = (clientTimeMs: number, msgSeq = 5) => {
   return encodeEnvelope(MessageType.Pong, builder.asUint8Array(), msgSeq, 0);
 };
 
-const buildWeaponFiredEvent = (msgSeq = 7) => {
-  const builder = new flatbuffers.Builder(256);
-  const shooter = builder.createString('shooter');
-  const weapon = builder.createString('rifle');
-  const offset = WeaponFiredEventFbs.createWeaponFiredEvent(
-    builder,
-    shooter,
-    weapon,
-    0,
-    10,
-    2,
-    1,
-    2,
-    3,
-    0.1,
-    0.2,
-    0.3,
-    false,
-    false,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0
-  );
+const buildPing = (clientTimeMs: number, msgSeq = 6) => {
+  const builder = new flatbuffers.Builder(64);
+  const offset = Ping.createPing(builder, clientTimeMs);
   builder.finish(offset);
-  return encodeEnvelope(MessageType.WeaponFiredEvent, builder.asUint8Array(), msgSeq, 0);
-};
-
-const buildWeaponReloadEvent = (msgSeq = 8) => {
-  const builder = new flatbuffers.Builder(128);
-  const shooter = builder.createString('shooter');
-  const weapon = builder.createString('rifle');
-  const offset = WeaponReloadEventFbs.createWeaponReloadEvent(builder, shooter, weapon, 0, 10, 0.9);
-  builder.finish(offset);
-  return encodeEnvelope(MessageType.WeaponReloadEvent, builder.asUint8Array(), msgSeq, 0);
+  return encodeEnvelope(MessageType.Ping, builder.asUint8Array(), msgSeq, 0);
 };
 
 describe('webrtc connector', () => {
@@ -308,9 +273,119 @@ describe('webrtc connector', () => {
     expect(session.serverHello.connectionId).toBe(signaling.connectionId);
     reliable.emitMessage(buildPong(1));
     session.close();
+    session.close();
     const fetchCount = signaling.fetchCandidatesCalls.length;
     vi.advanceTimersByTime(500);
     expect(signaling.fetchCandidatesCalls.length).toBe(fetchCount);
+    vi.useRealTimers();
+  });
+
+  it('defaults timers when none are provided', async () => {
+    vi.useFakeTimers();
+    const signaling = new FakeSignalingClient();
+    const rtcFactory = new FakePeerConnectionFactory();
+    const connector = createWebRtcConnector({
+      signaling,
+      rtcFactory,
+      logger: silentLogger,
+      pollIntervalMs: 100,
+      connectTimeoutMs: 1000
+    });
+
+    const connectPromise = connector.connect();
+    const pc = await waitForPeer(rtcFactory);
+
+    const reliable = new FakeDataChannel('afps_reliable');
+    const unreliable = new FakeDataChannel('afps_unreliable');
+    pc.emitDataChannel(reliable);
+    pc.emitDataChannel(unreliable);
+    reliable.open();
+    unreliable.open();
+    await Promise.resolve();
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
+
+    const session = await connectPromise;
+    expect(session.serverHello.connectionId).toBe(signaling.connectionId);
+    session.close();
+    vi.useRealTimers();
+  });
+
+  it('clears the channel-open timeout once the data channel opens', async () => {
+    vi.useFakeTimers();
+    const channel = new FakeDataChannel('afps_reliable');
+    const clearTimeout = vi.fn();
+    const timers = {
+      setInterval: (callback: () => void, ms: number) => window.setInterval(callback, ms),
+      clearInterval: (id: number) => window.clearInterval(id),
+      setTimeout: (callback: () => void, ms: number) => {
+        window.setTimeout(callback, ms);
+        return 1;
+      },
+      clearTimeout
+    };
+    const waitPromise = webrtcTest.waitForDataChannelOpen(channel, timers, 1000);
+
+    channel.open();
+
+    await expect(waitPromise).resolves.toBeUndefined();
+    expect(clearTimeout).toHaveBeenCalledWith(1);
+    vi.useRealTimers();
+  });
+
+  it('skips clearing when the timeout id is falsy', async () => {
+    vi.useFakeTimers();
+    const channel = new FakeDataChannel('afps_reliable');
+    const clearTimeout = vi.fn();
+    const timers = {
+      setInterval: (callback: () => void, ms: number) => window.setInterval(callback, ms),
+      clearInterval: (id: number) => window.clearInterval(id),
+      setTimeout: (callback: () => void, ms: number) => {
+        window.setTimeout(callback, ms);
+        return 0;
+      },
+      clearTimeout
+    };
+    const waitPromise = webrtcTest.waitForDataChannelOpen(channel, timers, 1000);
+
+    channel.open();
+
+    await expect(waitPromise).resolves.toBeUndefined();
+    expect(clearTimeout).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('ignores unknown envelope types', async () => {
+    vi.useFakeTimers();
+    const signaling = new FakeSignalingClient();
+    const rtcFactory = new FakePeerConnectionFactory();
+    const onPong = vi.fn();
+    const connector = createWebRtcConnector({
+      signaling,
+      rtcFactory,
+      logger: silentLogger,
+      pollIntervalMs: 100,
+      connectTimeoutMs: 1000,
+      timers: createTimers(),
+      onPong
+    });
+
+    const connectPromise = connector.connect();
+    const pc = await waitForPeer(rtcFactory);
+
+    const reliable = new FakeDataChannel('afps_reliable');
+    const unreliable = new FakeDataChannel('afps_unreliable');
+    pc.emitDataChannel(reliable);
+    pc.emitDataChannel(unreliable);
+    reliable.open();
+    unreliable.open();
+    await Promise.resolve();
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
+
+    const session = await connectPromise;
+    const unknown = encodeEnvelope(999 as MessageType, new Uint8Array(), 12, 0);
+    unreliable.emitMessage(unknown);
+    expect(onPong).not.toHaveBeenCalled();
+    session.close();
     vi.useRealTimers();
   });
 
@@ -350,6 +425,73 @@ describe('webrtc connector', () => {
 
     expect(onPlayerProfile).not.toHaveBeenCalled();
     expect(onSnapshot).not.toHaveBeenCalled();
+
+    session.close();
+    vi.useRealTimers();
+  });
+
+  it('ignores invalid snapshot, game event, and pong payloads', async () => {
+    vi.useFakeTimers();
+    const signaling = new FakeSignalingClient();
+    const rtcFactory = new FakePeerConnectionFactory();
+    const onSnapshot = vi.fn();
+    const onGameEvent = vi.fn();
+    const onPong = vi.fn();
+    const connector = createWebRtcConnector({
+      signaling,
+      rtcFactory,
+      logger: silentLogger,
+      pollIntervalMs: 100,
+      connectTimeoutMs: 1000,
+      timers: createTimers(),
+      onSnapshot,
+      onGameEvent,
+      onPong
+    });
+
+    const connectPromise = connector.connect();
+    const pc = await waitForPeer(rtcFactory);
+
+    const reliable = new FakeDataChannel('afps_reliable');
+    const unreliable = new FakeDataChannel('afps_unreliable');
+    pc.emitDataChannel(reliable);
+    pc.emitDataChannel(unreliable);
+    reliable.open();
+    unreliable.open();
+    await Promise.resolve();
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
+
+    const session = await connectPromise;
+
+    unreliable.emitMessage(
+      buildStateSnapshotDelta({ serverTick: -1, baseTick: 0, lastProcessedInputSeq: 0, mask: 0 }, 4)
+    );
+    unreliable.emitMessage(
+      buildStateSnapshot(
+        {
+          serverTick: -1,
+          lastProcessedInputSeq: 0,
+          posX: 0,
+          posY: 0,
+          posZ: 0,
+          velX: 0,
+          velY: 0,
+          velZ: 0,
+          weaponSlot: 0,
+          dashCooldown: 0,
+          health: 100,
+          kills: 0,
+          deaths: 0
+        },
+        5
+      )
+    );
+    unreliable.emitMessage(buildInvalidGameEvent(6));
+    unreliable.emitMessage(buildPong(Number.NaN, 7));
+
+    expect(onSnapshot).not.toHaveBeenCalled();
+    expect(onGameEvent).not.toHaveBeenCalled();
+    expect(onPong).not.toHaveBeenCalled();
 
     session.close();
     vi.useRealTimers();
@@ -401,7 +543,12 @@ describe('webrtc connector', () => {
       dashCooldown: 0,
       health: 100,
       kills: 0,
-      deaths: 0
+      deaths: 0,
+      viewYawQ: 0,
+      viewPitchQ: 0,
+      playerFlags: 0,
+      weaponHeatQ: 0,
+      loadoutBits: 0
     };
     unreliable.emitMessage(buildStateSnapshot(snapshot));
 
@@ -434,6 +581,11 @@ describe('webrtc connector', () => {
       health: 100,
       kills: 0,
       deaths: 0,
+      viewYawQ: 0,
+      viewPitchQ: 0,
+      playerFlags: 0,
+      weaponHeatQ: 0,
+      loadoutBits: 0,
       clientId: undefined
     });
     session.close();
@@ -477,6 +629,42 @@ describe('webrtc connector', () => {
       nickname: 'Ada',
       characterId: 'casual-a'
     });
+    vi.useRealTimers();
+  });
+
+  it('ignores invalid server hello and player profile payloads', async () => {
+    vi.useFakeTimers();
+    const signaling = new FakeSignalingClient();
+    const rtcFactory = new FakePeerConnectionFactory();
+    const onPlayerProfile = vi.fn();
+    const connector = createWebRtcConnector({
+      signaling,
+      rtcFactory,
+      logger: silentLogger,
+      pollIntervalMs: 100,
+      connectTimeoutMs: 1000,
+      timers: createTimers(),
+      onPlayerProfile
+    });
+
+    const connectPromise = connector.connect();
+    const pc = await waitForPeer(rtcFactory);
+
+    const reliable = new FakeDataChannel('afps_reliable');
+    const unreliable = new FakeDataChannel('afps_unreliable');
+    pc.emitDataChannel(reliable);
+    pc.emitDataChannel(unreliable);
+    reliable.open();
+    unreliable.open();
+    await Promise.resolve();
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
+
+    await connectPromise;
+
+    reliable.emitMessage(buildServerHello(signaling.connectionId, { protocolVersion: 0, msgSeq: 9 }));
+    reliable.emitMessage(buildPlayerProfile({ clientId: '', nickname: '', characterId: '' }, 10));
+
+    expect(onPlayerProfile).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 
@@ -681,6 +869,7 @@ describe('webrtc connector', () => {
     const session = await connectPromise;
 
     const unknown = new FakeDataChannel('mystery');
+    delete (unknown as unknown as { binaryType?: string }).binaryType;
     pc.emitDataChannel(unknown);
 
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('unknown datachannel label'));
@@ -744,7 +933,12 @@ describe('webrtc connector', () => {
       dashCooldown: 0,
       health: 100,
       kills: 0,
-      deaths: 0
+      deaths: 0,
+      viewYawQ: 0,
+      viewPitchQ: 0,
+      playerFlags: 0,
+      weaponHeatQ: 0,
+      loadoutBits: 0
     };
     unreliable.emitMessage(buildStateSnapshot(snapshot));
     expect(onSnapshot).toHaveBeenCalledWith(snapshot);
@@ -785,21 +979,19 @@ describe('webrtc connector', () => {
     unreliable.emitMessage(buildGameEventHitConfirmed());
 
     expect(onGameEvent).toHaveBeenCalledWith({
-      type: 'GameEvent',
-      event: 'HitConfirmed',
-      damage: 5.5,
-      killed: true
+      type: 'GameEventBatch',
+      serverTick: 0,
+      events: [{ type: 'HitConfirmedFx', targetId: 'target', damage: 5.5, killed: true }]
     });
     session.close();
     vi.useRealTimers();
   });
 
-  it('forwards weapon events from unreliable channel', async () => {
+  it('forwards weapon fx events from unreliable channel', async () => {
     vi.useFakeTimers();
     const signaling = new FakeSignalingClient();
     const rtcFactory = new FakePeerConnectionFactory();
-    const onWeaponFired = vi.fn();
-    const onWeaponReload = vi.fn();
+    const onGameEvent = vi.fn();
     const connector = createWebRtcConnector({
       signaling,
       rtcFactory,
@@ -807,8 +999,7 @@ describe('webrtc connector', () => {
       pollIntervalMs: 100,
       connectTimeoutMs: 1000,
       timers: createTimers(),
-      onWeaponFired,
-      onWeaponReload
+      onGameEvent
     });
 
     const connectPromise = connector.connect();
@@ -825,13 +1016,16 @@ describe('webrtc connector', () => {
 
     const session = await connectPromise;
 
-    unreliable.emitMessage(buildWeaponFiredEvent());
-    unreliable.emitMessage(buildWeaponReloadEvent());
+    unreliable.emitMessage(buildGameEventWeaponFx());
 
-    expect(onWeaponFired).toHaveBeenCalledWith(expect.objectContaining({ type: 'WeaponFiredEvent', weaponId: 'rifle' }));
-    expect(onWeaponReload).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'WeaponReloadEvent', weaponId: 'rifle' })
-    );
+    expect(onGameEvent).toHaveBeenCalledWith({
+      type: 'GameEventBatch',
+      serverTick: 0,
+      events: [
+        { type: 'ShotFiredFx', shooterId: 'shooter', weaponSlot: 0, shotSeq: 10, dryFire: false },
+        { type: 'ReloadFx', shooterId: 'shooter', weaponSlot: 0 }
+      ]
+    });
 
     session.close();
     vi.useRealTimers();
@@ -868,6 +1062,41 @@ describe('webrtc connector', () => {
 
     unreliable.emitMessage(buildPong(22));
     expect(onPong).toHaveBeenCalledWith({ type: 'Pong', clientTimeMs: 22 });
+    session.close();
+    vi.useRealTimers();
+  });
+
+  it('ignores ping messages on the unreliable channel', async () => {
+    vi.useFakeTimers();
+    const signaling = new FakeSignalingClient();
+    const rtcFactory = new FakePeerConnectionFactory();
+    const onPong = vi.fn();
+    const connector = createWebRtcConnector({
+      signaling,
+      rtcFactory,
+      logger: silentLogger,
+      pollIntervalMs: 100,
+      connectTimeoutMs: 1000,
+      timers: createTimers(),
+      onPong
+    });
+
+    const connectPromise = connector.connect();
+    const pc = await waitForPeer(rtcFactory);
+
+    const reliable = new FakeDataChannel('afps_reliable');
+    const unreliable = new FakeDataChannel('afps_unreliable');
+    pc.emitDataChannel(reliable);
+    pc.emitDataChannel(unreliable);
+    reliable.open();
+    unreliable.open();
+    await Promise.resolve();
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
+
+    const session = await connectPromise;
+
+    unreliable.emitMessage(buildPing(123));
+    expect(onPong).not.toHaveBeenCalled();
     session.close();
     vi.useRealTimers();
   });

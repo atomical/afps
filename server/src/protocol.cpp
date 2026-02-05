@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <type_traits>
+#include <variant>
 
 #include <flatbuffers/flatbuffers.h>
 
@@ -45,7 +47,7 @@ void WriteU32(uint8_t *data, uint32_t value) {
 
 bool IsValidMessageType(uint16_t value) {
   return value >= static_cast<uint16_t>(MessageType::ClientHello) &&
-         value <= static_cast<uint16_t>(MessageType::WeaponReloadEvent);
+         value <= static_cast<uint16_t>(MessageType::SetLoadoutRequest);
 }
 
 template <typename T>
@@ -63,15 +65,6 @@ const T *VerifyPayload(const std::vector<uint8_t> &payload, std::string &error) 
   return root;
 }
 
-afps::protocol::GameEventType ToGameEventType(const std::string &event) {
-  if (event == "ProjectileSpawn") {
-    return afps::protocol::GameEventType::ProjectileSpawn;
-  }
-  if (event == "ProjectileRemove") {
-    return afps::protocol::GameEventType::ProjectileRemove;
-  }
-  return afps::protocol::GameEventType::HitConfirmed;
-}
 }  // namespace
 
 bool DecodeEnvelope(const std::vector<uint8_t> &message, DecodedEnvelope &out, std::string &error) {
@@ -216,6 +209,7 @@ bool ParseInputCmdPayload(const std::vector<uint8_t> &payload, InputCmd &out, st
 
   out.jump = cmd->jump();
   out.fire = cmd->fire();
+  out.ads = cmd->ads();
   out.sprint = cmd->sprint();
   out.dash = cmd->dash();
   out.grapple = cmd->grapple();
@@ -253,6 +247,16 @@ bool ParseFireWeaponRequestPayload(const std::vector<uint8_t> &payload, FireWeap
     error = "invalid_field: origin_dir";
     return false;
   }
+  return true;
+}
+
+bool ParseSetLoadoutRequestPayload(const std::vector<uint8_t> &payload, SetLoadoutRequest &out,
+                                   std::string &error) {
+  const auto *req = VerifyPayload<afps::protocol::SetLoadoutRequest>(payload, error);
+  if (!req) {
+    return false;
+  }
+  out.loadout_bits = req->loadout_bits();
   return true;
 }
 
@@ -307,82 +311,193 @@ std::vector<uint8_t> BuildPong(const Pong &pong, uint32_t msg_seq, uint32_t serv
   return EncodeEnvelope(MessageType::Pong, builder.GetBufferPointer(), builder.GetSize(), msg_seq, server_seq_ack);
 }
 
-std::vector<uint8_t> BuildGameEvent(const GameEvent &event, uint32_t msg_seq, uint32_t server_seq_ack) {
-  flatbuffers::FlatBufferBuilder builder(192);
-  const auto target_id = event.target_id.empty() ? 0 : builder.CreateString(event.target_id);
-  const auto owner_id = event.owner_id.empty() ? 0 : builder.CreateString(event.owner_id);
+std::vector<uint8_t> BuildGameEventBatch(const GameEventBatch &event, uint32_t msg_seq,
+                                         uint32_t server_seq_ack) {
+  flatbuffers::FlatBufferBuilder builder(256);
+
+  std::vector<afps::protocol::FxEvent> types;
+  std::vector<flatbuffers::Offset<void>> payloads;
+  types.reserve(event.events.size());
+  payloads.reserve(event.events.size());
+
+  for (const auto &entry : event.events) {
+    std::visit(
+        [&](const auto &typed) {
+          using T = std::decay_t<decltype(typed)>;
+          if constexpr (std::is_same_v<T, ShotFiredFx>) {
+            if (typed.shooter_id.empty()) {
+              return;
+            }
+            const auto shooter_id = builder.CreateString(typed.shooter_id);
+            const auto offset = afps::protocol::CreateShotFiredFx(
+                builder,
+                shooter_id,
+                typed.weapon_slot,
+                typed.shot_seq,
+                typed.dry_fire);
+            types.push_back(afps::protocol::FxEvent::ShotFiredFx);
+            payloads.push_back(offset.Union());
+            return;
+          }
+
+          if constexpr (std::is_same_v<T, ShotTraceFx>) {
+            if (typed.shooter_id.empty()) {
+              return;
+            }
+            const auto shooter_id = builder.CreateString(typed.shooter_id);
+            const auto offset = afps::protocol::CreateShotTraceFx(
+                builder,
+                shooter_id,
+                typed.weapon_slot,
+                typed.shot_seq,
+                typed.dir_oct_x,
+                typed.dir_oct_y,
+                typed.hit_dist_q,
+                static_cast<afps::protocol::HitKind>(typed.hit_kind),
+                static_cast<afps::protocol::SurfaceType>(typed.surface_type),
+                typed.normal_oct_x,
+                typed.normal_oct_y,
+                typed.show_tracer);
+            types.push_back(afps::protocol::FxEvent::ShotTraceFx);
+            payloads.push_back(offset.Union());
+            return;
+          }
+
+          if constexpr (std::is_same_v<T, ReloadFx>) {
+            if (typed.shooter_id.empty()) {
+              return;
+            }
+            const auto shooter_id = builder.CreateString(typed.shooter_id);
+            const auto offset = afps::protocol::CreateReloadFx(
+                builder,
+                shooter_id,
+                typed.weapon_slot);
+            types.push_back(afps::protocol::FxEvent::ReloadFx);
+            payloads.push_back(offset.Union());
+            return;
+          }
+
+          if constexpr (std::is_same_v<T, NearMissFx>) {
+            if (typed.shooter_id.empty()) {
+              return;
+            }
+            const auto shooter_id = builder.CreateString(typed.shooter_id);
+            const auto offset = afps::protocol::CreateNearMissFx(
+                builder,
+                shooter_id,
+                typed.shot_seq,
+                typed.strength);
+            types.push_back(afps::protocol::FxEvent::NearMissFx);
+            payloads.push_back(offset.Union());
+            return;
+          }
+
+          if constexpr (std::is_same_v<T, OverheatFx>) {
+            if (typed.shooter_id.empty()) {
+              return;
+            }
+            const auto shooter_id = builder.CreateString(typed.shooter_id);
+            const auto offset = afps::protocol::CreateOverheatFx(
+                builder,
+                shooter_id,
+                typed.weapon_slot,
+                typed.heat_q);
+            types.push_back(afps::protocol::FxEvent::OverheatFx);
+            payloads.push_back(offset.Union());
+            return;
+          }
+
+          if constexpr (std::is_same_v<T, VentFx>) {
+            if (typed.shooter_id.empty()) {
+              return;
+            }
+            const auto shooter_id = builder.CreateString(typed.shooter_id);
+            const auto offset = afps::protocol::CreateVentFx(
+                builder,
+                shooter_id,
+                typed.weapon_slot);
+            types.push_back(afps::protocol::FxEvent::VentFx);
+            payloads.push_back(offset.Union());
+            return;
+          }
+
+          if constexpr (std::is_same_v<T, HitConfirmedFx>) {
+            if (typed.target_id.empty()) {
+              return;
+            }
+            const auto target_id = builder.CreateString(typed.target_id);
+            const auto offset = afps::protocol::CreateHitConfirmedFx(
+                builder,
+                target_id,
+                typed.damage,
+                typed.killed);
+            types.push_back(afps::protocol::FxEvent::HitConfirmedFx);
+            payloads.push_back(offset.Union());
+            return;
+          }
+
+          if constexpr (std::is_same_v<T, ProjectileSpawnFx>) {
+            if (typed.shooter_id.empty()) {
+              return;
+            }
+            const auto shooter_id = builder.CreateString(typed.shooter_id);
+            const auto offset = afps::protocol::CreateProjectileSpawnFx(
+                builder,
+                shooter_id,
+                typed.weapon_slot,
+                typed.shot_seq,
+                typed.projectile_id,
+                typed.pos_x_q,
+                typed.pos_y_q,
+                typed.pos_z_q,
+                typed.vel_x_q,
+                typed.vel_y_q,
+                typed.vel_z_q,
+                typed.ttl_q);
+            types.push_back(afps::protocol::FxEvent::ProjectileSpawnFx);
+            payloads.push_back(offset.Union());
+            return;
+          }
+
+          if constexpr (std::is_same_v<T, ProjectileImpactFx>) {
+            const auto target_id = typed.target_id.empty() ? 0 : builder.CreateString(typed.target_id);
+            const auto offset = afps::protocol::CreateProjectileImpactFx(
+                builder,
+                typed.projectile_id,
+                typed.hit_world,
+                target_id,
+                typed.pos_x_q,
+                typed.pos_y_q,
+                typed.pos_z_q,
+                typed.normal_oct_x,
+                typed.normal_oct_y,
+                static_cast<afps::protocol::SurfaceType>(typed.surface_type));
+            types.push_back(afps::protocol::FxEvent::ProjectileImpactFx);
+            payloads.push_back(offset.Union());
+            return;
+          }
+
+          if constexpr (std::is_same_v<T, ProjectileRemoveFx>) {
+            const auto offset = afps::protocol::CreateProjectileRemoveFx(
+                builder,
+                typed.projectile_id);
+            types.push_back(afps::protocol::FxEvent::ProjectileRemoveFx);
+            payloads.push_back(offset.Union());
+            return;
+          }
+        },
+        entry);
+  }
+
+  const auto types_vec = builder.CreateVector(types);
+  const auto payloads_vec = builder.CreateVector(payloads);
   const auto offset = afps::protocol::CreateGameEvent(
       builder,
-      ToGameEventType(event.event),
-      target_id,
-      owner_id,
-      event.projectile_id,
-      event.damage,
-      event.killed,
-      event.pos_x,
-      event.pos_y,
-      event.pos_z,
-      event.vel_x,
-      event.vel_y,
-      event.vel_z,
-      event.ttl);
+      event.server_tick,
+      types_vec,
+      payloads_vec);
   builder.Finish(offset);
   return EncodeEnvelope(MessageType::GameEvent, builder.GetBufferPointer(), builder.GetSize(), msg_seq, server_seq_ack);
-}
-
-std::vector<uint8_t> BuildWeaponFiredEvent(const WeaponFiredEvent &event, uint32_t msg_seq,
-                                           uint32_t server_seq_ack) {
-  flatbuffers::FlatBufferBuilder builder(256);
-  const auto shooter_id = builder.CreateString(event.shooter_id);
-  const auto weapon_id = builder.CreateString(event.weapon_id);
-  const auto offset = afps::protocol::CreateWeaponFiredEvent(
-      builder,
-      shooter_id,
-      weapon_id,
-      event.weapon_slot,
-      event.server_tick,
-      event.shot_seq,
-      event.muzzle_pos_x,
-      event.muzzle_pos_y,
-      event.muzzle_pos_z,
-      event.dir_x,
-      event.dir_y,
-      event.dir_z,
-      event.dry_fire,
-      event.casing_enabled,
-      event.casing_pos_x,
-      event.casing_pos_y,
-      event.casing_pos_z,
-      event.casing_rot_x,
-      event.casing_rot_y,
-      event.casing_rot_z,
-      event.casing_vel_x,
-      event.casing_vel_y,
-      event.casing_vel_z,
-      event.casing_ang_x,
-      event.casing_ang_y,
-      event.casing_ang_z,
-      event.casing_seed);
-  builder.Finish(offset);
-  return EncodeEnvelope(MessageType::WeaponFiredEvent, builder.GetBufferPointer(), builder.GetSize(), msg_seq,
-                        server_seq_ack);
-}
-
-std::vector<uint8_t> BuildWeaponReloadEvent(const WeaponReloadEvent &event, uint32_t msg_seq,
-                                            uint32_t server_seq_ack) {
-  flatbuffers::FlatBufferBuilder builder(128);
-  const auto shooter_id = builder.CreateString(event.shooter_id);
-  const auto weapon_id = builder.CreateString(event.weapon_id);
-  const auto offset = afps::protocol::CreateWeaponReloadEvent(
-      builder,
-      shooter_id,
-      weapon_id,
-      event.weapon_slot,
-      event.server_tick,
-      event.reload_seconds);
-  builder.Finish(offset);
-  return EncodeEnvelope(MessageType::WeaponReloadEvent, builder.GetBufferPointer(), builder.GetSize(), msg_seq,
-                        server_seq_ack);
 }
 
 std::vector<uint8_t> BuildStateSnapshot(const StateSnapshot &snapshot, uint32_t msg_seq,
@@ -405,7 +520,12 @@ std::vector<uint8_t> BuildStateSnapshot(const StateSnapshot &snapshot, uint32_t 
       snapshot.dash_cooldown,
       snapshot.health,
       snapshot.kills,
-      snapshot.deaths);
+      snapshot.deaths,
+      snapshot.view_yaw_q,
+      snapshot.view_pitch_q,
+      snapshot.player_flags,
+      snapshot.weapon_heat_q,
+      snapshot.loadout_bits);
   builder.Finish(offset);
   return EncodeEnvelope(MessageType::StateSnapshot, builder.GetBufferPointer(), builder.GetSize(), msg_seq,
                         server_seq_ack);
@@ -433,7 +553,12 @@ std::vector<uint8_t> BuildStateSnapshotDelta(const StateSnapshotDelta &delta, ui
       delta.dash_cooldown,
       delta.health,
       delta.kills,
-      delta.deaths);
+      delta.deaths,
+      delta.view_yaw_q,
+      delta.view_pitch_q,
+      delta.player_flags,
+      delta.weapon_heat_q,
+      delta.loadout_bits);
   builder.Finish(offset);
   return EncodeEnvelope(MessageType::StateSnapshotDelta, builder.GetBufferPointer(), builder.GetSize(), msg_seq,
                         server_seq_ack);

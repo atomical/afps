@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { loadCharacterCatalog, resolveCharacterEntry } from '../../src/characters/catalog';
+import { __test, loadCharacterCatalog, resolveCharacterEntry } from '../../src/characters/catalog';
 
 const makeFetch = (payload: unknown, ok = true) =>
   vi.fn().mockResolvedValue({
@@ -112,6 +112,36 @@ describe('character catalog', () => {
     expect(catalog.entries[2].weaponOffset).toBeUndefined();
   });
 
+  it('defaults the base url when missing from env', () => {
+    expect(__test.resolveBaseUrl(undefined)).toBe('/');
+    expect(__test.resolveBaseUrl({ BASE_URL: '/custom/' })).toBe('/custom/');
+  });
+
+  it('falls back to the first entry when manifest default id is absent', async () => {
+    const fetchMock = makeFetch({
+      entries: [{ id: 'alpha', displayName: 'Alpha' }]
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const catalog = await loadCharacterCatalog('test://missing-default');
+
+    expect(catalog.defaultId).toBe('alpha');
+  });
+
+  it('uses the manifest default id when it exists', async () => {
+    const fetchMock = makeFetch({
+      defaultId: 'bravo',
+      entries: [
+        { id: 'alpha', displayName: 'Alpha' },
+        { id: 'bravo', displayName: 'Bravo' }
+      ]
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const catalog = await loadCharacterCatalog('test://default-id');
+
+    expect(catalog.defaultId).toBe('bravo');
+  });
+
   it('resolves entries by id with default fallback', () => {
     const catalog = {
       defaultId: 'bravo',
@@ -124,5 +154,17 @@ describe('character catalog', () => {
     expect(resolveCharacterEntry(catalog, 'alpha').id).toBe('alpha');
     expect(resolveCharacterEntry(catalog, 'missing').id).toBe('bravo');
     expect(resolveCharacterEntry(catalog, null).id).toBe('bravo');
+  });
+
+  it('falls back to the first entry when default id is missing', () => {
+    const catalog = {
+      defaultId: 'missing',
+      entries: [
+        { id: 'alpha', displayName: 'Alpha' },
+        { id: 'bravo', displayName: 'Bravo' }
+      ]
+    };
+
+    expect(resolveCharacterEntry(catalog, null).id).toBe('alpha');
   });
 });

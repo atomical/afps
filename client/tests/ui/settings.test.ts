@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createSettingsOverlay } from '../../src/ui/settings';
+import { LOADOUT_BITS } from '../../src/weapons/loadout';
 
 describe('settings overlay', () => {
   it('creates overlay and updates sensitivity', () => {
@@ -9,7 +10,9 @@ describe('settings overlay', () => {
     const onShowMetricsChange = vi.fn();
     const onInvertLookXChange = vi.fn();
     const onInvertLookYChange = vi.fn();
+    const onFxSettingsChange = vi.fn();
     const onAudioSettingsChange = vi.fn();
+    const onLoadoutBitsChange = vi.fn();
     const settings = createSettingsOverlay(document, {
       initialSensitivity: 0.003,
       onSensitivityChange: onChange,
@@ -20,6 +23,13 @@ describe('settings overlay', () => {
       onInvertLookYChange,
       initialShowMetrics: false,
       onShowMetricsChange,
+      initialFxSettings: {
+        muzzleFlash: false,
+        tracers: true,
+        decals: false,
+        aimDebug: true
+      },
+      onFxSettingsChange,
       initialAudioSettings: {
         master: 0.6,
         sfx: 0.5,
@@ -27,7 +37,9 @@ describe('settings overlay', () => {
         music: 0.3,
         muted: false
       },
-      onAudioSettingsChange
+      onAudioSettingsChange,
+      initialLoadoutBits: LOADOUT_BITS.suppressor | LOADOUT_BITS.optic,
+      onLoadoutBitsChange
     });
 
     expect(settings.isVisible()).toBe(false);
@@ -55,9 +67,27 @@ describe('settings overlay', () => {
     const invertXRow = toggleRows.find((row) => row.textContent?.includes('Invert mouse X')) as HTMLElement;
     const invertYRow = toggleRows.find((row) => row.textContent?.includes('Invert mouse Y')) as HTMLElement;
     const metricsRow = toggleRows.find((row) => row.textContent?.includes('Show net stats')) as HTMLElement;
+    const muzzleFlashRow = toggleRows.find((row) => row.textContent?.includes('Muzzle flash')) as HTMLElement;
+    const tracersRow = toggleRows.find((row) => row.textContent?.includes('Tracers')) as HTMLElement;
+    const decalsRow = toggleRows.find((row) => row.textContent?.includes('Decals')) as HTMLElement;
+    const aimDebugRow = toggleRows.find((row) => row.textContent?.includes('Aim debug')) as HTMLElement;
+    const suppressorRow = toggleRows.find((row) => row.textContent?.includes('Suppressor')) as HTMLElement;
+    const compensatorRow = toggleRows.find((row) => row.textContent?.includes('Compensator')) as HTMLElement;
+    const opticRow = toggleRows.find((row) => row.textContent?.includes('Optic')) as HTMLElement;
+    const extendedMagRow = toggleRows.find((row) => row.textContent?.includes('Extended mag')) as HTMLElement;
+    const gripRow = toggleRows.find((row) => row.textContent?.includes('Grip')) as HTMLElement;
     const invertXToggle = invertXRow.querySelector('input') as HTMLInputElement;
     const invertYToggle = invertYRow.querySelector('input') as HTMLInputElement;
     const metricsToggle = metricsRow.querySelector('input') as HTMLInputElement;
+    const muzzleFlashToggle = muzzleFlashRow.querySelector('input') as HTMLInputElement;
+    const tracersToggle = tracersRow.querySelector('input') as HTMLInputElement;
+    const decalsToggle = decalsRow.querySelector('input') as HTMLInputElement;
+    const aimDebugToggle = aimDebugRow.querySelector('input') as HTMLInputElement;
+    const suppressorToggle = suppressorRow.querySelector('input') as HTMLInputElement;
+    const compensatorToggle = compensatorRow.querySelector('input') as HTMLInputElement;
+    const opticToggle = opticRow.querySelector('input') as HTMLInputElement;
+    const extendedMagToggle = extendedMagRow.querySelector('input') as HTMLInputElement;
+    const gripToggle = gripRow.querySelector('input') as HTMLInputElement;
 
     expect(invertXToggle.checked).toBe(true);
     expect(invertYToggle.checked).toBe(false);
@@ -71,6 +101,29 @@ describe('settings overlay', () => {
     expect(onShowMetricsChange).toHaveBeenCalledWith(true);
     settings.setMetricsVisible(false);
     expect(metricsToggle.checked).toBe(false);
+
+    expect(muzzleFlashToggle.checked).toBe(false);
+    expect(tracersToggle.checked).toBe(true);
+    expect(decalsToggle.checked).toBe(false);
+    expect(aimDebugToggle.checked).toBe(true);
+    muzzleFlashToggle.click();
+    expect(onFxSettingsChange).toHaveBeenCalledWith(
+      expect.objectContaining({ muzzleFlash: true })
+    );
+
+    expect(suppressorToggle.checked).toBe(true);
+    expect(compensatorToggle.checked).toBe(false);
+    expect(opticToggle.checked).toBe(true);
+    expect(extendedMagToggle.checked).toBe(false);
+    expect(gripToggle.checked).toBe(false);
+    onLoadoutBitsChange.mockClear();
+    compensatorToggle.click();
+    expect(onLoadoutBitsChange).toHaveBeenCalledWith(
+      LOADOUT_BITS.suppressor | LOADOUT_BITS.optic | LOADOUT_BITS.compensator
+    );
+    onLoadoutBitsChange.mockClear();
+    suppressorToggle.click();
+    expect(onLoadoutBitsChange).toHaveBeenCalledWith(LOADOUT_BITS.optic | LOADOUT_BITS.compensator);
 
     const audioControls = Array.from(settings.element.querySelectorAll('.settings-audio-control'));
     const masterControl = audioControls.find((control) => control.textContent?.includes('Master')) as HTMLElement;

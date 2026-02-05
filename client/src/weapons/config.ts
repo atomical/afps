@@ -257,7 +257,7 @@ const parseWeapon = (value: unknown): WeaponDefinition | null => {
 
   return {
     id,
-    displayName: displayName ?? id,
+    displayName,
     kind,
     damage,
     spreadDeg,

@@ -5,6 +5,7 @@ export interface InputSample {
   lookDeltaY: number;
   jump: boolean;
   fire: boolean;
+  ads: boolean;
   sprint: boolean;
   dash: boolean;
   grapple: boolean;
@@ -67,6 +68,7 @@ export const createInputSampler = ({
 }: InputSamplerOptions): InputSampler => {
   const pressed = new Set<string>();
   let fire = false;
+  let ads = false;
   let lookDeltaX = 0;
   let lookDeltaY = 0;
   let weaponSlot = 0;
@@ -96,11 +98,17 @@ export const createInputSampler = ({
     if (event.button === 0) {
       fire = true;
     }
+    if (event.button === 2) {
+      ads = true;
+    }
   };
 
   const onMouseUp = (event: MouseEvent) => {
     if (event.button === 0) {
       fire = false;
+    }
+    if (event.button === 2) {
+      ads = false;
     }
   };
 
@@ -124,8 +132,15 @@ export const createInputSampler = ({
   const onBlur = () => {
     pressed.clear();
     fire = false;
+    ads = false;
     lookDeltaX = 0;
     lookDeltaY = 0;
+  };
+
+  const onContextMenu = (event: MouseEvent) => {
+    if (ads) {
+      event.preventDefault();
+    }
   };
 
   target.addEventListener('keydown', onKeyDown);
@@ -134,6 +149,7 @@ export const createInputSampler = ({
   target.addEventListener('mouseup', onMouseUp);
   target.addEventListener('mousemove', onMouseMove);
   target.addEventListener('wheel', onWheel, { passive: false });
+  target.addEventListener('contextmenu', onContextMenu);
   target.addEventListener('blur', onBlur);
 
   const sample = (): InputSample => {
@@ -158,6 +174,7 @@ export const createInputSampler = ({
       lookDeltaY: safeNumber(lookDeltaY),
       jump,
       fire,
+      ads,
       sprint,
       dash,
       grapple,
@@ -179,9 +196,11 @@ export const createInputSampler = ({
     target.removeEventListener('mouseup', onMouseUp);
     target.removeEventListener('mousemove', onMouseMove);
     target.removeEventListener('wheel', onWheel);
+    target.removeEventListener('contextmenu', onContextMenu);
     target.removeEventListener('blur', onBlur);
     pressed.clear();
     fire = false;
+    ads = false;
     lookDeltaX = 0;
     lookDeltaY = 0;
   };

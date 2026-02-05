@@ -42,8 +42,12 @@ describe('look inversion storage', () => {
     } as Storage;
     saveInvertX(true, spyStorage);
     saveInvertY(false, spyStorage);
+    saveInvertX(false, spyStorage);
+    saveInvertY(true, spyStorage);
     expect(setItem).toHaveBeenCalledWith('afps.look.invertX', 'true');
     expect(setItem).toHaveBeenCalledWith('afps.look.invertY', 'false');
+    expect(setItem).toHaveBeenCalledWith('afps.look.invertX', 'false');
+    expect(setItem).toHaveBeenCalledWith('afps.look.invertY', 'true');
   });
 
   it('ignores unknown values and missing storage when saving', () => {

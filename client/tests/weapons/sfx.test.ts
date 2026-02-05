@@ -132,6 +132,20 @@ describe('generateWeaponSfx', () => {
     }
   });
 
+  it('falls back when the sfx profile is missing', () => {
+    const audio = createAudioStub();
+    const baseWeapon = makeWeapon({
+      id: 'missing-profile',
+      profile: 'AR_556',
+      sounds: { fire: 'missing:fire', dryFire: 'missing:dry', reload: 'missing:reload' }
+    });
+    const weapon = { ...baseWeapon, sfxProfile: undefined as unknown as string };
+
+    generateWeaponSfx(audio as unknown as Parameters<typeof generateWeaponSfx>[0], [weapon]);
+
+    expect(audio.hasBuffer('missing:fire')).toBe(true);
+  });
+
   it('skips registration when buffers cannot be created', () => {
     const audio = createAudioStub(true);
     const weapons = [

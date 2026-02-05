@@ -17,6 +17,5 @@ export enum MessageType {
   Error = 12,
   Disconnect = 13,
   FireWeaponRequest = 14,
-  WeaponFiredEvent = 15,
-  WeaponReloadEvent = 16
+  SetLoadoutRequest = 15
 }

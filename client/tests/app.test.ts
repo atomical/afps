@@ -111,7 +111,8 @@ import {
   FakeOutlinePass,
   FakeRenderer,
   FakeScene,
-  FakeMesh
+  FakeMesh,
+  FakeMaterial
 } from './fakeThree';
 
 describe('createApp', () => {
@@ -150,6 +151,18 @@ describe('createApp', () => {
 
     expect(app.state.cube.rotation.x).toBeGreaterThan(startRotation);
     expect(renderer.renderCalls).toBe(1);
+  });
+
+  it('uses performance.now when no timestamp is provided', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const nowSpy = vi.spyOn(performance, 'now').mockReturnValue(1234);
+
+    app.renderFrame(0.25);
+
+    expect(nowSpy).toHaveBeenCalled();
+    nowSpy.mockRestore();
   });
 
   it('falls back to renderer when post-processing is unavailable', async () => {
@@ -209,6 +222,44 @@ describe('createApp', () => {
 
     app.renderFrame(0, 2100);
     expect(outlinePasses[1].edgeStrength).toBe(teamStrength);
+  });
+
+  it('switches outline teams when no flash is active', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+
+    const composer = FakeEffectComposer.instances[0];
+    const outlinePasses = composer.passes.filter(
+      (pass): pass is FakeOutlinePass => pass instanceof FakeOutlinePass
+    );
+
+    expect(outlinePasses[0].selectedObjects.length).toBe(1);
+    expect(outlinePasses[1].selectedObjects.length).toBe(0);
+
+    app.setOutlineTeam(1);
+
+    expect(outlinePasses[0].selectedObjects.length).toBe(0);
+    expect(outlinePasses[1].selectedObjects.length).toBe(1);
+  });
+
+  it('uses outline flash defaults when timing is omitted', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+
+    const composer = FakeEffectComposer.instances[0];
+    const outlinePasses = composer.passes.filter(
+      (pass): pass is FakeOutlinePass => pass instanceof FakeOutlinePass
+    );
+    const baseStrength = outlinePasses[0].edgeStrength;
+    const nowSpy = vi.spyOn(performance, 'now').mockReturnValue(1234);
+
+    app.triggerOutlineFlash({ team: 0 });
+
+    expect(nowSpy).toHaveBeenCalled();
+    expect(outlinePasses[0].edgeStrength).not.toBe(baseStrength);
+    nowSpy.mockRestore();
   });
 
   it('can hide the local proxy cube', () => {
@@ -325,6 +376,7 @@ describe('createApp', () => {
     const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
 
     app.setSnapshotRate(10);
+    expect(app.getRenderTick()).toBeNull();
     app.ingestSnapshot(
       {
         type: 'StateSnapshot',
@@ -374,6 +426,7 @@ describe('createApp', () => {
     expect(app.state.camera.position.x).toBeCloseTo(5);
     expect(app.state.camera.position.y).toBeCloseTo(2.6);
     expect(app.state.camera.position.z).toBeCloseTo(2);
+    expect(app.getRenderTick()).toBeCloseTo(1.5);
   });
 
   it('uses predicted state when inputs are recorded', () => {
@@ -460,6 +513,43 @@ describe('createApp', () => {
 
     expect(scene.children.length).toBe(5);
     app.renderFrame(0.1, 1000);
+    expect(scene.children.length).toBe(4);
+  });
+
+  it('expires projectile VFX without ids', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+
+    app.spawnProjectileVfx({
+      origin: { x: 1, y: 2, z: 3 },
+      velocity: { x: 0, y: 0, z: 1 },
+      ttl: 0.05
+    });
+
+    expect(scene.children.length).toBe(5);
+    app.renderFrame(0.1, 1000);
+    expect(scene.children.length).toBe(4);
+  });
+
+  it('defaults projectile TTL when invalid', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+
+    app.spawnProjectileVfx({
+      origin: { x: 0, y: 0, z: 0 },
+      velocity: { x: 1, y: 0, z: 0 },
+      ttl: Number.NaN,
+      projectileId: 100
+    });
+
+    expect(scene.children.length).toBe(5);
+    app.renderFrame(1, 1000);
+    expect(scene.children.length).toBe(5);
+    app.renderFrame(1, 2000);
     expect(scene.children.length).toBe(4);
   });
 
@@ -586,8 +676,23 @@ describe('createApp', () => {
       length: 10
     });
     expect(scene.children.length).toBe(5);
-    app.renderFrame(0.1, 1000);
+    app.renderFrame(0.01, 1000);
+    expect(scene.children.length).toBe(5);
+    app.renderFrame(0.1, 1010);
     expect(scene.children.length).toBe(4);
+  });
+
+  it('uses the default tracer length when omitted', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+
+    app.spawnTracerVfx({
+      origin: { x: 0, y: 0, z: 0 },
+      dir: { x: 0, y: 0, z: -1 }
+    });
+
+    expect(app.getFxPoolStats().tracers.active).toBe(1);
   });
 
   it('ignores tracer VFX when origin is invalid', () => {
@@ -602,6 +707,448 @@ describe('createApp', () => {
     });
 
     expect(scene.children.length).toBe(4);
+  });
+
+  it('spawns muzzle flash VFX and expires them', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+
+    expect(app.getFxPoolStats().muzzleFlashes).toMatchObject({ active: 0, free: 0 });
+    const baseline = scene.children.length;
+
+    app.spawnMuzzleFlashVfx({
+      position: { x: 0, y: 1, z: 2 },
+      dir: { x: 0, y: 0, z: -1 },
+      seed: 123
+    });
+
+    expect(scene.children.length).toBe(baseline + 1);
+    expect(app.getFxPoolStats().muzzleFlashes.active).toBe(1);
+
+    app.renderFrame(0.01, 1000);
+    expect(scene.children.length).toBe(baseline + 1);
+    expect(app.getFxPoolStats().muzzleFlashes.active).toBe(1);
+    app.renderFrame(0.1, 1010);
+
+    expect(scene.children.length).toBe(baseline);
+    expect(app.getFxPoolStats().muzzleFlashes).toMatchObject({ active: 0, free: 1 });
+  });
+
+  it('falls back for non-finite muzzle flash seed and sizing', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+
+    app.spawnMuzzleFlashVfx({
+      position: { x: 0, y: 0, z: 0 },
+      dir: { x: 0, y: 0, z: -1 },
+      seed: Number.NaN,
+      size: -1,
+      ttl: 0
+    });
+
+    expect(app.getFxPoolStats().muzzleFlashes.active).toBe(1);
+  });
+
+  it('defaults pose height when snapshot posZ is missing', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const camera = app.state.camera as FakeCamera;
+
+    app.setSnapshotRate(10);
+    app.ingestSnapshot(
+      {
+        type: 'StateSnapshot',
+        serverTick: 1,
+        lastProcessedInputSeq: 1,
+        posX: 2,
+        posY: -3,
+        posZ: undefined,
+        velX: 0,
+        velY: 0,
+        velZ: 0,
+        weaponSlot: 0,
+        ammoInMag: 30,
+        dashCooldown: 0,
+        health: 100,
+        kills: 0,
+        deaths: 0
+      } as unknown as Parameters<typeof app.ingestSnapshot>[0],
+      0
+    );
+
+    app.renderFrame(0, 50);
+    expect(camera.position.y).toBeCloseTo(1.6);
+  });
+
+  it('falls back to zeroed pose when cube position is non-finite', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const cube = app.state.cube as FakeMesh;
+
+    cube.position.x = Number.NaN;
+    cube.position.y = Number.NaN;
+    cube.position.z = Number.NaN;
+
+    app.renderFrame(0, 1000);
+    const pose = app.getPlayerPose();
+    expect(pose.posX).toBe(0);
+    expect(pose.posY).toBe(0);
+    expect(pose.posZ).toBe(0);
+  });
+
+  it('spawns impact + decal VFX and recycles them', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+    const baseline = scene.children.length;
+
+    app.spawnImpactVfx({
+      position: { x: 1, y: 2, z: 3 },
+      normal: { x: 0, y: 1, z: 0 },
+      surfaceType: 1,
+      seed: 1,
+      ttl: 0.05
+    });
+    app.spawnImpactVfx({
+      position: { x: 2, y: 3, z: 4 },
+      normal: { x: 0, y: 0, z: 1 },
+      surfaceType: 2,
+      seed: 2,
+      ttl: 0.05
+    });
+    app.spawnImpactVfx({
+      position: { x: 3, y: 4, z: 5 },
+      normal: { x: 1, y: 0, z: 0 },
+      surfaceType: 3,
+      seed: 3,
+      ttl: 0.05
+    });
+
+    app.spawnDecalVfx({
+      position: { x: 1, y: 0, z: 0 },
+      normal: { x: 0, y: 1, z: 0 },
+      surfaceType: 0,
+      seed: 10,
+      ttl: 0.05
+    });
+    // Exercise default TTL path as well (6–12s); use a large render step to recycle it.
+    app.spawnDecalVfx({
+      position: { x: 2, y: 0, z: 0 },
+      normal: { x: 0, y: 1, z: 0 },
+      surfaceType: 2,
+      seed: 11
+    });
+
+    expect(scene.children.length).toBe(baseline + 5);
+    expect(app.getFxPoolStats().impacts.active).toBe(3);
+    expect(app.getFxPoolStats().decals.active).toBe(2);
+
+    app.renderFrame(20, 1000);
+
+    expect(scene.children.length).toBe(baseline);
+    expect(app.getFxPoolStats().impacts).toMatchObject({ active: 0, free: 3 });
+    expect(app.getFxPoolStats().decals).toMatchObject({ active: 0, free: 2 });
+  });
+
+  it('applies size overrides for impact and decal VFX', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+    const baseline = scene.children.length;
+
+    app.spawnImpactVfx({
+      position: { x: 1, y: 2, z: 3 },
+      normal: { x: 0, y: 1, z: 0 },
+      surfaceType: 1,
+      seed: 21,
+      size: 2,
+      ttl: 0.1
+    });
+    app.spawnDecalVfx({
+      position: { x: 2, y: 3, z: 4 },
+      normal: { x: 0, y: 1, z: 0 },
+      surfaceType: 2,
+      seed: 22,
+      size: 1.5,
+      ttl: 0.1
+    });
+
+    expect(scene.children.length).toBe(baseline + 2);
+    const impactMesh = scene.children[baseline] as FakeMesh;
+    const decalMesh = scene.children[baseline + 1] as FakeMesh;
+    expect(impactMesh.scale.x).toBeGreaterThan(1);
+    expect(decalMesh.scale.x).toBeGreaterThan(1);
+  });
+
+  it('reuses decals without adding to the scene when the pool is full', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+    const baseline = scene.children.length;
+    const maxDecals = app.getFxPoolStats().decals.max;
+
+    for (let i = 0; i < maxDecals; i += 1) {
+      app.spawnDecalVfx({
+        position: { x: i, y: 0, z: 0 },
+        normal: { x: 0, y: 1, z: 0 },
+        surfaceType: 0,
+        seed: i,
+        ttl: 10
+      });
+    }
+
+    expect(app.getFxPoolStats().decals).toMatchObject({ active: maxDecals, free: 0 });
+    const filledCount = scene.children.length;
+    expect(filledCount).toBe(baseline + maxDecals);
+
+    app.spawnDecalVfx({
+      position: { x: 0, y: 0, z: 0 },
+      normal: { x: 0, y: 1, z: 0 },
+      surfaceType: 1,
+      seed: Number.NaN,
+      size: -1,
+      ttl: 0
+    });
+
+    expect(scene.children.length).toBe(filledCount);
+    expect(app.getFxPoolStats().decals.active).toBe(maxDecals);
+  });
+
+  it('reuses impacts without adding to the scene when the pool is full', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+    const baseline = scene.children.length;
+    const maxImpacts = app.getFxPoolStats().impacts.max;
+
+    for (let i = 0; i < maxImpacts; i += 1) {
+      app.spawnImpactVfx({
+        position: { x: i, y: 0, z: 0 },
+        normal: { x: 0, y: 1, z: 0 },
+        surfaceType: 0,
+        seed: i,
+        ttl: 10
+      });
+    }
+
+    expect(app.getFxPoolStats().impacts).toMatchObject({ active: maxImpacts, free: 0 });
+    const filledCount = scene.children.length;
+    expect(filledCount).toBe(baseline + maxImpacts);
+
+    app.spawnImpactVfx({
+      position: { x: 0, y: 0, z: 0 },
+      normal: { x: 0, y: 1, z: 0 },
+      surfaceType: 1,
+      seed: Number.NaN,
+      size: -1,
+      ttl: Number.NaN
+    });
+
+    expect(scene.children.length).toBe(filledCount);
+    expect(app.getFxPoolStats().impacts.active).toBe(maxImpacts);
+  });
+
+  it('keeps impact + decal VFX alive when TTL has not expired', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+    const baseline = scene.children.length;
+
+    app.spawnImpactVfx({
+      position: { x: 0, y: 1, z: 0 },
+      normal: { x: 0, y: 1, z: 0 },
+      surfaceType: 1,
+      seed: 5,
+      ttl: 1
+    });
+    app.spawnDecalVfx({
+      position: { x: 0, y: 0, z: 0 },
+      normal: { x: 0, y: 1, z: 0 },
+      surfaceType: 1,
+      seed: 6,
+      ttl: 1
+    });
+
+    app.renderFrame(0.01, 500);
+
+    expect(scene.children.length).toBe(baseline + 2);
+    expect(app.getFxPoolStats().impacts.active).toBe(1);
+    expect(app.getFxPoolStats().decals.active).toBe(1);
+  });
+
+  it('reuses tracer meshes from the free list', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+    const baseline = scene.children.length;
+
+    app.spawnTracerVfx({
+      origin: { x: 0, y: 0, z: 0 },
+      dir: { x: 1, y: 0, z: 0 },
+      length: 5
+    });
+    const firstTracer = scene.children[scene.children.length - 1];
+    app.renderFrame(0.1, 1000);
+    expect(scene.children.length).toBe(baseline);
+    expect(app.getFxPoolStats().tracers).toMatchObject({ active: 0, free: 1 });
+
+    app.spawnTracerVfx({
+      origin: { x: 0, y: 0, z: 0 },
+      dir: { x: 0, y: 1, z: 0 },
+      length: 6
+    });
+    const secondTracer = scene.children[scene.children.length - 1];
+
+    expect(secondTracer).toBe(firstTracer);
+    expect(scene.children.length).toBe(baseline + 1);
+    expect(app.getFxPoolStats().tracers).toMatchObject({ active: 1, free: 0 });
+  });
+
+  it('defaults tracer direction when inputs are non-finite', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+
+    app.spawnTracerVfx({
+      origin: { x: 0, y: 0, z: 0 },
+      dir: { x: Number.NaN, y: Number.NaN, z: Number.NaN },
+      length: Number.NaN
+    });
+
+    expect(app.getFxPoolStats().tracers.active).toBe(1);
+  });
+
+  it('caps tracer and muzzle flash pools by reusing active meshes', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+    const baseline = scene.children.length;
+
+    for (let i = 0; i < 37; i += 1) {
+      app.spawnTracerVfx({
+        origin: { x: i, y: 0, z: 0 },
+        dir: { x: 1, y: 0, z: 0 },
+        length: 1
+      });
+    }
+    expect(app.getFxPoolStats().tracers.active).toBe(36);
+    expect(scene.children.length).toBe(baseline + 36);
+
+    for (let i = 0; i < 29; i += 1) {
+      app.spawnMuzzleFlashVfx({
+        position: { x: 0, y: 0, z: i },
+        dir: { x: 0, y: 0, z: -1 },
+        seed: i,
+        ttl: 1
+      });
+    }
+    expect(app.getFxPoolStats().muzzleFlashes.active).toBe(28);
+    expect(scene.children.length).toBe(baseline + 36 + 28);
+  });
+
+  it('supports additive VFX materials when MeshBasicMaterial is available', () => {
+    const baseThree = createFakeThree();
+    const three = {
+      ...baseThree,
+      MeshBasicMaterial: FakeMaterial,
+      AdditiveBlending: 'AdditiveBlending',
+      DoubleSide: 'DoubleSide'
+    };
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+
+    app.spawnMuzzleFlashVfx({
+      position: { x: 0, y: 0, z: 0 },
+      dir: { x: 0, y: 0, z: 0 },
+      seed: 42,
+      size: 0.2,
+      ttl: 0.01
+    });
+
+    // Exhaust a few surface paths with explicit size/ttl to exercise branches.
+    app.spawnImpactVfx({
+      position: { x: 0, y: 0, z: 0 },
+      normal: { x: 0, y: 0, z: 0 },
+      surfaceType: 0,
+      seed: 99,
+      size: 0.2,
+      ttl: 0.01
+    });
+    app.spawnDecalVfx({
+      position: { x: 0, y: 0, z: 0 },
+      normal: { x: 0, y: 0, z: 0 },
+      surfaceType: 3,
+      seed: 123,
+      size: 0.2,
+      ttl: 0.01
+    });
+
+    expect(scene.children.length).toBeGreaterThan(4);
+    app.renderFrame(0.1, 0);
+    expect(scene.children.length).toBe(4);
+  });
+
+  it('normalizes non-finite impact normals', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+    const baseline = scene.children.length;
+
+    app.spawnImpactVfx({
+      position: { x: 0, y: 0, z: 0 },
+      normal: { x: Number.NaN, y: Number.NaN, z: Number.NaN },
+      surfaceType: 0,
+      seed: 7
+    });
+
+    expect(scene.children.length).toBe(baseline + 1);
+  });
+
+  it('ignores VFX spawns when positions are invalid', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+    const scene = app.state.scene as FakeScene;
+    const baseline = scene.children.length;
+
+    app.spawnMuzzleFlashVfx({
+      position: { x: Number.NaN, y: 0, z: 0 },
+      dir: { x: 0, y: 0, z: -1 },
+      seed: 1
+    });
+    app.spawnImpactVfx({
+      position: { x: 0, y: Number.NaN, z: 0 },
+      normal: { x: 0, y: 1, z: 0 },
+      surfaceType: 0,
+      seed: 2
+    });
+    app.spawnDecalVfx({
+      position: { x: 0, y: 0, z: Number.NaN },
+      normal: { x: 0, y: 1, z: 0 },
+      surfaceType: 0,
+      seed: 3
+    });
+
+    expect(scene.children.length).toBe(baseline);
+    expect(app.getFxPoolStats()).toMatchObject({
+      muzzleFlashes: { active: 0 },
+      impacts: { active: 0 },
+      decals: { active: 0 }
+    });
   });
 
   it('ignores invalid weapon cooldowns', () => {

@@ -3,9 +3,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <variant>
 #include <vector>
 
-constexpr int kProtocolVersion = 5;
+constexpr int kProtocolVersion = 6;
 constexpr int kServerTickRate = 60;
 constexpr int kSnapshotRate = 20;
 constexpr int kSnapshotKeyframeInterval = 5;
@@ -26,10 +27,18 @@ constexpr int kSnapshotMaskKills = 1 << 8;
 constexpr int kSnapshotMaskDeaths = 1 << 9;
 constexpr int kSnapshotMaskWeaponSlot = 1 << 10;
 constexpr int kSnapshotMaskAmmoInMag = 1 << 11;
-constexpr int kSnapshotMaskAll = kSnapshotMaskPosX | kSnapshotMaskPosY | kSnapshotMaskPosZ |
-                                 kSnapshotMaskVelX | kSnapshotMaskVelY | kSnapshotMaskVelZ |
-                                 kSnapshotMaskDashCooldown | kSnapshotMaskHealth | kSnapshotMaskKills |
-                                 kSnapshotMaskDeaths | kSnapshotMaskWeaponSlot | kSnapshotMaskAmmoInMag;
+constexpr int kSnapshotMaskViewYawQ = 1 << 12;
+constexpr int kSnapshotMaskViewPitchQ = 1 << 13;
+constexpr int kSnapshotMaskPlayerFlags = 1 << 14;
+constexpr int kSnapshotMaskWeaponHeatQ = 1 << 15;
+constexpr int kSnapshotMaskLoadoutBits = 1 << 16;
+constexpr int kSnapshotMaskAll =
+    kSnapshotMaskPosX | kSnapshotMaskPosY | kSnapshotMaskPosZ |
+    kSnapshotMaskVelX | kSnapshotMaskVelY | kSnapshotMaskVelZ |
+    kSnapshotMaskDashCooldown | kSnapshotMaskHealth | kSnapshotMaskKills |
+    kSnapshotMaskDeaths | kSnapshotMaskWeaponSlot | kSnapshotMaskAmmoInMag |
+    kSnapshotMaskViewYawQ | kSnapshotMaskViewPitchQ | kSnapshotMaskPlayerFlags |
+    kSnapshotMaskWeaponHeatQ | kSnapshotMaskLoadoutBits;
 
 struct ClientHello {
   int protocol_version = 0;
@@ -62,6 +71,7 @@ struct InputCmd {
   int weapon_slot = 0;
   bool jump = false;
   bool fire = false;
+  bool ads = false;
   bool sprint = false;
   bool dash = false;
   bool grapple = false;
@@ -81,6 +91,10 @@ struct FireWeaponRequest {
   double dir_z = 0.0;
 };
 
+struct SetLoadoutRequest {
+  uint32_t loadout_bits = 0;
+};
+
 struct Ping {
   double client_time_ms = 0.0;
 };
@@ -89,57 +103,112 @@ struct Pong {
   double client_time_ms = 0.0;
 };
 
-struct GameEvent {
-  std::string event;
+enum class HitKind : uint8_t {
+  None = 0,
+  World = 1,
+  Player = 2,
+};
+
+enum class SurfaceType : uint8_t {
+  Stone = 0,
+  Metal = 1,
+  Dirt = 2,
+  Energy = 3,
+};
+
+struct ShotFiredFx {
+  std::string shooter_id;
+  uint8_t weapon_slot = 0;
+  int shot_seq = 0;
+  bool dry_fire = false;
+};
+
+struct ShotTraceFx {
+  std::string shooter_id;
+  uint8_t weapon_slot = 0;
+  int shot_seq = 0;
+  int16_t dir_oct_x = 0;
+  int16_t dir_oct_y = 0;
+  uint16_t hit_dist_q = 0;
+  HitKind hit_kind = HitKind::None;
+  SurfaceType surface_type = SurfaceType::Stone;
+  int16_t normal_oct_x = 0;
+  int16_t normal_oct_y = 0;
+  bool show_tracer = false;
+};
+
+struct ReloadFx {
+  std::string shooter_id;
+  uint8_t weapon_slot = 0;
+};
+
+struct NearMissFx {
+  std::string shooter_id;
+  int shot_seq = 0;
+  uint8_t strength = 0;
+};
+
+struct OverheatFx {
+  std::string shooter_id;
+  uint8_t weapon_slot = 0;
+  uint16_t heat_q = 0;
+};
+
+struct VentFx {
+  std::string shooter_id;
+  uint8_t weapon_slot = 0;
+};
+
+struct HitConfirmedFx {
   std::string target_id;
-  std::string owner_id;
-  int projectile_id = -1;
   double damage = 0.0;
   bool killed = false;
-  double pos_x = 0.0;
-  double pos_y = 0.0;
-  double pos_z = 0.0;
-  double vel_x = 0.0;
-  double vel_y = 0.0;
-  double vel_z = 0.0;
-  double ttl = 0.0;
 };
 
-struct WeaponFiredEvent {
+struct ProjectileSpawnFx {
   std::string shooter_id;
-  std::string weapon_id;
-  int weapon_slot = 0;
-  int server_tick = 0;
+  uint8_t weapon_slot = 0;
   int shot_seq = 0;
-  double muzzle_pos_x = 0.0;
-  double muzzle_pos_y = 0.0;
-  double muzzle_pos_z = 0.0;
-  double dir_x = 0.0;
-  double dir_y = 0.0;
-  double dir_z = 0.0;
-  bool dry_fire = false;
-  bool casing_enabled = false;
-  double casing_pos_x = 0.0;
-  double casing_pos_y = 0.0;
-  double casing_pos_z = 0.0;
-  double casing_rot_x = 0.0;
-  double casing_rot_y = 0.0;
-  double casing_rot_z = 0.0;
-  double casing_vel_x = 0.0;
-  double casing_vel_y = 0.0;
-  double casing_vel_z = 0.0;
-  double casing_ang_x = 0.0;
-  double casing_ang_y = 0.0;
-  double casing_ang_z = 0.0;
-  uint32_t casing_seed = 0;
+  int projectile_id = 0;
+  int16_t pos_x_q = 0;
+  int16_t pos_y_q = 0;
+  int16_t pos_z_q = 0;
+  int16_t vel_x_q = 0;
+  int16_t vel_y_q = 0;
+  int16_t vel_z_q = 0;
+  uint16_t ttl_q = 0;
 };
 
-struct WeaponReloadEvent {
-  std::string shooter_id;
-  std::string weapon_id;
-  int weapon_slot = 0;
+struct ProjectileImpactFx {
+  int projectile_id = 0;
+  bool hit_world = false;
+  std::string target_id;
+  int16_t pos_x_q = 0;
+  int16_t pos_y_q = 0;
+  int16_t pos_z_q = 0;
+  int16_t normal_oct_x = 0;
+  int16_t normal_oct_y = 0;
+  SurfaceType surface_type = SurfaceType::Stone;
+};
+
+struct ProjectileRemoveFx {
+  int projectile_id = 0;
+};
+
+using FxEventData = std::variant<ShotFiredFx,
+                                 ShotTraceFx,
+                                 ReloadFx,
+                                 NearMissFx,
+                                 OverheatFx,
+                                 VentFx,
+                                 HitConfirmedFx,
+                                 ProjectileSpawnFx,
+                                 ProjectileImpactFx,
+                                 ProjectileRemoveFx>;
+
+struct GameEventBatch {
   int server_tick = 0;
-  double reload_seconds = 0.0;
+  std::vector<FxEventData> events;
 };
 
 struct StateSnapshot {
@@ -158,6 +227,11 @@ struct StateSnapshot {
   double health = 100.0;
   int kills = 0;
   int deaths = 0;
+  int16_t view_yaw_q = 0;
+  int16_t view_pitch_q = 0;
+  uint8_t player_flags = 0;
+  uint16_t weapon_heat_q = 0;
+  uint32_t loadout_bits = 0;
 };
 
 struct StateSnapshotDelta {
@@ -178,6 +252,11 @@ struct StateSnapshotDelta {
   double health = 0.0;
   int kills = 0;
   int deaths = 0;
+  int16_t view_yaw_q = 0;
+  int16_t view_pitch_q = 0;
+  uint8_t player_flags = 0;
+  uint16_t weapon_heat_q = 0;
+  uint32_t loadout_bits = 0;
 };
 
 struct PlayerProfile {
@@ -201,8 +280,7 @@ enum class MessageType : uint16_t {
   Error = 12,
   Disconnect = 13,
   FireWeaponRequest = 14,
-  WeaponFiredEvent = 15,
-  WeaponReloadEvent = 16
+  SetLoadoutRequest = 15
 };
 
 struct MessageHeader {
@@ -227,16 +305,14 @@ bool ParseClientHelloPayload(const std::vector<uint8_t> &payload, ClientHello &o
 bool ParseInputCmdPayload(const std::vector<uint8_t> &payload, InputCmd &out, std::string &error);
 bool ParseFireWeaponRequestPayload(const std::vector<uint8_t> &payload, FireWeaponRequest &out,
                                    std::string &error);
+bool ParseSetLoadoutRequestPayload(const std::vector<uint8_t> &payload, SetLoadoutRequest &out,
+                                   std::string &error);
 bool ParsePingPayload(const std::vector<uint8_t> &payload, Ping &out, std::string &error);
 std::vector<uint8_t> BuildServerHello(const ServerHello &hello, uint32_t msg_seq, uint32_t server_seq_ack);
 std::vector<uint8_t> BuildProtocolError(const std::string &code, const std::string &message,
                                         uint32_t msg_seq, uint32_t server_seq_ack);
 std::vector<uint8_t> BuildPong(const Pong &pong, uint32_t msg_seq, uint32_t server_seq_ack);
-std::vector<uint8_t> BuildGameEvent(const GameEvent &event, uint32_t msg_seq, uint32_t server_seq_ack);
-std::vector<uint8_t> BuildWeaponFiredEvent(const WeaponFiredEvent &event, uint32_t msg_seq,
-                                           uint32_t server_seq_ack);
-std::vector<uint8_t> BuildWeaponReloadEvent(const WeaponReloadEvent &event, uint32_t msg_seq,
-                                            uint32_t server_seq_ack);
+std::vector<uint8_t> BuildGameEventBatch(const GameEventBatch &event, uint32_t msg_seq, uint32_t server_seq_ack);
 std::vector<uint8_t> BuildStateSnapshot(const StateSnapshot &snapshot, uint32_t msg_seq, uint32_t server_seq_ack);
 std::vector<uint8_t> BuildStateSnapshotDelta(const StateSnapshotDelta &delta, uint32_t msg_seq,
                                              uint32_t server_seq_ack);

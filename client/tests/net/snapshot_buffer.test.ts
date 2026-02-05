@@ -38,6 +38,7 @@ describe('SnapshotBuffer', () => {
   it('returns null with no snapshots', () => {
     const buffer = new SnapshotBuffer(10);
     expect(buffer.sample(0)).toBeNull();
+    expect(buffer.sampleWithRenderTick(0)).toBeNull();
   });
 
   it('returns the latest snapshot when only one is available', () => {
@@ -46,6 +47,9 @@ describe('SnapshotBuffer', () => {
     buffer.push(snapshot, 100);
 
     expect(buffer.sample(200)).toEqual(snapshot);
+    const meta = buffer.sampleWithRenderTick(200);
+    expect(meta?.snapshot).toEqual(snapshot);
+    expect(meta?.renderTick).toBe(1);
   });
 
   it('interpolates between snapshots', () => {
@@ -65,6 +69,10 @@ describe('SnapshotBuffer', () => {
     expect(sample?.health).toBe(80);
     expect(sample?.kills).toBe(1);
     expect(sample?.serverTick).toBe(2);
+
+    const meta = buffer.sampleWithRenderTick(250);
+    expect(meta).not.toBeNull();
+    expect(meta?.renderTick).toBeCloseTo(1.5);
   });
 
   it('drops out-of-order snapshots', () => {
@@ -104,6 +112,19 @@ describe('SnapshotBuffer', () => {
     const sample = buffer.sample(250);
     expect(sample?.serverTick).toBe(2);
     expect(sample?.posX).toBe(5);
+
+    const meta = buffer.sampleWithRenderTick(250);
+    expect(meta?.snapshot.serverTick).toBe(2);
+    expect(meta?.renderTick).toBe(2);
+  });
+
+  it('handles non-finite tick deltas when interpolating', () => {
+    const buffer = new SnapshotBuffer(10);
+    buffer.push(makeSnapshot(1, 0, 0), 0);
+    buffer.push(makeSnapshot(Number.NaN, 10, 0), 100);
+
+    const meta = buffer.sampleWithRenderTick(250);
+    expect(meta?.renderTick).toBe(1);
   });
 
   it('clears buffered snapshots', () => {

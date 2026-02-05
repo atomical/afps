@@ -80,6 +80,21 @@ describe('input sender', () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
+  it('returns false when channel is not open without a logger', () => {
+    const channel = new FakeDataChannel('afps_unreliable');
+    channel.readyState = 'connecting';
+    const sampler = createSampler();
+
+    const sender = createInputSender({
+      channel,
+      sampler,
+      nextMessageSeq: () => 1,
+      getServerSeqAck: () => 0
+    });
+
+    expect(sender.sendOnce()).toBe(false);
+  });
+
   it('starts and stops interval sending', () => {
     const channel = new FakeDataChannel('afps_unreliable');
     channel.readyState = 'open';

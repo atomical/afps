@@ -26,6 +26,8 @@ export interface PredictionSim {
   setState: (x: number, y: number, z: number, velX: number, velY: number, velZ: number, dashCooldown: number) => void;
   reset: () => void;
   setConfig: (config: SimConfig) => void;
+  __setShieldCooldown?: (value: number) => void;
+  __setGrappleCooldown?: (value: number) => void;
 }
 
 export interface PredictedState {
@@ -179,7 +181,7 @@ const raycastWorld = (origin: { x: number; y: number; z: number }, dir: { x: num
       best.nz = normalZ;
     };
 
-    const playerHeight = Number.isFinite(config.playerHeight) && config.playerHeight >= 0 ? config.playerHeight : 0;
+    const playerHeight = Math.max(0, config.playerHeight);
     const ceilingZ = Math.max(0, half - playerHeight);
     testPlaneZ(0, 1);
     testPlaneZ(ceilingZ, -1);
@@ -407,7 +409,7 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
   };
 
   const getArenaBounds = () => {
-    const halfSize = Number.isFinite(currentConfig.arenaHalfSize) ? Math.max(0, currentConfig.arenaHalfSize) : 0;
+    const halfSize = Math.max(0, toNumber(currentConfig.arenaHalfSize));
     if (halfSize <= 0) {
       return null;
     }
@@ -450,7 +452,7 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
     if (currentConfig.obstacleMinX >= currentConfig.obstacleMaxX || currentConfig.obstacleMinY >= currentConfig.obstacleMaxY) {
       return null;
     }
-    const radius = Number.isFinite(currentConfig.playerRadius) ? Math.max(0, currentConfig.playerRadius) : 0;
+    const radius = Math.max(0, toNumber(currentConfig.playerRadius));
     return {
       minX: currentConfig.obstacleMinX - radius,
       maxX: currentConfig.obstacleMaxX + radius,
@@ -719,7 +721,7 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
     const grappleReleased = !input.grapple && state.grappleInput;
     state.grappleInput = Boolean(input.grapple);
 
-    const releaseGrapple = (applyCooldown: boolean) => {
+    const releaseGrapple = () => {
       state.grappleActive = false;
       state.grappleLength = 0;
       state.grappleAnchorX = 0;
@@ -728,15 +730,13 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
       state.grappleAnchorNX = 0;
       state.grappleAnchorNY = 0;
       state.grappleAnchorNZ = 0;
-      if (applyCooldown) {
-        state.grappleCooldown = grappleCooldown;
-      }
+      state.grappleCooldown = grappleCooldown;
     };
 
     if (grapplePressed && state.grappleCooldown <= 0) {
       const maxDistance = Math.max(0, currentConfig.grappleMaxDistance);
       if (maxDistance > 0) {
-        const dir = viewDirection(toNumber(input.viewYaw ?? 0), toNumber(input.viewPitch ?? 0));
+        const dir = viewDirection(input.viewYaw ?? 0, input.viewPitch ?? 0);
         const eyeHeight = resolveEyeHeight(currentConfig);
         const origin = { x: state.x, y: state.y, z: state.z + eyeHeight };
         const hit = raycastWorld(origin, dir, currentConfig);
@@ -747,12 +747,9 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
           let ceilingZ = Number.POSITIVE_INFINITY;
           if (Number.isFinite(currentConfig.arenaHalfSize) && currentConfig.arenaHalfSize > 0) {
             const halfSize = Math.max(0, currentConfig.arenaHalfSize);
-            const playerHeight = Number.isFinite(currentConfig.playerHeight) && currentConfig.playerHeight >= 0
-              ? currentConfig.playerHeight
-              : 0;
+            const playerHeight = Math.max(0, currentConfig.playerHeight);
             ceilingZ = Math.max(0, halfSize - playerHeight);
           }
-          anchorZ = Number.isFinite(anchorZ) ? anchorZ : origin.z;
           anchorZ = Math.max(0, Math.min(anchorZ, ceilingZ));
           const dx = anchorX - origin.x;
           const dy = anchorY - origin.y;
@@ -830,7 +827,7 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
 
     if (state.grappleActive) {
       if (grappleReleased) {
-        releaseGrapple(true);
+        releaseGrapple();
       } else {
         const eyeHeight = resolveEyeHeight(currentConfig);
         const origin = { x: state.x, y: state.y, z: state.z + eyeHeight };
@@ -839,17 +836,17 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
         const dz = state.grappleAnchorZ - origin.z;
         const dist = Math.hypot(dx, dy, dz);
         if (!Number.isFinite(dist) || dist <= 0) {
-          releaseGrapple(true);
+          releaseGrapple();
         } else {
           const maxDistance = Math.max(0, currentConfig.grappleMaxDistance);
           const ropeSlack = Math.max(0, currentConfig.grappleRopeSlack);
           if (maxDistance > 0 && dist > maxDistance + ropeSlack) {
-            releaseGrapple(true);
+            releaseGrapple();
           } else {
             const dir = { x: dx / dist, y: dy / dist, z: dz / dist };
             const losHit = raycastWorld(origin, dir, currentConfig);
             if (!losHit.hit || losHit.t + 1e-4 < dist) {
-              releaseGrapple(true);
+              releaseGrapple();
             } else if (dist > state.grappleLength + ropeSlack) {
               const stretch = dist - state.grappleLength - ropeSlack;
               const pullStrength = Math.max(0, currentConfig.grapplePullStrength);
@@ -884,9 +881,7 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
 
     advanceWithCollisions(dt);
 
-    const playerHeight = Number.isFinite(currentConfig.playerHeight) && currentConfig.playerHeight >= 0
-      ? currentConfig.playerHeight
-      : 0;
+    const playerHeight = Math.max(0, currentConfig.playerHeight);
     let ceilingZ = Number.POSITIVE_INFINITY;
     if (Number.isFinite(currentConfig.arenaHalfSize) && currentConfig.arenaHalfSize > 0) {
       const halfSize = Math.max(0, currentConfig.arenaHalfSize);
@@ -918,9 +913,7 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
     state.x = toNumber(x);
     state.y = toNumber(y);
     const safeZ = toNumber(z);
-    const playerHeight = Number.isFinite(currentConfig.playerHeight) && currentConfig.playerHeight >= 0
-      ? currentConfig.playerHeight
-      : 0;
+    const playerHeight = Math.max(0, currentConfig.playerHeight);
     let ceilingZ = Number.POSITIVE_INFINITY;
     if (Number.isFinite(currentConfig.arenaHalfSize) && currentConfig.arenaHalfSize > 0) {
       const halfSize = Math.max(0, currentConfig.arenaHalfSize);
@@ -949,6 +942,10 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
     velY: state.velY,
     velZ: state.velZ,
     dashCooldown: state.dashCooldown,
+    grappleActive: state.grappleActive,
+    grappleAnchorZ: state.grappleAnchorZ,
+    grappleLength: state.grappleLength,
+    grappleCooldown: state.grappleCooldown,
     shieldTimer: state.shieldTimer,
     shieldCooldown: state.shieldCooldown,
     shieldActive: state.shieldActive,
@@ -986,7 +983,15 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
 
   setConfig(config);
 
-  return { step, getState, setState, reset, setConfig };
+  const __setShieldCooldown = (value: number) => {
+    state.shieldCooldown = value;
+  };
+
+  const __setGrappleCooldown = (value: number) => {
+    state.grappleCooldown = value;
+  };
+
+  return { step, getState, setState, reset, setConfig, __setShieldCooldown, __setGrappleCooldown };
 };
 
 export class ClientPrediction {

@@ -95,6 +95,30 @@ describe('input sampler', () => {
     sampler.dispose();
   });
 
+  it('tracks ADS right mouse button and blocks context menu while ADS is held', () => {
+    const sampler = createInputSampler({ target: window });
+
+    const contextBefore = new MouseEvent('contextmenu', { cancelable: true, bubbles: true });
+    window.dispatchEvent(contextBefore);
+    expect(contextBefore.defaultPrevented).toBe(false);
+
+    window.dispatchEvent(new MouseEvent('mousedown', { button: 2 }));
+    expect(sampler.sample().ads).toBe(true);
+
+    const contextDuring = new MouseEvent('contextmenu', { cancelable: true, bubbles: true });
+    window.dispatchEvent(contextDuring);
+    expect(contextDuring.defaultPrevented).toBe(true);
+
+    window.dispatchEvent(new MouseEvent('mouseup', { button: 2 }));
+    expect(sampler.sample().ads).toBe(false);
+
+    const contextAfter = new MouseEvent('contextmenu', { cancelable: true, bubbles: true });
+    window.dispatchEvent(contextAfter);
+    expect(contextAfter.defaultPrevented).toBe(false);
+
+    sampler.dispose();
+  });
+
   it('ignores non-primary mouse buttons for fire', () => {
     const sampler = createInputSampler({ target: window });
 
@@ -159,6 +183,15 @@ describe('input sampler', () => {
 
     dispatchWheel(1);
     expect(sampler.sample().weaponSlot).toBe(0);
+
+    sampler.dispose();
+  });
+
+  it('defaults to two weapon slots when configuration is invalid', () => {
+    const sampler = createInputSampler({ target: window, weaponSlots: Number.NaN });
+
+    dispatchWheel(1);
+    expect(sampler.sample().weaponSlot).toBe(1);
 
     sampler.dispose();
   });

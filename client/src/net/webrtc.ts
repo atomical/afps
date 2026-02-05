@@ -2,8 +2,6 @@ import {
   buildClientHello as buildClientHelloMessage,
   decodeEnvelope,
   parseGameEventPayload,
-  parseWeaponFiredEventPayload,
-  parseWeaponReloadEventPayload,
   parsePlayerProfilePayload,
   parsePongPayload,
   parseServerHelloPayload,
@@ -11,9 +9,7 @@ import {
   parseStateSnapshotPayload,
   MessageType,
   PROTOCOL_VERSION,
-  type GameEvent,
-  type WeaponFiredEvent,
-  type WeaponReloadEvent,
+  type GameEventBatch,
   type PlayerProfile,
   type PongMessage,
   type StateSnapshot
@@ -47,9 +43,7 @@ interface WebRtcConnectOptions {
   ) => Uint8Array;
   onSnapshot?: (snapshot: StateSnapshot) => void;
   onPong?: (pong: PongMessage) => void;
-  onGameEvent?: (event: GameEvent) => void;
-  onWeaponFired?: (event: WeaponFiredEvent) => void;
-  onWeaponReload?: (event: WeaponReloadEvent) => void;
+  onGameEvent?: (event: GameEventBatch) => void;
   onPlayerProfile?: (profile: PlayerProfile) => void;
 }
 
@@ -162,8 +156,6 @@ export const createWebRtcConnector = ({
   onSnapshot,
   onPong,
   onGameEvent,
-  onWeaponFired,
-  onWeaponReload,
   onPlayerProfile
 }: WebRtcConnectOptions) => {
   const connect = async (): Promise<WebRtcSession> => {
@@ -240,9 +232,7 @@ export const createWebRtcConnector = ({
         const snapshotMessage = parseStateSnapshotPayload(envelope.payload);
         if (snapshotMessage) {
           const snapshot = snapshotDecoder.apply(snapshotMessage);
-          if (snapshot) {
-            onSnapshot?.(snapshot);
-          }
+          onSnapshot?.(snapshot);
         }
         return;
       }
@@ -260,20 +250,6 @@ export const createWebRtcConnector = ({
         const gameEvent = parseGameEventPayload(envelope.payload);
         if (gameEvent) {
           onGameEvent?.(gameEvent);
-        }
-        return;
-      }
-      if (envelope.header.msgType === MessageType.WeaponFiredEvent) {
-        const firedEvent = parseWeaponFiredEventPayload(envelope.payload);
-        if (firedEvent) {
-          onWeaponFired?.(firedEvent);
-        }
-        return;
-      }
-      if (envelope.header.msgType === MessageType.WeaponReloadEvent) {
-        const reloadEvent = parseWeaponReloadEventPayload(envelope.payload);
-        if (reloadEvent) {
-          onWeaponReload?.(reloadEvent);
         }
         return;
       }
@@ -307,9 +283,11 @@ export const createWebRtcConnector = ({
       stopPolling?.();
       if (reliableChannel) {
         reliableChannel.close();
+        reliableChannel = null;
       }
       if (unreliableChannel) {
         unreliableChannel.close();
+        unreliableChannel = null;
       }
       peerConnection.close();
     };

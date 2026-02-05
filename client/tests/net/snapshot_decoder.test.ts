@@ -13,6 +13,11 @@ import {
   SNAPSHOT_MASK_HEALTH,
   SNAPSHOT_MASK_KILLS,
   SNAPSHOT_MASK_DEATHS,
+  SNAPSHOT_MASK_VIEW_YAW_Q,
+  SNAPSHOT_MASK_VIEW_PITCH_Q,
+  SNAPSHOT_MASK_PLAYER_FLAGS,
+  SNAPSHOT_MASK_WEAPON_HEAT_Q,
+  SNAPSHOT_MASK_LOADOUT_BITS,
   type StateSnapshot,
   type StateSnapshotDelta
 } from '../../src/net/protocol';
@@ -241,6 +246,137 @@ describe('SnapshotDecoder', () => {
       posZ: 0.5,
       velX: 0.1,
       velY: -0.2,
+      velZ: 0.05,
+      weaponSlot: 1,
+      ammoInMag: 30,
+      dashCooldown: 0.4,
+      health: 90,
+      kills: 1,
+      deaths: 0,
+      clientId: 'client-1'
+    });
+  });
+
+  it('applies view and loadout fields in delta snapshots', () => {
+    const decoder = new SnapshotDecoder();
+    decoder.apply(baseSnapshot);
+
+    const delta: StateSnapshotDelta = {
+      type: 'StateSnapshotDelta',
+      serverTick: 9,
+      baseTick: 5,
+      lastProcessedInputSeq: 6,
+      mask:
+        SNAPSHOT_MASK_VIEW_YAW_Q |
+        SNAPSHOT_MASK_VIEW_PITCH_Q |
+        SNAPSHOT_MASK_PLAYER_FLAGS |
+        SNAPSHOT_MASK_WEAPON_HEAT_Q |
+        SNAPSHOT_MASK_LOADOUT_BITS,
+      viewYawQ: 123,
+      viewPitchQ: -456,
+      playerFlags: 7,
+      weaponHeatQ: 321,
+      loadoutBits: 9,
+      clientId: 'client-1'
+    };
+
+    expect(decoder.apply(delta)).toEqual({
+      type: 'StateSnapshot',
+      serverTick: 9,
+      lastProcessedInputSeq: 6,
+      posX: 1.25,
+      posY: -2,
+      posZ: 0.5,
+      velX: 0.1,
+      velY: -0.2,
+      velZ: 0.05,
+      weaponSlot: 1,
+      ammoInMag: 30,
+      dashCooldown: 0.4,
+      health: 90,
+      kills: 1,
+      deaths: 0,
+      viewYawQ: 123,
+      viewPitchQ: -456,
+      playerFlags: 7,
+      weaponHeatQ: 321,
+      loadoutBits: 9,
+      clientId: 'client-1'
+    });
+  });
+
+  it('falls back to base view/loadout values when masked fields are missing', () => {
+    const decoder = new SnapshotDecoder();
+    const baseWithView: StateSnapshot = {
+      ...baseSnapshot,
+      viewYawQ: 10,
+      viewPitchQ: -20,
+      playerFlags: 3,
+      weaponHeatQ: 7,
+      loadoutBits: 5
+    };
+    decoder.apply(baseWithView);
+
+    const delta: StateSnapshotDelta = {
+      type: 'StateSnapshotDelta',
+      serverTick: 11,
+      baseTick: 5,
+      lastProcessedInputSeq: 8,
+      mask:
+        SNAPSHOT_MASK_VIEW_YAW_Q |
+        SNAPSHOT_MASK_VIEW_PITCH_Q |
+        SNAPSHOT_MASK_PLAYER_FLAGS |
+        SNAPSHOT_MASK_WEAPON_HEAT_Q |
+        SNAPSHOT_MASK_LOADOUT_BITS
+    };
+
+    expect(decoder.apply(delta)).toEqual({
+      type: 'StateSnapshot',
+      serverTick: 11,
+      lastProcessedInputSeq: 8,
+      posX: 1.25,
+      posY: -2,
+      posZ: 0.5,
+      velX: 0.1,
+      velY: -0.2,
+      velZ: 0.05,
+      weaponSlot: 1,
+      ammoInMag: 30,
+      dashCooldown: 0.4,
+      health: 90,
+      kills: 1,
+      deaths: 0,
+      viewYawQ: 10,
+      viewPitchQ: -20,
+      playerFlags: 3,
+      weaponHeatQ: 7,
+      loadoutBits: 5,
+      clientId: 'client-1'
+    });
+  });
+
+  it('retains base positions when masks exclude them', () => {
+    const decoder = new SnapshotDecoder();
+    decoder.apply(baseSnapshot);
+
+    const delta: StateSnapshotDelta = {
+      type: 'StateSnapshotDelta',
+      serverTick: 10,
+      baseTick: 5,
+      lastProcessedInputSeq: 7,
+      mask: SNAPSHOT_MASK_VEL_Y,
+      velY: 2.5
+    };
+
+    expect(decoder.apply(delta)).toEqual({
+      type: 'StateSnapshot',
+      serverTick: 10,
+      lastProcessedInputSeq: 7,
+      posX: 1.25,
+      posY: -2,
+      posZ: 0.5,
+      velX: 0.1,
+      velY: 2.5,
       velZ: 0.05,
       weaponSlot: 1,
       ammoInMag: 30,

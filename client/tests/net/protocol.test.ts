@@ -5,52 +5,228 @@ import {
   buildPing,
   decodeEnvelope,
   encodeEnvelope,
+  encodeFireWeaponRequest,
+  encodeSetLoadoutRequest,
+  parseErrorPayload,
   parseGameEvent,
   parseGameEventPayload,
-  parsePlayerProfilePayload,
   parsePlayerProfile,
-  parsePongPayload,
+  parsePlayerProfilePayload,
   parsePong,
+  parsePongPayload,
   parseProtocolError,
-  parseErrorPayload,
   parseServerHello,
   parseServerHelloPayload,
   parseSnapshotMessage,
   parseStateSnapshot,
-  parseStateSnapshotPayload,
   parseStateSnapshotDelta,
   parseStateSnapshotDeltaPayload,
-  parseWeaponFiredEventPayload,
-  parseWeaponReloadEventPayload,
-  encodeFireWeaponRequest,
+  parseStateSnapshotPayload,
   MessageType,
   PROTOCOL_VERSION,
-  __test,
+  SNAPSHOT_MASK_AMMO_IN_MAG,
+  SNAPSHOT_MASK_DASH_COOLDOWN,
+  SNAPSHOT_MASK_DEATHS,
+  SNAPSHOT_MASK_HEALTH,
+  SNAPSHOT_MASK_KILLS,
+  SNAPSHOT_MASK_LOADOUT_BITS,
+  SNAPSHOT_MASK_PLAYER_FLAGS,
   SNAPSHOT_MASK_POS_X,
   SNAPSHOT_MASK_POS_Y,
   SNAPSHOT_MASK_POS_Z,
   SNAPSHOT_MASK_VEL_X,
   SNAPSHOT_MASK_VEL_Y,
   SNAPSHOT_MASK_VEL_Z,
-  SNAPSHOT_MASK_DASH_COOLDOWN,
-  SNAPSHOT_MASK_HEALTH,
-  SNAPSHOT_MASK_KILLS,
-  SNAPSHOT_MASK_DEATHS,
-  SNAPSHOT_MASK_WEAPON_SLOT,
-  SNAPSHOT_MASK_AMMO_IN_MAG
+  SNAPSHOT_MASK_VIEW_PITCH_Q,
+  SNAPSHOT_MASK_VIEW_YAW_Q,
+  SNAPSHOT_MASK_WEAPON_HEAT_Q,
+  SNAPSHOT_MASK_WEAPON_SLOT
 } from '../../src/net/protocol';
 import { ClientHello } from '../../src/net/fbs/afps/protocol/client-hello';
 import { Error as ErrorMessage } from '../../src/net/fbs/afps/protocol/error';
-import { GameEvent } from '../../src/net/fbs/afps/protocol/game-event';
-import { GameEventType } from '../../src/net/fbs/afps/protocol/game-event-type';
+import { FireWeaponRequest } from '../../src/net/fbs/afps/protocol/fire-weapon-request';
+import { FxEvent } from '../../src/net/fbs/afps/protocol/fx-event';
+import { GameEventT } from '../../src/net/fbs/afps/protocol/game-event';
+import { HitConfirmedFxT } from '../../src/net/fbs/afps/protocol/hit-confirmed-fx';
+import { HitKind } from '../../src/net/fbs/afps/protocol/hit-kind';
+import { NearMissFxT } from '../../src/net/fbs/afps/protocol/near-miss-fx';
+import { OverheatFxT } from '../../src/net/fbs/afps/protocol/overheat-fx';
 import { PlayerProfile } from '../../src/net/fbs/afps/protocol/player-profile';
 import { Pong } from '../../src/net/fbs/afps/protocol/pong';
+import { ProjectileImpactFxT } from '../../src/net/fbs/afps/protocol/projectile-impact-fx';
+import { ProjectileRemoveFxT } from '../../src/net/fbs/afps/protocol/projectile-remove-fx';
+import { ProjectileSpawnFxT } from '../../src/net/fbs/afps/protocol/projectile-spawn-fx';
+import { ReloadFxT } from '../../src/net/fbs/afps/protocol/reload-fx';
 import { ServerHello } from '../../src/net/fbs/afps/protocol/server-hello';
+import { SetLoadoutRequest } from '../../src/net/fbs/afps/protocol/set-loadout-request';
+import { ShotFiredFxT } from '../../src/net/fbs/afps/protocol/shot-fired-fx';
+import { ShotTraceFxT } from '../../src/net/fbs/afps/protocol/shot-trace-fx';
 import { StateSnapshot } from '../../src/net/fbs/afps/protocol/state-snapshot';
 import { StateSnapshotDelta } from '../../src/net/fbs/afps/protocol/state-snapshot-delta';
-import { FireWeaponRequest } from '../../src/net/fbs/afps/protocol/fire-weapon-request';
-import { WeaponFiredEvent as WeaponFiredEventFbs } from '../../src/net/fbs/afps/protocol/weapon-fired-event';
-import { WeaponReloadEvent as WeaponReloadEventFbs } from '../../src/net/fbs/afps/protocol/weapon-reload-event';
+import { SurfaceType } from '../../src/net/fbs/afps/protocol/surface-type';
+import { VentFxT } from '../../src/net/fbs/afps/protocol/vent-fx';
+
+const buildSnapshotPayload = (
+  overrides: Partial<{
+    serverTick: number;
+    lastProcessedInputSeq: number;
+    clientId: string;
+    posX: number;
+    posY: number;
+    posZ: number;
+    velX: number;
+    velY: number;
+    velZ: number;
+    weaponSlot: number;
+    ammoInMag: number;
+    dashCooldown: number;
+    health: number;
+    kills: number;
+    deaths: number;
+    viewYawQ: number;
+    viewPitchQ: number;
+    playerFlags: number;
+    weaponHeatQ: number;
+    loadoutBits: number;
+  }> = {}
+) => {
+  const builder = new flatbuffers.Builder(256);
+  const clientId = builder.createString(overrides.clientId ?? 'client-1');
+  const offset = StateSnapshot.createStateSnapshot(
+    builder,
+    overrides.serverTick ?? 12,
+    overrides.lastProcessedInputSeq ?? 7,
+    clientId,
+    overrides.posX ?? 1.25,
+    overrides.posY ?? -3,
+    overrides.posZ ?? 0.5,
+    overrides.velX ?? 0.5,
+    overrides.velY ?? -0.25,
+    overrides.velZ ?? 0.1,
+    overrides.weaponSlot ?? 1,
+    overrides.ammoInMag ?? 24,
+    overrides.dashCooldown ?? 0.4,
+    overrides.health ?? 75,
+    overrides.kills ?? 2,
+    overrides.deaths ?? 1,
+    overrides.viewYawQ ?? 123,
+    overrides.viewPitchQ ?? -321,
+    overrides.playerFlags ?? 7,
+    overrides.weaponHeatQ ?? 900,
+    overrides.loadoutBits ?? 0
+  );
+  builder.finish(offset);
+  return builder.asUint8Array();
+};
+
+const buildDeltaPayload = (
+  overrides: Partial<{
+    serverTick: number;
+    baseTick: number;
+    lastProcessedInputSeq: number;
+    mask: number;
+    clientId: string;
+    posX: number;
+    posY: number;
+    posZ: number;
+    velX: number;
+    velY: number;
+    velZ: number;
+    weaponSlot: number;
+    ammoInMag: number;
+    dashCooldown: number;
+    health: number;
+    kills: number;
+    deaths: number;
+    viewYawQ: number;
+    viewPitchQ: number;
+    playerFlags: number;
+    weaponHeatQ: number;
+    loadoutBits: number;
+  }>
+) => {
+  const builder = new flatbuffers.Builder(256);
+  const clientId = builder.createString(overrides?.clientId ?? 'client-1');
+  const offset = StateSnapshotDelta.createStateSnapshotDelta(
+    builder,
+    overrides?.serverTick ?? 45,
+    overrides?.baseTick ?? 40,
+    overrides?.lastProcessedInputSeq ?? 9,
+    overrides?.mask ?? SNAPSHOT_MASK_POS_X,
+    clientId,
+    overrides?.posX ?? 0,
+    overrides?.posY ?? 0,
+    overrides?.posZ ?? 0,
+    overrides?.velX ?? 0,
+    overrides?.velY ?? 0,
+    overrides?.velZ ?? 0,
+    overrides?.weaponSlot ?? 0,
+    overrides?.ammoInMag ?? 0,
+    overrides?.dashCooldown ?? 0,
+    overrides?.health ?? 0,
+    overrides?.kills ?? 0,
+    overrides?.deaths ?? 0,
+    overrides?.viewYawQ ?? 0,
+    overrides?.viewPitchQ ?? 0,
+    overrides?.playerFlags ?? 0,
+    overrides?.weaponHeatQ ?? 0,
+    overrides?.loadoutBits ?? 0
+  );
+  builder.finish(offset);
+  return builder.asUint8Array();
+};
+
+const buildGameEventPayload = () => {
+  const builder = new flatbuffers.Builder(512);
+
+  const types: FxEvent[] = [
+    FxEvent.NONE,
+    250 as FxEvent,
+    FxEvent.ShotFiredFx,
+    FxEvent.ShotTraceFx,
+    FxEvent.ReloadFx,
+    FxEvent.NearMissFx,
+    FxEvent.OverheatFx,
+    FxEvent.VentFx,
+    FxEvent.HitConfirmedFx,
+    FxEvent.ProjectileSpawnFx,
+    FxEvent.ProjectileImpactFx,
+    FxEvent.ProjectileImpactFx,
+    FxEvent.ProjectileRemoveFx
+  ];
+
+  const events = [
+    new ShotFiredFxT('ignored', 0, 0, false),
+    new ShotFiredFxT('ignored', 0, 0, false),
+    new ShotFiredFxT('shooter-1', 1, 42, false),
+    new ShotTraceFxT(
+      'shooter-1',
+      1,
+      42,
+      123,
+      -321,
+      77,
+      HitKind.World,
+      SurfaceType.Metal,
+      5,
+      6,
+      true
+    ),
+    new ReloadFxT('shooter-1', 1),
+    new NearMissFxT('shooter-2', 7, 200),
+    new OverheatFxT('shooter-3', 0, 999),
+    new VentFxT('shooter-3', 0),
+    new HitConfirmedFxT('target-1', 5.5, true),
+    new ProjectileSpawnFxT('shooter-4', 0, 9, 33, 1, 2, 3, 4, 5, 6, 50),
+    new ProjectileImpactFxT(33, true, '', 10, 11, 12, -123, 456, SurfaceType.Stone),
+    new ProjectileImpactFxT(34, false, 'target-2', 20, 21, 22, 222, -333, SurfaceType.Dirt),
+    new ProjectileRemoveFxT(33)
+  ];
+
+  const payload = new GameEventT(123, types, events as never).pack(builder);
+  builder.finish(payload);
+  return builder.asUint8Array();
+};
 
 describe('protocol helpers', () => {
   it('builds ClientHello envelope', () => {
@@ -103,6 +279,35 @@ describe('protocol helpers', () => {
     });
   });
 
+  it('parses ServerHello payloads with optional fields missing', () => {
+    const builder = new flatbuffers.Builder(256);
+    const connectionId = builder.createString('conn');
+    const offset = ServerHello.createServerHello(
+      builder,
+      PROTOCOL_VERSION,
+      connectionId,
+      0,
+      60,
+      20,
+      0,
+      0,
+      0
+    );
+    builder.finish(offset);
+
+    expect(parseServerHelloPayload(builder.asUint8Array())).toEqual({
+      type: 'ServerHello',
+      protocolVersion: PROTOCOL_VERSION,
+      connectionId: 'conn',
+      serverTickRate: 60,
+      snapshotRate: 20,
+      snapshotKeyframeInterval: 0,
+      motd: undefined,
+      clientId: undefined,
+      connectionNonce: undefined
+    });
+  });
+
   it('returns null for invalid ServerHello envelopes', () => {
     expect(parseServerHello(new Uint8Array([1, 2, 3]).buffer)).toBeNull();
     const builder = new flatbuffers.Builder(128);
@@ -130,28 +335,17 @@ describe('protocol helpers', () => {
   });
 
   it('parses StateSnapshot envelopes', () => {
-    const builder = new flatbuffers.Builder(256);
-    const clientId = builder.createString('client-1');
-    const offset = StateSnapshot.createStateSnapshot(
-      builder,
-      12,
-      7,
-      clientId,
-      1.25,
-      -3,
-      0.5,
-      0.5,
-      -0.25,
-      0.1,
-      1,
-      24,
-      0.4,
-      75,
-      2,
-      1
-    );
-    builder.finish(offset);
-    const envelope = encodeEnvelope(MessageType.StateSnapshot, builder.asUint8Array(), 3, 0);
+    const payload = buildSnapshotPayload({
+      serverTick: 12,
+      lastProcessedInputSeq: 7,
+      clientId: 'client-1',
+      viewYawQ: 444,
+      viewPitchQ: -555,
+      playerFlags: 3,
+      weaponHeatQ: 250,
+      loadoutBits: 123
+    });
+    const envelope = encodeEnvelope(MessageType.StateSnapshot, payload, 3, 0);
 
     expect(parseStateSnapshot(envelope)).toEqual({
       type: 'StateSnapshot',
@@ -169,13 +363,16 @@ describe('protocol helpers', () => {
       health: 75,
       kills: 2,
       deaths: 1,
+      viewYawQ: 444,
+      viewPitchQ: -555,
+      playerFlags: 3,
+      weaponHeatQ: 250,
+      loadoutBits: 123,
       clientId: 'client-1'
     });
   });
 
   it('parses StateSnapshotDelta envelopes', () => {
-    const builder = new flatbuffers.Builder(256);
-    const clientId = builder.createString('client-1');
     const mask =
       SNAPSHOT_MASK_POS_X |
       SNAPSHOT_MASK_VEL_Y |
@@ -184,28 +381,21 @@ describe('protocol helpers', () => {
       SNAPSHOT_MASK_HEALTH |
       SNAPSHOT_MASK_KILLS |
       SNAPSHOT_MASK_DEATHS;
-    const offset = StateSnapshotDelta.createStateSnapshotDelta(
-      builder,
-      45,
-      40,
-      9,
+    const payload = buildDeltaPayload({
+      serverTick: 45,
+      baseTick: 40,
+      lastProcessedInputSeq: 9,
       mask,
-      clientId,
-      1.75,
-      0,
-      0,
-      0,
-      -0.5,
-      0,
-      0,
-      19,
-      0.25,
-      50,
-      3,
-      2
-    );
-    builder.finish(offset);
-    const envelope = encodeEnvelope(MessageType.StateSnapshotDelta, builder.asUint8Array(), 4, 0);
+      clientId: 'client-1',
+      posX: 1.75,
+      velY: -0.5,
+      ammoInMag: 19,
+      dashCooldown: 0.25,
+      health: 50,
+      kills: 3,
+      deaths: 2
+    });
+    const envelope = encodeEnvelope(MessageType.StateSnapshotDelta, payload, 4, 0);
 
     expect(parseStateSnapshotDelta(envelope)).toEqual({
       type: 'StateSnapshotDelta',
@@ -225,8 +415,6 @@ describe('protocol helpers', () => {
   });
 
   it('parses all masked delta fields', () => {
-    const builder = new flatbuffers.Builder(256);
-    const clientId = builder.createString('client-1');
     const mask =
       SNAPSHOT_MASK_POS_X |
       SNAPSHOT_MASK_POS_Y |
@@ -239,29 +427,39 @@ describe('protocol helpers', () => {
       SNAPSHOT_MASK_DASH_COOLDOWN |
       SNAPSHOT_MASK_HEALTH |
       SNAPSHOT_MASK_KILLS |
-      SNAPSHOT_MASK_DEATHS;
-    const offset = StateSnapshotDelta.createStateSnapshotDelta(
-      builder,
-      50,
-      45,
-      10,
+      SNAPSHOT_MASK_DEATHS |
+      SNAPSHOT_MASK_VIEW_YAW_Q |
+      SNAPSHOT_MASK_VIEW_PITCH_Q |
+      SNAPSHOT_MASK_PLAYER_FLAGS |
+      SNAPSHOT_MASK_WEAPON_HEAT_Q |
+      SNAPSHOT_MASK_LOADOUT_BITS;
+
+    const payload = buildDeltaPayload({
+      serverTick: 50,
+      baseTick: 45,
+      lastProcessedInputSeq: 10,
       mask,
-      clientId,
-      1,
-      2,
-      3,
-      4,
-      5,
-      6,
-      2,
-      21,
-      0.5,
-      80,
-      4,
-      2
-    );
-    builder.finish(offset);
-    const parsed = parseStateSnapshotDeltaPayload(builder.asUint8Array());
+      clientId: 'client-1',
+      posX: 1,
+      posY: 2,
+      posZ: 3,
+      velX: 4,
+      velY: 5,
+      velZ: 6,
+      weaponSlot: 2,
+      ammoInMag: 21,
+      dashCooldown: 0.5,
+      health: 80,
+      kills: 4,
+      deaths: 2,
+      viewYawQ: 777,
+      viewPitchQ: -888,
+      playerFlags: 5,
+      weaponHeatQ: 123,
+      loadoutBits: 9
+    });
+
+    const parsed = parseStateSnapshotDeltaPayload(payload);
     expect(parsed).toEqual({
       type: 'StateSnapshotDelta',
       serverTick: 50,
@@ -280,212 +478,131 @@ describe('protocol helpers', () => {
       health: 80,
       kills: 4,
       deaths: 2,
+      viewYawQ: 777,
+      viewPitchQ: -888,
+      playerFlags: 5,
+      weaponHeatQ: 123,
+      loadoutBits: 9,
       clientId: 'client-1'
     });
   });
 
+  it('parses delta payloads with no optional fields set', () => {
+    const payload = buildDeltaPayload({
+      serverTick: 51,
+      baseTick: 50,
+      lastProcessedInputSeq: 0,
+      mask: 0,
+      clientId: ''
+    });
+
+    expect(parseStateSnapshotDeltaPayload(payload)).toEqual({
+      type: 'StateSnapshotDelta',
+      serverTick: 51,
+      baseTick: 50,
+      lastProcessedInputSeq: 0,
+      mask: 0
+    });
+  });
+
   it('parses GameEvent envelopes', () => {
-    const builder = new flatbuffers.Builder(256);
-    const ownerId = builder.createString('owner-1');
-    const offset = GameEvent.createGameEvent(
-      builder,
-      GameEventType.ProjectileSpawn,
-      0,
-      ownerId,
-      9,
-      0,
-      false,
-      1,
-      2,
-      3,
-      4,
-      5,
-      6,
-      0.5
-    );
-    builder.finish(offset);
-    const envelope = encodeEnvelope(MessageType.GameEvent, builder.asUint8Array(), 5, 0);
+    const payload = buildGameEventPayload();
+    const envelope = encodeEnvelope(MessageType.GameEvent, payload, 5, 0);
 
     expect(parseGameEvent(envelope)).toEqual({
-      type: 'GameEvent',
-      event: 'ProjectileSpawn',
-      ownerId: 'owner-1',
-      projectileId: 9,
-      posX: 1,
-      posY: 2,
-      posZ: 3,
-      velX: 4,
-      velY: 5,
-      velZ: 6,
-      ttl: 0.5
+      type: 'GameEventBatch',
+      serverTick: 123,
+      events: [
+        {
+          type: 'ShotFiredFx',
+          shooterId: 'shooter-1',
+          weaponSlot: 1,
+          shotSeq: 42,
+          dryFire: false
+        },
+        {
+          type: 'ShotTraceFx',
+          shooterId: 'shooter-1',
+          weaponSlot: 1,
+          shotSeq: 42,
+          dirOctX: 123,
+          dirOctY: -321,
+          hitDistQ: 77,
+          hitKind: HitKind.World,
+          surfaceType: SurfaceType.Metal,
+          normalOctX: 5,
+          normalOctY: 6,
+          showTracer: true
+        },
+        { type: 'ReloadFx', shooterId: 'shooter-1', weaponSlot: 1 },
+        { type: 'NearMissFx', shooterId: 'shooter-2', shotSeq: 7, strength: 200 },
+        { type: 'OverheatFx', shooterId: 'shooter-3', weaponSlot: 0, heatQ: 999 },
+        { type: 'VentFx', shooterId: 'shooter-3', weaponSlot: 0 },
+        { type: 'HitConfirmedFx', targetId: 'target-1', damage: 5.5, killed: true },
+        {
+          type: 'ProjectileSpawnFx',
+          shooterId: 'shooter-4',
+          weaponSlot: 0,
+          shotSeq: 9,
+          projectileId: 33,
+          posXQ: 1,
+          posYQ: 2,
+          posZQ: 3,
+          velXQ: 4,
+          velYQ: 5,
+          velZQ: 6,
+          ttlQ: 50
+        },
+        {
+          type: 'ProjectileImpactFx',
+          projectileId: 33,
+          hitWorld: true,
+          targetId: undefined,
+          posXQ: 10,
+          posYQ: 11,
+          posZQ: 12,
+          normalOctX: -123,
+          normalOctY: 456,
+          surfaceType: SurfaceType.Stone
+        },
+        {
+          type: 'ProjectileImpactFx',
+          projectileId: 34,
+          hitWorld: false,
+          targetId: 'target-2',
+          posXQ: 20,
+          posYQ: 21,
+          posZQ: 22,
+          normalOctX: 222,
+          normalOctY: -333,
+          surfaceType: SurfaceType.Dirt
+        },
+        { type: 'ProjectileRemoveFx', projectileId: 33 }
+      ]
     });
   });
 
-  it('parses hit confirmations without target ids', () => {
+  it('parses projectile impacts with missing target ids', () => {
     const builder = new flatbuffers.Builder(128);
-    const emptyTarget = builder.createString('');
-    const offset = GameEvent.createGameEvent(
-      builder,
-      GameEventType.HitConfirmed,
-      0,
-      emptyTarget,
-      0,
-      4,
-      false,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0
-    );
-    builder.finish(offset);
-    const message = parseGameEventPayload(builder.asUint8Array());
-    expect(message).toEqual({
-      type: 'GameEvent',
-      event: 'HitConfirmed',
-      targetId: undefined,
-      damage: 4,
-      killed: false
-    });
-  });
-
-  it('parses projectile events with optional ids', () => {
-    const builder = new flatbuffers.Builder(256);
-    const ownerId = builder.createString('owner-2');
-    const offset = GameEvent.createGameEvent(
-      builder,
-      GameEventType.ProjectileSpawn,
-      0,
-      ownerId,
-      0,
-      0,
-      false,
+    const payload = new GameEventT(
       1,
-      2,
-      3,
-      4,
-      5,
-      6,
-      1
-    );
-    builder.finish(offset);
-    const payload = parseGameEventPayload(builder.asUint8Array());
-    expect(payload).toEqual({
-      type: 'GameEvent',
-      event: 'ProjectileSpawn',
-      ownerId: 'owner-2',
-      projectileId: undefined,
-      posX: 1,
-      posY: 2,
-      posZ: 3,
-      velX: 4,
-      velY: 5,
-      velZ: 6,
-      ttl: 1
-    });
+      [FxEvent.ProjectileImpactFx],
+      [new ProjectileImpactFxT(1, true, null as unknown as string, 1, 2, 3, 4, 5, SurfaceType.Stone)] as never
+    ).pack(builder);
+    builder.finish(payload);
 
-    const removeBuilder = new flatbuffers.Builder(64);
-    const removeOwner = removeBuilder.createString('owner-2');
-    const removeOffset = GameEvent.createGameEvent(
-      removeBuilder,
-      GameEventType.ProjectileRemove,
-      0,
-      removeOwner,
-      99,
-      0,
-      false,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0
+    const parsed = parseGameEventPayload(builder.asUint8Array());
+    expect(parsed?.events[0]).toEqual(
+      expect.objectContaining({
+        type: 'ProjectileImpactFx',
+        targetId: undefined
+      })
     );
-    removeBuilder.finish(removeOffset);
-    expect(parseGameEventPayload(removeBuilder.asUint8Array())).toEqual({
-      type: 'GameEvent',
-      event: 'ProjectileRemove',
-      ownerId: 'owner-2',
-      projectileId: 99
-    });
-  });
-
-  it('rejects projectile removals without ids and owner names', () => {
-    const builder = new flatbuffers.Builder(64);
-    const offset = GameEvent.createGameEvent(
-      builder,
-      GameEventType.ProjectileRemove,
-      0,
-      0,
-      0,
-      0,
-      false,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0
-    );
-    builder.finish(offset);
-    expect(parseGameEventPayload(builder.asUint8Array())).toBeNull();
-
-    const emptyOwnerBuilder = new flatbuffers.Builder(64);
-    const emptyOwner = emptyOwnerBuilder.createString('');
-    const emptyOffset = GameEvent.createGameEvent(
-      emptyOwnerBuilder,
-      GameEventType.ProjectileRemove,
-      0,
-      emptyOwner,
-      7,
-      0,
-      false,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0
-    );
-    emptyOwnerBuilder.finish(emptyOffset);
-    expect(parseGameEventPayload(emptyOwnerBuilder.asUint8Array())).toEqual({
-      type: 'GameEvent',
-      event: 'ProjectileRemove',
-      ownerId: undefined,
-      projectileId: 7
-    });
-  });
-
-  it('returns null for unknown game event types', () => {
-    const builder = new flatbuffers.Builder(64);
-    const offset = GameEvent.createGameEvent(
-      builder,
-      999 as GameEventType,
-      0,
-      0,
-      0,
-      0,
-      false,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0
-    );
-    builder.finish(offset);
-    expect(parseGameEventPayload(builder.asUint8Array())).toBeNull();
   });
 
   it('parses pong envelopes', () => {
-    const pong = buildPing(123.5, 1, 0);
-    const decoded = decodeEnvelope(pong);
+    const ping = buildPing(123.5, 1, 0);
+    const decoded = decodeEnvelope(ping);
     expect(decoded?.header.msgType).toBe(MessageType.Ping);
 
     const builder = new flatbuffers.Builder(64);
@@ -509,81 +626,20 @@ describe('protocol helpers', () => {
   });
 
   it('parseSnapshotMessage reads snapshot or delta', () => {
-    const builder = new flatbuffers.Builder(128);
-    const clientId = builder.createString('client-1');
-    const offset = StateSnapshot.createStateSnapshot(
-      builder,
-      1,
-      0,
-      clientId,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      30,
-      0,
-      100,
-      0,
-      0
-    );
-    builder.finish(offset);
-    const envelope = encodeEnvelope(MessageType.StateSnapshot, builder.asUint8Array(), 7, 0);
-    const snapshot = parseSnapshotMessage(envelope);
-    expect(snapshot?.type).toBe('StateSnapshot');
+    const snapshotEnvelope = encodeEnvelope(MessageType.StateSnapshot, buildSnapshotPayload({ serverTick: 1 }), 7, 0);
+    expect(parseSnapshotMessage(snapshotEnvelope)?.type).toBe('StateSnapshot');
 
-    const builderDelta = new flatbuffers.Builder(128);
-    const deltaClientId = builderDelta.createString('client-1');
-    const deltaOffset = StateSnapshotDelta.createStateSnapshotDelta(
-      builderDelta,
-      2,
-      1,
-      0,
-      SNAPSHOT_MASK_POS_X,
-      deltaClientId,
-      1,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
+    const deltaEnvelope = encodeEnvelope(
+      MessageType.StateSnapshotDelta,
+      buildDeltaPayload({ serverTick: 2, baseTick: 1, mask: SNAPSHOT_MASK_POS_X, posX: 1 }),
+      8,
       0
     );
-    builderDelta.finish(deltaOffset);
-    const envelopeDelta = encodeEnvelope(MessageType.StateSnapshotDelta, builderDelta.asUint8Array(), 8, 0);
-    const delta = parseSnapshotMessage(envelopeDelta);
-    expect(delta?.type).toBe('StateSnapshotDelta');
+    expect(parseSnapshotMessage(deltaEnvelope)?.type).toBe('StateSnapshotDelta');
   });
 
   it('parses snapshots without client ids', () => {
-    const builder = new flatbuffers.Builder(128);
-    const offset = StateSnapshot.createStateSnapshot(
-      builder,
-      2,
-      0,
-      0,
-      1,
-      2,
-      3,
-      0,
-      0,
-      0,
-      0,
-      30,
-      0,
-      100,
-      0,
-      0
-    );
-    builder.finish(offset);
-    const snapshot = parseStateSnapshotPayload(builder.asUint8Array());
+    const snapshot = parseStateSnapshotPayload(buildSnapshotPayload({ clientId: '' }));
     expect(snapshot?.clientId).toBeUndefined();
   });
 
@@ -626,17 +682,7 @@ describe('protocol helpers', () => {
     const helloBuilder = new flatbuffers.Builder(128);
     const connectionId = helloBuilder.createString('');
     const clientId = helloBuilder.createString('client');
-    const helloOffset = ServerHello.createServerHello(
-      helloBuilder,
-      0,
-      connectionId,
-      clientId,
-      60,
-      20,
-      0,
-      0,
-      0
-    );
+    const helloOffset = ServerHello.createServerHello(helloBuilder, 0, connectionId, clientId, 60, 20, 0, 0, 0);
     helloBuilder.finish(helloOffset);
     expect(parseServerHelloPayload(helloBuilder.asUint8Array())).toBeNull();
 
@@ -648,191 +694,151 @@ describe('protocol helpers', () => {
     profileBuilder.finish(profileOffset);
     expect(parsePlayerProfilePayload(profileBuilder.asUint8Array())).toBeNull();
 
+    const profileValidBuilder = new flatbuffers.Builder(128);
+    const validClient = profileValidBuilder.createString('client-123');
+    const validNickname = profileValidBuilder.createString('Player');
+    const validChar = profileValidBuilder.createString('char-abc');
+    const validProfileOffset = PlayerProfile.createPlayerProfile(
+      profileValidBuilder,
+      validClient,
+      validNickname,
+      validChar
+    );
+    profileValidBuilder.finish(validProfileOffset);
+    expect(parsePlayerProfilePayload(profileValidBuilder.asUint8Array())).toEqual({
+      type: 'PlayerProfile',
+      clientId: 'client-123',
+      nickname: 'Player',
+      characterId: 'char-abc'
+    });
+
     const pongBuilder = new flatbuffers.Builder(64);
     const pongOffset = Pong.createPong(pongBuilder, Number.NaN);
     pongBuilder.finish(pongOffset);
     expect(parsePongPayload(pongBuilder.asUint8Array())).toBeNull();
 
-    const snapshotBuilder = new flatbuffers.Builder(256);
-    const snapshotClient = snapshotBuilder.createString('client');
-    const snapshotOffset = StateSnapshot.createStateSnapshot(
-      snapshotBuilder,
-      -1,
-      0,
-      snapshotClient,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      25,
-      0,
-      100,
-      0,
-      0
-    );
-    snapshotBuilder.finish(snapshotOffset);
-    expect(parseStateSnapshotPayload(snapshotBuilder.asUint8Array())).toBeNull();
+    expect(parseStateSnapshotPayload(buildSnapshotPayload({ serverTick: -1 }))).toBeNull();
+    expect(parseStateSnapshotPayload(buildSnapshotPayload({ posX: Number.NaN }))).toBeNull();
 
-    const nonFiniteSnapshotBuilder = new flatbuffers.Builder(256);
-    const nonFiniteClient = nonFiniteSnapshotBuilder.createString('client');
-    const nonFiniteSnapshotOffset = StateSnapshot.createStateSnapshot(
-      nonFiniteSnapshotBuilder,
-      1,
-      0,
-      nonFiniteClient,
-      Number.NaN,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      20,
-      0,
-      100,
-      0,
-      0
+    const invalidDelta = parseStateSnapshotDeltaPayload(
+      buildDeltaPayload({
+        serverTick: 1,
+        baseTick: 0,
+        mask: 1 << 30
+      })
     );
-    nonFiniteSnapshotBuilder.finish(nonFiniteSnapshotOffset);
-    expect(parseStateSnapshotPayload(nonFiniteSnapshotBuilder.asUint8Array())).toBeNull();
+    expect(invalidDelta).toBeNull();
 
-    const deltaBuilder = new flatbuffers.Builder(256);
-    const deltaClient = deltaBuilder.createString('client');
-    const invalidMask = __test.SNAPSHOT_MASK_ALL | (1 << 20);
-    const deltaOffset = StateSnapshotDelta.createStateSnapshotDelta(
-      deltaBuilder,
-      2,
-      1,
-      0,
-      invalidMask,
-      deltaClient,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0
-    );
-    deltaBuilder.finish(deltaOffset);
-    expect(parseStateSnapshotDeltaPayload(deltaBuilder.asUint8Array())).toBeNull();
+    expect(
+      parseStateSnapshotDeltaPayload(
+        buildDeltaPayload({
+          serverTick: -1,
+          baseTick: 0,
+          lastProcessedInputSeq: 0,
+          mask: 0
+        })
+      )
+    ).toBeNull();
 
-    const badDeltaBuilder = new flatbuffers.Builder(128);
-    const badDeltaOffset = StateSnapshotDelta.createStateSnapshotDelta(
-      badDeltaBuilder,
-      -1,
-      0,
-      0,
-      SNAPSHOT_MASK_POS_X,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0
-    );
-    badDeltaBuilder.finish(badDeltaOffset);
-    expect(parseStateSnapshotDeltaPayload(badDeltaBuilder.asUint8Array())).toBeNull();
+    expect(
+      parseStateSnapshotDeltaPayload(
+        buildDeltaPayload({
+          serverTick: 1,
+          baseTick: -1,
+          lastProcessedInputSeq: 0,
+          mask: 0
+        })
+      )
+    ).toBeNull();
 
-    const nonFiniteDeltaBuilder = new flatbuffers.Builder(128);
-    const nonFiniteOffset = StateSnapshotDelta.createStateSnapshotDelta(
-      nonFiniteDeltaBuilder,
-      2,
-      1,
-      0,
-      SNAPSHOT_MASK_POS_X,
-      0,
-      Number.NaN,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0
-    );
-    nonFiniteDeltaBuilder.finish(nonFiniteOffset);
-    expect(parseStateSnapshotDeltaPayload(nonFiniteDeltaBuilder.asUint8Array())).toBeNull();
+    expect(
+      parseStateSnapshotDeltaPayload(
+        buildDeltaPayload({
+          serverTick: 1,
+          baseTick: 0,
+          lastProcessedInputSeq: -2,
+          mask: 0
+        })
+      )
+    ).toBeNull();
 
-    const eventBuilder = new flatbuffers.Builder(128);
-    const hitOffset = GameEvent.createGameEvent(
-      eventBuilder,
-      GameEventType.HitConfirmed,
-      0,
-      0,
-      0,
-      Number.NaN,
-      false,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0
-    );
-    eventBuilder.finish(hitOffset);
-    expect(parseGameEventPayload(eventBuilder.asUint8Array())).toBeNull();
+    expect(
+      parseStateSnapshotDeltaPayload(
+        buildDeltaPayload({
+          serverTick: 1,
+          baseTick: 0,
+          mask: SNAPSHOT_MASK_POS_X,
+          posX: Number.NaN
+        })
+      )
+    ).toBeNull();
 
-    const spawnBuilder = new flatbuffers.Builder(128);
-    const spawnOffset = GameEvent.createGameEvent(
-      spawnBuilder,
-      GameEventType.ProjectileSpawn,
-      0,
-      0,
-      0,
-      0,
-      false,
-      1,
-      2,
-      3,
-      4,
-      5,
-      6,
-      1
-    );
-    spawnBuilder.finish(spawnOffset);
-    expect(parseGameEventPayload(spawnBuilder.asUint8Array())).toBeNull();
+    const eventBadTickBuilder = new flatbuffers.Builder(128);
+    const badTickPayload = new GameEventT( -1, [FxEvent.ShotFiredFx], [new ShotFiredFxT('shooter', 0, 1, false)] as never).pack(eventBadTickBuilder);
+    eventBadTickBuilder.finish(badTickPayload);
+    expect(parseGameEventPayload(eventBadTickBuilder.asUint8Array())).toBeNull();
 
-    const nonFiniteSpawnBuilder = new flatbuffers.Builder(128);
-    const ownerId = nonFiniteSpawnBuilder.createString('owner');
-    const nonFiniteSpawnOffset = GameEvent.createGameEvent(
-      nonFiniteSpawnBuilder,
-      GameEventType.ProjectileSpawn,
+    const badEventBuilder = new flatbuffers.Builder(128);
+    const badEventPayload = new GameEventT(
       0,
-      ownerId,
-      9,
+      [FxEvent.ShotFiredFx],
+      [new ShotFiredFxT('', 0, 1, false)] as never
+    ).pack(badEventBuilder);
+    badEventBuilder.finish(badEventPayload);
+    expect(parseGameEventPayload(badEventBuilder.asUint8Array())).toBeNull();
+
+    const badDamageBuilder = new flatbuffers.Builder(128);
+    const badDamagePayload = new GameEventT(
       0,
-      false,
-      Number.NaN,
-      2,
-      3,
-      4,
-      5,
-      6,
-      1
+      [FxEvent.HitConfirmedFx],
+      [new HitConfirmedFxT('target', Number.NaN, false)] as never
+    ).pack(badDamageBuilder);
+    badDamageBuilder.finish(badDamagePayload);
+    expect(parseGameEventPayload(badDamageBuilder.asUint8Array())).toBeNull();
+
+    const badTraceBuilder = new flatbuffers.Builder(128);
+    const badTracePayload = new GameEventT(
+      0,
+      [FxEvent.ShotTraceFx],
+      [new ShotTraceFxT(null, 0, 0, 0, 0, 0, HitKind.None, SurfaceType.Stone, 0, 0, false)] as never
+    ).pack(badTraceBuilder);
+    badTraceBuilder.finish(badTracePayload);
+    expect(parseGameEventPayload(badTraceBuilder.asUint8Array())).toBeNull();
+
+    const badReloadBuilder = new flatbuffers.Builder(128);
+    const badReloadPayload = new GameEventT(0, [FxEvent.ReloadFx], [new ReloadFxT(null, 0)] as never).pack(
+      badReloadBuilder
     );
-    nonFiniteSpawnBuilder.finish(nonFiniteSpawnOffset);
-    expect(parseGameEventPayload(nonFiniteSpawnBuilder.asUint8Array())).toBeNull();
+    badReloadBuilder.finish(badReloadPayload);
+    expect(parseGameEventPayload(badReloadBuilder.asUint8Array())).toBeNull();
+
+    const badNearMissBuilder = new flatbuffers.Builder(128);
+    const badNearMissPayload = new GameEventT(0, [FxEvent.NearMissFx], [new NearMissFxT(null, 0, 0)] as never).pack(
+      badNearMissBuilder
+    );
+    badNearMissBuilder.finish(badNearMissPayload);
+    expect(parseGameEventPayload(badNearMissBuilder.asUint8Array())).toBeNull();
+
+    const badOverheatBuilder = new flatbuffers.Builder(128);
+    const badOverheatPayload = new GameEventT(0, [FxEvent.OverheatFx], [new OverheatFxT(null, 0, 0)] as never).pack(
+      badOverheatBuilder
+    );
+    badOverheatBuilder.finish(badOverheatPayload);
+    expect(parseGameEventPayload(badOverheatBuilder.asUint8Array())).toBeNull();
+
+    const badVentBuilder = new flatbuffers.Builder(128);
+    const badVentPayload = new GameEventT(0, [FxEvent.VentFx], [new VentFxT(null, 0)] as never).pack(badVentBuilder);
+    badVentBuilder.finish(badVentPayload);
+    expect(parseGameEventPayload(badVentBuilder.asUint8Array())).toBeNull();
+
+    const badProjectileBuilder = new flatbuffers.Builder(256);
+    const badProjectilePayload = new GameEventT(
+      0,
+      [FxEvent.ProjectileSpawnFx],
+      [new ProjectileSpawnFxT(null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)] as never
+    ).pack(badProjectileBuilder);
+    badProjectileBuilder.finish(badProjectilePayload);
+    expect(parseGameEventPayload(badProjectileBuilder.asUint8Array())).toBeNull();
 
     const errorBuilder = new flatbuffers.Builder(64);
     const errorOffset = ErrorMessage.createError(errorBuilder, 0, 0);
@@ -868,175 +874,35 @@ describe('protocol helpers', () => {
     expect(message.originZ()).toBeCloseTo(3);
   });
 
-  it('parses WeaponFiredEvent payloads', () => {
-    const builder = new flatbuffers.Builder(256);
-    const shooter = builder.createString('shooter');
-    const weapon = builder.createString('rifle');
-    const offset = WeaponFiredEventFbs.createWeaponFiredEvent(
-      builder,
-      shooter,
-      weapon,
-      0,
-      10,
-      3,
+  it('builds FireWeaponRequest envelopes without weapon ids', () => {
+    const envelope = encodeFireWeaponRequest(
+      {
+        type: 'FireWeaponRequest',
+        clientShotSeq: 9,
+        weaponSlot: 0,
+        originX: 0,
+        originY: 0,
+        originZ: 0,
+        dirX: 1,
+        dirY: 0,
+        dirZ: 0
+      },
       1,
-      2,
-      3,
-      0.1,
-      0.2,
-      0.3,
-      false,
-      true,
-      1.1,
-      1.2,
-      1.3,
-      0.4,
-      0.5,
-      0.6,
-      0.7,
-      0.8,
-      0.9,
-      1.0,
-      1.1,
-      1.2,
-      123
-    );
-    builder.finish(offset);
-    const parsed = parseWeaponFiredEventPayload(builder.asUint8Array());
-    expect(parsed).toEqual({
-      type: 'WeaponFiredEvent',
-      shooterId: 'shooter',
-      weaponId: 'rifle',
-      weaponSlot: 0,
-      serverTick: 10,
-      shotSeq: 3,
-      muzzlePosX: 1,
-      muzzlePosY: 2,
-      muzzlePosZ: 3,
-      dirX: 0.1,
-      dirY: 0.2,
-      dirZ: 0.3,
-      dryFire: false,
-      casingEnabled: true,
-      casingPosX: 1.1,
-      casingPosY: 1.2,
-      casingPosZ: 1.3,
-      casingRotX: 0.4,
-      casingRotY: 0.5,
-      casingRotZ: 0.6,
-      casingVelX: 0.7,
-      casingVelY: 0.8,
-      casingVelZ: 0.9,
-      casingAngX: 1.0,
-      casingAngY: 1.1,
-      casingAngZ: 1.2,
-      casingSeed: 123
-    });
-  });
-
-  it('rejects WeaponFiredEvent payloads missing ids', () => {
-    const builder = new flatbuffers.Builder(256);
-    const empty = builder.createString('');
-    const weapon = builder.createString('rifle');
-    const offset = WeaponFiredEventFbs.createWeaponFiredEvent(
-      builder,
-      empty,
-      weapon,
-      0,
-      10,
-      3,
-      1,
-      2,
-      3,
-      0.1,
-      0.2,
-      0.3,
-      false,
-      false,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
       0
     );
-    builder.finish(offset);
-    expect(parseWeaponFiredEventPayload(builder.asUint8Array())).toBeNull();
 
-    const builder2 = new flatbuffers.Builder(256);
-    const shooter = builder2.createString('shooter');
-    const emptyWeapon = builder2.createString('');
-    const offset2 = WeaponFiredEventFbs.createWeaponFiredEvent(
-      builder2,
-      shooter,
-      emptyWeapon,
-      0,
-      10,
-      3,
-      1,
-      2,
-      3,
-      0.1,
-      0.2,
-      0.3,
-      false,
-      false,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0
-    );
-    builder2.finish(offset2);
-    expect(parseWeaponFiredEventPayload(builder2.asUint8Array())).toBeNull();
+    const decoded = decodeEnvelope(envelope);
+    const message = FireWeaponRequest.getRootAsFireWeaponRequest(new flatbuffers.ByteBuffer(decoded!.payload));
+    expect(message.weaponId()).toBeNull();
   });
 
-  it('parses WeaponReloadEvent payloads', () => {
-    const builder = new flatbuffers.Builder(128);
-    const shooter = builder.createString('shooter');
-    const weapon = builder.createString('launcher');
-    const offset = WeaponReloadEventFbs.createWeaponReloadEvent(builder, shooter, weapon, 1, 20, 0.9);
-    builder.finish(offset);
-    const parsed = parseWeaponReloadEventPayload(builder.asUint8Array());
-    expect(parsed).toEqual({
-      type: 'WeaponReloadEvent',
-      shooterId: 'shooter',
-      weaponId: 'launcher',
-      weaponSlot: 1,
-      serverTick: 20,
-      reloadSeconds: 0.9
-    });
-  });
+  it('builds SetLoadoutRequest envelopes', () => {
+    const envelope = encodeSetLoadoutRequest(0xdeadbeef, 9, 7);
+    const decoded = decodeEnvelope(envelope);
+    expect(decoded?.header.msgType).toBe(MessageType.SetLoadoutRequest);
 
-  it('rejects WeaponReloadEvent payloads missing ids', () => {
-    const builder = new flatbuffers.Builder(128);
-    const empty = builder.createString('');
-    const weapon = builder.createString('launcher');
-    const offset = WeaponReloadEventFbs.createWeaponReloadEvent(builder, empty, weapon, 1, 20, 0.9);
-    builder.finish(offset);
-    expect(parseWeaponReloadEventPayload(builder.asUint8Array())).toBeNull();
-
-    const builder2 = new flatbuffers.Builder(128);
-    const shooter = builder2.createString('shooter');
-    const emptyWeapon = builder2.createString('');
-    const offset2 = WeaponReloadEventFbs.createWeaponReloadEvent(builder2, shooter, emptyWeapon, 1, 20, 0.9);
-    builder2.finish(offset2);
-    expect(parseWeaponReloadEventPayload(builder2.asUint8Array())).toBeNull();
+    const message = SetLoadoutRequest.getRootAsSetLoadoutRequest(new flatbuffers.ByteBuffer(decoded!.payload));
+    expect(message.loadoutBits()).toBe(0xdeadbeef);
   });
 
   it('parses protocol error payloads', () => {

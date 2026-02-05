@@ -6,7 +6,7 @@ This document describes the current signaling and gameplay protocol. Signaling i
 
 ## Versioning & constants
 
-- Protocol version: `4`
+- Protocol version: `6`
 - DataChannel labels:
   - Reliable: `afps_reliable`
   - Unreliable: `afps_unreliable`
