@@ -218,6 +218,8 @@ const createLocalAvatarDebug = (doc: Document) => {
   panel.style.zIndex = '40';
   panel.style.whiteSpace = 'pre';
   panel.textContent = 'local avatar debug';
+  panel.dataset.visible = 'false';
+  panel.style.display = 'none';
   doc.body.appendChild(panel);
   const format = (value: number | null | undefined) =>
     Number.isFinite(value) ? value!.toFixed(2) : '--';
@@ -241,6 +243,10 @@ const createLocalAvatarDebug = (doc: Document) => {
         `bboxCtr x:${format(data.boundsCenter?.x)} y:${format(data.boundsCenter?.y)} z:${format(data.boundsCenter?.z)}\n` +
         `ctrDlt x:${format(data.centerDelta?.x)} y:${format(data.centerDelta?.y)} z:${format(data.centerDelta?.z)}\n` +
         `others  ${data.others ?? 'none'}`;
+    },
+    setVisible: (visible: boolean) => {
+      panel.dataset.visible = visible ? 'true' : 'false';
+      panel.style.display = visible ? 'block' : 'none';
     },
     dispose: () => panel.remove()
   };
@@ -609,7 +615,20 @@ if (pointerLock.supported) {
   hudStore.dispatch({ type: 'lock', state: 'unsupported' });
 }
 
+let debugOverlaysVisible = false;
+const setDebugOverlaysVisible = (visible: boolean) => {
+  debugOverlaysVisible = visible;
+  status.setVisible(visible);
+  localAvatarDebug?.setVisible?.(visible);
+};
+setDebugOverlaysVisible(false);
+
 window.addEventListener('keydown', (event) => {
+  if (event.code === 'Backquote') {
+    if (!event.repeat) {
+      setDebugOverlaysVisible(!debugOverlaysVisible);
+    }
+  }
   if (event.code === 'KeyO') {
     settings.toggle();
     audio.play('uiClick', { group: 'ui', volume: 0.7 });

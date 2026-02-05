@@ -73,6 +73,7 @@ const statusMock = {
   setDetail: vi.fn(),
   setMetrics: vi.fn(),
   setMetricsVisible: vi.fn(),
+  setVisible: vi.fn(),
   dispose: vi.fn()
 };
 const hudMock = {
@@ -354,6 +355,7 @@ describe('main entry', () => {
     statusMock.setDetail.mockReset();
     statusMock.setMetrics.mockReset();
     statusMock.setMetricsVisible.mockReset();
+    statusMock.setVisible.mockReset();
     statusMock.dispose.mockReset();
     hudMock.setLockState.mockReset();
     hudMock.setSensitivity.mockReset();

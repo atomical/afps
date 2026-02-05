@@ -43,6 +43,10 @@ canvas {
   pointer-events: none;
 }
 
+.status-overlay[data-visible='false'] {
+  display: none;
+}
+
 .status-title {
   font-weight: 700;
   margin-bottom: 4px;

@@ -62,7 +62,7 @@ describe('loadWeaponViewmodel', () => {
     expect(loadMock.mock.calls[0][0]).toContain('blaster-f.glb');
     expect(positionSet).toHaveBeenCalledWith(0.4, -0.36, -0.72);
     expect(root.rotation.x).toBeCloseTo(0.06);
-    expect(root.rotation.y).toBeCloseTo(Math.PI + 0.08);
+    expect(root.rotation.y).toBeCloseTo(0.08);
     expect(scaleSet).toHaveBeenCalledWith(0.6, 0.6, 0.6);
     expect(scene.add).toHaveBeenCalledWith(camera);
     expect(camera.add).toHaveBeenCalledWith(root);

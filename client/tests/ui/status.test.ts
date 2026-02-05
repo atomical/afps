@@ -15,6 +15,7 @@ describe('status overlay', () => {
 
     expect(container.contains(overlay.element)).toBe(true);
     expect(overlay.element.dataset.state).toBe('idle');
+    expect(overlay.element.dataset.visible).toBe('false');
 
     overlay.setState('connecting', 'hello');
     expect(overlay.element.dataset.state).toBe('connecting');
@@ -32,6 +33,10 @@ describe('status overlay', () => {
     expect(overlay.element.dataset.metrics).toBe('hidden');
     overlay.setMetricsVisible(true);
     expect(overlay.element.dataset.metrics).toBe('visible');
+    overlay.setVisible(true);
+    expect(overlay.element.dataset.visible).toBe('true');
+    overlay.setVisible(false);
+    expect(overlay.element.dataset.visible).toBe('false');
 
     overlay.setState('connected', 'ready');
     expect(overlay.element.textContent).toContain('Connected');

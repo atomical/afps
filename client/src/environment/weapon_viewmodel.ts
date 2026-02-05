@@ -13,7 +13,7 @@ const VIEWMODEL_ROOT = `${NORMALIZED_BASE}assets/weapons/cc0/kenney_blaster_kit/
 const DEFAULT_VIEWMODEL: ViewmodelSpec = {
   file: `${VIEWMODEL_ROOT}blaster-a.glb`,
   position: [0.38, -0.32, -0.65],
-  rotation: [0.04, Math.PI + 0.12, 0],
+  rotation: [0.04, 0.12, 0],
   scale: 0.55
 };
 
@@ -44,19 +44,19 @@ const VIEWMODELS_BY_ID: Record<string, ViewmodelSpec> = {
   rifle: {
     file: `${VIEWMODEL_ROOT}blaster-d.glb`,
     position: [0.4, -0.34, -0.72],
-    rotation: [0.05, Math.PI + 0.1, 0],
+    rotation: [0.05, 0.1, 0],
     scale: 0.6
   },
   AR_556: {
     file: `${VIEWMODEL_ROOT}blaster-d.glb`,
     position: [0.4, -0.34, -0.72],
-    rotation: [0.05, Math.PI + 0.1, 0],
+    rotation: [0.05, 0.1, 0],
     scale: 0.6
   },
   launcher: {
     file: `${VIEWMODEL_ROOT}blaster-f.glb`,
     position: [0.4, -0.36, -0.72],
-    rotation: [0.06, Math.PI + 0.08, 0],
+    rotation: [0.06, 0.08, 0],
     scale: 0.6
   },
   PISTOL_9MM: DEFAULT_VIEWMODEL,
@@ -72,61 +72,61 @@ const VIEWMODELS_BY_ID: Record<string, ViewmodelSpec> = {
   SMG_9MM: {
     file: `${VIEWMODEL_ROOT}blaster-c.glb`,
     position: [0.4, -0.34, -0.72],
-    rotation: [0.05, Math.PI + 0.1, 0],
+    rotation: [0.05, 0.1, 0],
     scale: 0.6
   },
   CARBINE_762: {
     file: `${VIEWMODEL_ROOT}blaster-e.glb`,
     position: [0.4, -0.35, -0.74],
-    rotation: [0.05, Math.PI + 0.1, 0],
+    rotation: [0.05, 0.1, 0],
     scale: 0.62
   },
   DMR_762: {
     file: `${VIEWMODEL_ROOT}blaster-e.glb`,
     position: [0.4, -0.35, -0.74],
-    rotation: [0.05, Math.PI + 0.1, 0],
+    rotation: [0.05, 0.1, 0],
     scale: 0.64
   },
   LMG_556: {
     file: `${VIEWMODEL_ROOT}blaster-h.glb`,
     position: [0.42, -0.38, -0.78],
-    rotation: [0.06, Math.PI + 0.08, 0],
+    rotation: [0.06, 0.08, 0],
     scale: 0.7
   },
   SHOTGUN_PUMP: {
     file: `${VIEWMODEL_ROOT}blaster-g.glb`,
     position: [0.41, -0.36, -0.76],
-    rotation: [0.06, Math.PI + 0.08, 0],
+    rotation: [0.06, 0.08, 0],
     scale: 0.66
   },
   SHOTGUN_AUTO: {
     file: `${VIEWMODEL_ROOT}blaster-g.glb`,
     position: [0.41, -0.36, -0.76],
-    rotation: [0.06, Math.PI + 0.08, 0],
+    rotation: [0.06, 0.08, 0],
     scale: 0.66
   },
   SNIPER_BOLT: {
     file: `${VIEWMODEL_ROOT}blaster-g.glb`,
     position: [0.42, -0.37, -0.78],
-    rotation: [0.06, Math.PI + 0.08, 0],
+    rotation: [0.06, 0.08, 0],
     scale: 0.68
   },
   GRENADE_LAUNCHER: {
     file: `${VIEWMODEL_ROOT}blaster-f.glb`,
     position: [0.4, -0.36, -0.72],
-    rotation: [0.06, Math.PI + 0.08, 0],
+    rotation: [0.06, 0.08, 0],
     scale: 0.6
   },
   ROCKET_LAUNCHER: {
     file: `${VIEWMODEL_ROOT}blaster-f.glb`,
     position: [0.4, -0.36, -0.72],
-    rotation: [0.06, Math.PI + 0.08, 0],
+    rotation: [0.06, 0.08, 0],
     scale: 0.6
   },
   ENERGY_RIFLE: {
     file: `${VIEWMODEL_ROOT}blaster-a.glb`,
     position: [0.4, -0.34, -0.72],
-    rotation: [0.05, Math.PI + 0.1, 0],
+    rotation: [0.05, 0.1, 0],
     scale: 0.6
   }
 };
