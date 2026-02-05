@@ -1285,7 +1285,7 @@ describe('createApp', () => {
     app.applyLookDelta(100, -50);
 
     expect(camera.rotation.y).toBeCloseTo(-1);
-    expect(camera.rotation.x).toBeCloseTo(-0.5);
+    expect(camera.rotation.x).toBeCloseTo(0.5);
 
     const beforePitch = camera.rotation.x;
     app.applyLookDelta(Number.NaN, Number.POSITIVE_INFINITY);

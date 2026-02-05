@@ -21,9 +21,7 @@ import type {
 } from './net/protocol';
 import { createStatusOverlay } from './ui/status';
 import { createInputSampler } from './input/sampler';
-import { loadBindings, saveBindings } from './input/bindings';
 import { loadSensitivity, saveSensitivity } from './input/sensitivity';
-import { loadInvertX, loadInvertY, saveInvertX, saveInvertY } from './input/look_inversion';
 import { createInputSender } from './net/input_sender';
 import { createPointerLockController } from './input/pointer_lock';
 import { createHudOverlay } from './ui/hud';
@@ -53,6 +51,7 @@ import { createRemoteAvatarManager } from './players/remote_avatars';
 import { decodeOct16, decodePitchQ, decodeUnitU16, decodeYawQ, dequantizeI16, dequantizeU16 } from './net/quantization';
 import { GameEventQueue } from './net/event_queue';
 import { loadFxSettings, saveFxSettings } from './rendering/fx_settings';
+import type { WebRtcSession } from './net/types';
 
 const three = {
   ...THREE,
@@ -77,6 +76,9 @@ const ADS_FOV_MULTIPLIER = 0.78;
 const ADS_OPTIC_FOV_MULTIPLIER = 0.68;
 const RECOIL_RECOVERY_SPEED = 10;
 const RECOIL_RECOVERY_MIN = 4;
+const SERVER_STALE_TIMEOUT_MS = 4000;
+const SERVER_STALE_POLL_INTERVAL_MS = 500;
+const RECONNECT_DELAY_MS = 1000;
 
 const createMemoryStorage = (): Storage => {
   const entries = new Map<string, string>();
@@ -121,13 +123,8 @@ const localStorageRef =
 
 const savedSensitivity = loadSensitivity(localStorageRef);
 const lookSensitivity = savedSensitivity ?? getLookSensitivity();
-const savedInvertX = loadInvertX(localStorageRef);
-const savedInvertY = loadInvertY(localStorageRef);
-let invertLookX = savedInvertX ?? false;
-let invertLookY = savedInvertY ?? false;
 const savedMetricsVisible = loadMetricsVisibility(localStorageRef);
 let metricsVisible = savedMetricsVisible;
-let currentBindings = loadBindings(localStorageRef);
 const savedAudioSettings = loadAudioSettings(localStorageRef);
 const savedFxSettings = loadFxSettings(localStorageRef);
 let fxSettings = savedFxSettings;
@@ -476,12 +473,14 @@ let sendLoadoutBits: ((bits: number) => void) | null = null;
 let footstepDistance = 0;
 let lastFootstepAt = 0;
 let lastFootstepPos: { x: number; y: number } | null = null;
+let reconnecting = false;
+let reconnectTimer: number | null = null;
+let activeSession: WebRtcSession | null = null;
+let activeCleanup: (() => void) | null = null;
+let activeProfile: LocalPlayerProfile | null = null;
 const settings = createSettingsOverlay(document, {
   initialSensitivity: lookSensitivity,
-  initialBindings: currentBindings,
   initialShowMetrics: metricsVisible,
-  initialInvertLookX: invertLookX,
-  initialInvertLookY: invertLookY,
   initialAudioSettings: savedAudioSettings,
   initialFxSettings: fxSettings,
   initialLoadoutBits: localLoadoutBits,
@@ -489,19 +488,6 @@ const settings = createSettingsOverlay(document, {
     app.setLookSensitivity(value);
     hudStore.dispatch({ type: 'sensitivity', value });
     saveSensitivity(value, localStorageRef);
-  },
-  onInvertLookXChange: (value) => {
-    invertLookX = value;
-    saveInvertX(value, localStorageRef);
-  },
-  onInvertLookYChange: (value) => {
-    invertLookY = value;
-    saveInvertY(value, localStorageRef);
-  },
-  onBindingsChange: (bindings) => {
-    currentBindings = bindings;
-    saveBindings(bindings, localStorageRef);
-    sampler?.setBindings(bindings);
   },
   onShowMetricsChange: (visible) => {
     metricsVisible = visible;
@@ -527,13 +513,16 @@ const settings = createSettingsOverlay(document, {
     sendLoadoutBits?.(nextBits);
   }
 });
-settings.setLookInversion(invertLookX, invertLookY);
 settings.setAudioSettings(savedAudioSettings);
 const pointerLock = createPointerLockController({
   document,
   element: canvas,
   onChange: (locked) => {
-    hudStore.dispatch({ type: 'lock', state: locked ? 'locked' : 'unlocked' });
+    if (reconnecting) {
+      hudStore.dispatch({ type: 'lock', state: 'reconnecting' });
+    } else {
+      hudStore.dispatch({ type: 'lock', state: locked ? 'locked' : 'unlocked' });
+    }
     if (locked) {
       void audio.resume();
     }
@@ -542,6 +531,18 @@ const pointerLock = createPointerLockController({
 canvas.addEventListener('click', () => {
   void audio.resume();
 });
+const refreshHudLockState = (lockedOverride?: boolean) => {
+  if (reconnecting) {
+    hudStore.dispatch({ type: 'lock', state: 'reconnecting' });
+    return;
+  }
+  if (!pointerLock.supported) {
+    hudStore.dispatch({ type: 'lock', state: 'unsupported' });
+    return;
+  }
+  const locked = lockedOverride ?? pointerLock.isLocked();
+  hudStore.dispatch({ type: 'lock', state: locked ? 'locked' : 'unlocked' });
+};
 const signalingUrl = getSignalingUrl();
 const signalingAuthToken = getSignalingAuthToken();
 const logger = {
@@ -609,16 +610,13 @@ hudStore.dispatch({
 hudStore.dispatch({ type: 'weapon', slot: currentWeaponSlot, name: resolveWeaponLabel(currentWeaponSlot) });
 hudStore.dispatch({ type: 'weaponCooldown', value: app.getWeaponCooldown(currentWeaponSlot) });
 hudStore.dispatch({ type: 'abilityCooldowns', value: app.getAbilityCooldowns() });
-if (pointerLock.supported) {
-  hudStore.dispatch({ type: 'lock', state: pointerLock.isLocked() ? 'locked' : 'unlocked' });
-} else {
-  hudStore.dispatch({ type: 'lock', state: 'unsupported' });
-}
+refreshHudLockState(pointerLock.supported ? pointerLock.isLocked() : undefined);
 
 let debugOverlaysVisible = false;
 const setDebugOverlaysVisible = (visible: boolean) => {
   debugOverlaysVisible = visible;
   status.setVisible(visible);
+  settings.setVisible(visible);
   localAvatarDebug?.setVisible?.(visible);
 };
 setDebugOverlaysVisible(false);
@@ -628,10 +626,6 @@ window.addEventListener('keydown', (event) => {
     if (!event.repeat) {
       setDebugOverlaysVisible(!debugOverlaysVisible);
     }
-  }
-  if (event.code === 'KeyO') {
-    settings.toggle();
-    audio.play('uiClick', { group: 'ui', volume: 0.7 });
   }
 });
 
@@ -644,6 +638,35 @@ if (!signalingUrl) {
   const storedProfile = loadProfile(localStorageRef);
   const playerProfiles = new Map<string, NetPlayerProfile>();
   const lastSnapshots = new Map<string, StateSnapshot>();
+  const scheduleReconnect = (reason: string) => {
+    if (reconnecting || !activeProfile) {
+      return;
+    }
+    reconnecting = true;
+    status.setState('connecting', `Reconnecting: ${reason}`);
+    refreshHudLockState();
+    if (reconnectTimer !== null) {
+      window.clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    if (activeCleanup) {
+      activeCleanup();
+      activeCleanup = null;
+    }
+    if (activeSession) {
+      activeSession.close();
+      activeSession = null;
+    }
+    reconnectTimer = window.setTimeout(() => {
+      reconnectTimer = null;
+      if (!activeProfile) {
+        reconnecting = false;
+        refreshHudLockState();
+        return;
+      }
+      void bootstrapNetwork(activeProfile);
+    }, RECONNECT_DELAY_MS);
+  };
   const handlePlayerProfile = (profile: NetPlayerProfile) => {
     playerProfiles.set(profile.clientId, profile);
     remoteAvatars.setProfile(profile);
@@ -655,6 +678,7 @@ if (!signalingUrl) {
     let lastSnapshotAt = 0;
     let lastRttMs = 0;
     let lastPredictionError = 0;
+    let lastServerActivityAt = window.performance.now();
     let snapshotKeyframeInterval: number | null = null;
     let lastEventSampleAt = 0;
     let lastEventReceived = 0;
@@ -704,6 +728,7 @@ if (!signalingUrl) {
 
     const onSnapshot = (snapshot: StateSnapshot) => {
       const now = window.performance.now();
+      lastServerActivityAt = now;
       const isLocalSnapshot =
         Boolean(localConnectionId) &&
         Boolean(snapshot.clientId) &&
@@ -1271,6 +1296,7 @@ if (!signalingUrl) {
 
     const onGameEvent = (batch: GameEventBatch) => {
       const now = window.performance.now();
+      lastServerActivityAt = now;
       const immediate = queue.push(batch, now, app.getRenderTick());
       for (const dueBatch of immediate) {
         processGameEventBatch(dueBatch);
@@ -1279,6 +1305,7 @@ if (!signalingUrl) {
 
     const onPong = (pong: PongMessage) => {
       const now = window.performance.now();
+      lastServerActivityAt = now;
       if (Number.isFinite(pong.clientTimeMs)) {
         lastRttMs = Math.max(0, now - pong.clientTimeMs);
         updateMetrics();
@@ -1327,6 +1354,12 @@ if (!signalingUrl) {
             ? ` (kf ${session.serverHello.snapshotKeyframeInterval})`
             : '';
         status.setState('connected', `conn ${session.connectionId}${keyframeDetail}`);
+        reconnecting = false;
+        if (reconnectTimer !== null) {
+          window.clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
+        refreshHudLockState();
         app.setSnapshotRate(session.serverHello.snapshotRate);
         app.setTickRate(session.serverHello.serverTickRate);
         queue.setTickRate(session.serverHello.serverTickRate);
@@ -1344,9 +1377,10 @@ if (!signalingUrl) {
         };
         sendLoadoutBits(localLoadoutBits);
 
-        sampler = createInputSampler({ target: window, bindings: currentBindings, weaponSlots: WEAPON_DEFS.length });
+        sampler = createInputSampler({ target: window, weaponSlots: WEAPON_DEFS.length });
         const lastFireTimes = new Map<number, number>();
         let clientShotSeq = 0;
+        activeSession = session;
         const sender = createInputSender({
           channel: session.unreliableChannel,
           sampler,
@@ -1355,8 +1389,23 @@ if (!signalingUrl) {
           tickRate: session.serverHello.serverTickRate,
           logger,
           onSend: (cmd) => {
-            const lookX = invertLookX ? -cmd.lookDeltaX : cmd.lookDeltaX;
-            const lookY = invertLookY ? -cmd.lookDeltaY : cmd.lookDeltaY;
+            if (reconnecting) {
+              cmd.moveX = 0;
+              cmd.moveY = 0;
+              cmd.lookDeltaX = 0;
+              cmd.lookDeltaY = 0;
+              cmd.jump = false;
+              cmd.fire = false;
+              cmd.ads = false;
+              cmd.sprint = false;
+              cmd.dash = false;
+              cmd.grapple = false;
+              cmd.shield = false;
+              cmd.shockwave = false;
+              return;
+            }
+            const lookX = cmd.lookDeltaX;
+            const lookY = cmd.lookDeltaY;
             adsTarget = cmd.ads ? 1 : 0;
             const adsSensitivity = 1 - adsBlend * (1 - ADS_SENSITIVITY_MULTIPLIER);
             const scaledLookX = lookX * adsSensitivity;
@@ -1438,6 +1487,17 @@ if (!signalingUrl) {
         });
         sender.start();
 
+        lastServerActivityAt = window.performance.now();
+        const staleInterval = window.setInterval(() => {
+          if (reconnecting) {
+            return;
+          }
+          const now = window.performance.now();
+          if (now - lastServerActivityAt > SERVER_STALE_TIMEOUT_MS) {
+            scheduleReconnect('server unresponsive');
+          }
+        }, SERVER_STALE_POLL_INTERVAL_MS);
+
         const sendPing = () => {
           if (session.unreliableChannel.readyState !== 'open') {
             return;
@@ -1461,6 +1521,7 @@ if (!signalingUrl) {
           }
           window.clearInterval(pingInterval);
           window.clearInterval(metricsInterval);
+          window.clearInterval(staleInterval);
           if (remotePruneInterval !== null) {
             window.clearInterval(remotePruneInterval);
             remotePruneInterval = null;
@@ -1468,8 +1529,15 @@ if (!signalingUrl) {
           sendLoadoutBits = null;
           remoteAvatars.dispose();
           casingPool.dispose();
+          if (activeSession === session) {
+            activeSession = null;
+          }
+          if (activeCleanup === cleanup) {
+            activeCleanup = null;
+          }
           window.removeEventListener('beforeunload', cleanup);
         };
+        activeCleanup = cleanup;
         window.addEventListener('beforeunload', cleanup);
       })
       .catch((error: unknown) => {
@@ -1480,6 +1548,8 @@ if (!signalingUrl) {
         remoteAvatars.dispose();
         const detail = error instanceof Error ? error.message : String(error);
         status.setState('error', detail);
+        reconnecting = false;
+        refreshHudLockState();
         console.error('network bootstrap failed', error);
       });
   };
@@ -1493,6 +1563,7 @@ if (!signalingUrl) {
       onSubmit: (profile) => saveProfile(localStorageRef, profile)
     });
     const profile = await prejoin.waitForSubmit();
+    activeProfile = profile;
     // Free the WebGL context used for the 3D preview so the main renderer stays stable.
     prejoin.dispose();
     await bootstrapNetwork(profile);

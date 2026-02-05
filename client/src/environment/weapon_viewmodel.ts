@@ -16,6 +16,7 @@ const DEFAULT_VIEWMODEL: ViewmodelSpec = {
   rotation: [0.04, 0.12, 0],
   scale: 0.55
 };
+const VIEWMODEL_YAW_OFFSET = Math.PI;
 
 const resolveModelUrlCandidates = (url: string) => {
   const candidates = new Set<string>();
@@ -137,7 +138,7 @@ const applyTransform = (
 ) => {
   object.position.set(...spec.position);
   object.rotation.x = spec.rotation[0];
-  object.rotation.y = spec.rotation[1];
+  object.rotation.y = spec.rotation[1] + VIEWMODEL_YAW_OFFSET;
   object.rotation.z = spec.rotation[2];
   if (object.scale) {
     object.scale.set(spec.scale, spec.scale, spec.scale);

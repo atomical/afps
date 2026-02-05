@@ -1,4 +1,4 @@
-export type HudLockState = 'locked' | 'unlocked' | 'unsupported';
+export type HudLockState = 'locked' | 'unlocked' | 'unsupported' | 'reconnecting';
 
 export interface HudOverlay {
   element: HTMLDivElement;
@@ -23,6 +23,8 @@ const lockLabel = (state: HudLockState) => {
   switch (state) {
     case 'locked':
       return 'Pointer Locked';
+    case 'reconnecting':
+      return 'Reconnecting...';
     case 'unsupported':
       return 'Pointer Lock Unsupported';
     case 'unlocked':

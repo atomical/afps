@@ -1,7 +1,5 @@
 import type { AudioSettings } from '../audio/settings';
 import { DEFAULT_AUDIO_SETTINGS, normalizeAudioSettings } from '../audio/settings';
-import type { InputBindings } from '../input/sampler';
-import { getPrimaryBinding, normalizeBindings, setPrimaryBinding } from '../input/bindings';
 import type { FxSettings } from '../rendering/fx_settings';
 import { DEFAULT_FX_SETTINGS, normalizeFxSettings } from '../rendering/fx_settings';
 import { LOADOUT_BITS, normalizeLoadoutBits } from '../weapons/loadout';
@@ -12,7 +10,6 @@ export interface SettingsOverlay {
   setVisible: (visible: boolean) => void;
   toggle: () => void;
   setSensitivity: (value: number) => void;
-  setLookInversion: (invertX: boolean, invertY: boolean) => void;
   setMetricsVisible: (visible: boolean) => void;
   setAudioSettings: (settings: AudioSettings) => void;
   dispose: () => void;
@@ -21,12 +18,6 @@ export interface SettingsOverlay {
 export interface SettingsOptions {
   initialSensitivity?: number;
   onSensitivityChange?: (value: number) => void;
-  initialInvertLookX?: boolean;
-  initialInvertLookY?: boolean;
-  onInvertLookXChange?: (value: boolean) => void;
-  onInvertLookYChange?: (value: boolean) => void;
-  initialBindings?: InputBindings;
-  onBindingsChange?: (bindings: InputBindings) => void;
   initialShowMetrics?: boolean;
   onShowMetricsChange?: (visible: boolean) => void;
   initialAudioSettings?: AudioSettings;
@@ -58,12 +49,6 @@ export const createSettingsOverlay = (
   {
     initialSensitivity,
     onSensitivityChange,
-    initialInvertLookX,
-    initialInvertLookY,
-    onInvertLookXChange,
-    onInvertLookYChange,
-    initialBindings,
-    onBindingsChange,
     initialShowMetrics,
     onShowMetricsChange,
     initialAudioSettings,
@@ -87,10 +72,6 @@ export const createSettingsOverlay = (
   title.className = 'settings-title';
   title.textContent = 'Settings';
 
-  const hint = doc.createElement('div');
-  hint.className = 'settings-hint';
-  hint.textContent = 'Press O to toggle';
-
   const group = doc.createElement('div');
   group.className = 'settings-group';
 
@@ -110,30 +91,11 @@ export const createSettingsOverlay = (
   label.append(valueText);
   group.append(label, input);
 
-  const bindingsGroup = doc.createElement('div');
-  bindingsGroup.className = 'settings-group settings-bindings';
-
   const audioGroup = doc.createElement('div');
   audioGroup.className = 'settings-group settings-audio';
 
   const metricsGroup = doc.createElement('div');
   metricsGroup.className = 'settings-group settings-toggles';
-
-  const invertXRow = doc.createElement('label');
-  invertXRow.className = 'settings-toggle';
-  const invertXToggle = doc.createElement('input');
-  invertXToggle.type = 'checkbox';
-  const invertXLabel = doc.createElement('span');
-  invertXLabel.textContent = 'Invert mouse X';
-  invertXRow.append(invertXToggle, invertXLabel);
-
-  const invertYRow = doc.createElement('label');
-  invertYRow.className = 'settings-toggle';
-  const invertYToggle = doc.createElement('input');
-  invertYToggle.type = 'checkbox';
-  const invertYLabel = doc.createElement('span');
-  invertYLabel.textContent = 'Invert mouse Y';
-  invertYRow.append(invertYToggle, invertYLabel);
 
   const metricsRow = doc.createElement('label');
   metricsRow.className = 'settings-toggle';
@@ -142,7 +104,7 @@ export const createSettingsOverlay = (
   const metricsLabel = doc.createElement('span');
   metricsLabel.textContent = 'Show net stats';
   metricsRow.append(metricsToggle, metricsLabel);
-  metricsGroup.append(invertXRow, invertYRow, metricsRow);
+  metricsGroup.append(metricsRow);
 
   const fxGroup = doc.createElement('div');
   fxGroup.className = 'settings-group settings-toggles settings-fx';
@@ -295,91 +257,9 @@ export const createSettingsOverlay = (
   appendAudioControl(musicRow.row, musicSlider);
   audioGroup.append(audioTitle, audioList, muteRow);
 
-  const bindingsTitle = doc.createElement('div');
-  bindingsTitle.className = 'settings-subtitle';
-  bindingsTitle.textContent = 'Keybinds';
-
-  const bindingsList = doc.createElement('div');
-  bindingsList.className = 'settings-bindings-list';
-
-  bindingsGroup.append(bindingsTitle, bindingsList);
-
-  panel.append(title, hint, group, metricsGroup, fxGroup, attachmentsGroup, audioGroup, bindingsGroup);
+  panel.append(title, group, metricsGroup, fxGroup, attachmentsGroup, audioGroup);
   overlay.append(panel);
   host.appendChild(overlay);
-
-  let bindings = normalizeBindings(initialBindings);
-  let captureAction: keyof InputBindings | null = null;
-  const bindingButtons = new Map<keyof InputBindings, HTMLButtonElement>();
-  const actionLabels: Array<[keyof InputBindings, string]> = [
-    ['forward', 'Forward'],
-    ['backward', 'Backward'],
-    ['left', 'Left'],
-    ['right', 'Right'],
-    ['jump', 'Jump'],
-    ['sprint', 'Sprint'],
-    ['dash', 'Dash'],
-    ['grapple', 'Grapple'],
-    ['shield', 'Shield'],
-    ['shockwave', 'Shockwave'],
-    ['weaponSlot1', 'Weapon 1'],
-    ['weaponSlot2', 'Weapon 2']
-  ];
-
-  const formatBindingLabel = (code: string) => (code.length > 0 ? code.replace('Key', '') : '--');
-
-  const updateBindingRow = (action: keyof InputBindings) => {
-    const button = bindingButtons.get(action) as HTMLButtonElement;
-    if (captureAction === action) {
-      button.textContent = 'Press a key...';
-      return;
-    }
-    button.textContent = formatBindingLabel(getPrimaryBinding(bindings, action));
-  };
-
-  for (const [action, labelText] of actionLabels) {
-    const row = doc.createElement('div');
-    row.className = 'settings-binding-row';
-
-    const labelEl = doc.createElement('div');
-    labelEl.className = 'settings-binding-label';
-    labelEl.textContent = labelText;
-
-    const button = doc.createElement('button');
-    button.type = 'button';
-    button.className = 'settings-binding-button';
-    button.addEventListener('click', () => {
-      captureAction = action;
-      updateBindingRow(action);
-      button.focus();
-    });
-
-    bindingButtons.set(action, button);
-    updateBindingRow(action);
-    row.append(labelEl, button);
-    bindingsList.append(row);
-  }
-
-  const handleKeydown = (event: KeyboardEvent) => {
-    if (!captureAction) {
-      return;
-    }
-    if (event.code === 'Escape') {
-      captureAction = null;
-      for (const action of bindingButtons.keys()) {
-        updateBindingRow(action);
-      }
-      return;
-    }
-    event.preventDefault();
-    const action = captureAction;
-    captureAction = null;
-    bindings = setPrimaryBinding(bindings, action, event.code);
-    updateBindingRow(action);
-    onBindingsChange?.(bindings);
-  };
-
-  doc.addEventListener('keydown', handleKeydown);
 
   const setSensitivity = (value: number) => {
     const safeValue = clampSensitivity(Number.isFinite(value) ? value : DEFAULT_SENSITIVITY);
@@ -393,19 +273,6 @@ export const createSettingsOverlay = (
     const next = clampSensitivity(getSensitivity());
     setSensitivity(next);
     onSensitivityChange?.(next);
-  });
-
-  const setLookInversion = (invertX: boolean, invertY: boolean) => {
-    invertXToggle.checked = invertX;
-    invertYToggle.checked = invertY;
-  };
-
-  invertXToggle.addEventListener('change', () => {
-    onInvertLookXChange?.(invertXToggle.checked);
-  });
-
-  invertYToggle.addEventListener('change', () => {
-    onInvertLookYChange?.(invertYToggle.checked);
   });
 
   const setMetricsVisible = (visible: boolean) => {
@@ -538,14 +405,12 @@ export const createSettingsOverlay = (
       ? initialSensitivity
       : DEFAULT_SENSITIVITY
   );
-  setLookInversion(Boolean(initialInvertLookX), Boolean(initialInvertLookY));
   setMetricsVisible(initialShowMetrics ?? true);
   setFxSettings(fxSettings);
   setLoadoutBits(loadoutBits);
   setAudioSettings(audioSettings);
 
   const dispose = () => {
-    doc.removeEventListener('keydown', handleKeydown);
     overlay.remove();
   };
 
@@ -555,7 +420,6 @@ export const createSettingsOverlay = (
     setVisible,
     toggle,
     setSensitivity,
-    setLookInversion,
     setMetricsVisible,
     setAudioSettings,
     dispose

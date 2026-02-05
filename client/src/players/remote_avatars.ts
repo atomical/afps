@@ -136,7 +136,7 @@ const HAND_DEFAULT_OFFSET: WeaponOffset = {
   rotation: [0, Math.PI / 2, 0],
   scale: 1
 };
-const MODEL_YAW_OFFSET = Math.PI;
+const MODEL_YAW_OFFSET = 0;
 const BASE_URL = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
 const NORMALIZED_BASE = BASE_URL.endsWith('/') ? BASE_URL : `${BASE_URL}/`;
 const WEAPON_MODEL_ROOT = `${NORMALIZED_BASE}assets/weapons/cc0/kenney_blaster_kit/`;

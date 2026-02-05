@@ -94,24 +94,9 @@ const settingsMock = {
   setVisible: vi.fn(),
   toggle: vi.fn(),
   setSensitivity: vi.fn(),
-  setLookInversion: vi.fn(),
   setMetricsVisible: vi.fn(),
   setAudioSettings: vi.fn(),
   dispose: vi.fn()
-};
-const defaultBindings = {
-  forward: ['KeyW'],
-  backward: ['KeyS'],
-  left: ['KeyA'],
-  right: ['KeyD'],
-  jump: ['Space'],
-  sprint: ['ShiftLeft'],
-  dash: ['KeyE'],
-  grapple: ['KeyQ'],
-  shield: ['KeyF'],
-  shockwave: ['KeyR'],
-  weaponSlot1: ['Digit1'],
-  weaponSlot2: ['Digit2']
 };
 const pointerLockMock = {
   supported: false,
@@ -195,12 +180,6 @@ vi.mock('../src/sim/parity', () => ({
 let settingsOptions:
   | {
       onSensitivityChange?: (value: number) => void;
-      onBindingsChange?: (bindings: Record<string, string[]>) => void;
-      initialBindings?: Record<string, string[]>;
-      initialInvertLookX?: boolean;
-      initialInvertLookY?: boolean;
-      onInvertLookXChange?: (value: boolean) => void;
-      onInvertLookYChange?: (value: boolean) => void;
       onShowMetricsChange?: (visible: boolean) => void;
       initialShowMetrics?: boolean;
       initialAudioSettings?: Record<string, number | boolean>;
@@ -288,12 +267,6 @@ vi.mock('../src/net/input_sender', () => ({
   createInputSender: (...args: unknown[]) => createInputSenderMock(...args)
 }));
 
-const bindingsMock = {
-  loadBindings: vi.fn(),
-  saveBindings: vi.fn()
-};
-
-vi.mock('../src/input/bindings', () => bindingsMock);
 
 const sensitivityMock = {
   loadSensitivity: vi.fn(),
@@ -301,15 +274,6 @@ const sensitivityMock = {
 };
 
 vi.mock('../src/input/sensitivity', () => sensitivityMock);
-
-const lookInversionMock = {
-  loadInvertX: vi.fn(),
-  loadInvertY: vi.fn(),
-  saveInvertX: vi.fn(),
-  saveInvertY: vi.fn()
-};
-
-vi.mock('../src/input/look_inversion', () => lookInversionMock);
 
 const metricsSettingsMock = {
   loadMetricsVisibility: vi.fn(),
@@ -386,7 +350,6 @@ describe('main entry', () => {
     settingsMock.setVisible.mockReset();
     settingsMock.toggle.mockReset();
     settingsMock.setSensitivity.mockReset();
-    settingsMock.setLookInversion.mockReset();
     settingsMock.setMetricsVisible.mockReset();
     settingsMock.dispose.mockReset();
     settingsOptions = undefined;
@@ -404,7 +367,6 @@ describe('main entry', () => {
     pointerLockMock.isLocked.mockReturnValue(false);
     pointerLockMock.dispose.mockReset();
     samplerInstance.sample.mockReset();
-    samplerInstance.setBindings.mockReset();
     samplerInstance.dispose.mockReset();
     createInputSamplerMock.mockReturnValue(samplerInstance);
     createInputSenderMock.mockReturnValue(inputSenderInstance);
@@ -416,18 +378,9 @@ describe('main entry', () => {
     envMock.getLookSensitivity.mockReturnValue(undefined);
     envMock.getWasmSimUrl.mockReturnValue(undefined);
     envMock.getWasmSimParity.mockReturnValue(false);
-    bindingsMock.loadBindings.mockReset();
-    bindingsMock.saveBindings.mockReset();
-    bindingsMock.loadBindings.mockReturnValue(defaultBindings);
     sensitivityMock.loadSensitivity.mockReset();
     sensitivityMock.saveSensitivity.mockReset();
     sensitivityMock.loadSensitivity.mockReturnValue(undefined);
-    lookInversionMock.loadInvertX.mockReset();
-    lookInversionMock.loadInvertY.mockReset();
-    lookInversionMock.saveInvertX.mockReset();
-    lookInversionMock.saveInvertY.mockReset();
-    lookInversionMock.loadInvertX.mockReturnValue(undefined);
-    lookInversionMock.loadInvertY.mockReturnValue(undefined);
     metricsSettingsMock.loadMetricsVisibility.mockReset();
     metricsSettingsMock.saveMetricsVisibility.mockReset();
     metricsSettingsMock.loadMetricsVisibility.mockReturnValue(true);
@@ -465,17 +418,11 @@ describe('main entry', () => {
     expect(args.three.Scene).toBeTypeOf('function');
     expect(args.document).toBe(document);
     expect(args.window).toBe(window);
-    expect(bindingsMock.loadBindings).toHaveBeenCalledWith(window.localStorage);
     expect(sensitivityMock.loadSensitivity).toHaveBeenCalledWith(window.localStorage);
-    expect(lookInversionMock.loadInvertX).toHaveBeenCalledWith(window.localStorage);
-    expect(lookInversionMock.loadInvertY).toHaveBeenCalledWith(window.localStorage);
     expect(metricsSettingsMock.loadMetricsVisibility).toHaveBeenCalledWith(window.localStorage);
     expect(audioSettingsMock.loadAudioSettings).toHaveBeenCalledWith(window.localStorage);
     expect(fxSettingsMock.loadFxSettings).toHaveBeenCalledWith(window.localStorage);
-    expect(settingsOptions?.initialBindings).toEqual(defaultBindings);
     expect(settingsOptions?.initialShowMetrics).toBe(true);
-    expect(settingsOptions?.initialInvertLookX).toBe(false);
-    expect(settingsOptions?.initialInvertLookY).toBe(false);
     expect(settingsOptions?.initialAudioSettings).toEqual({
       master: 0.5,
       sfx: 0.5,
@@ -773,8 +720,7 @@ describe('main entry', () => {
     expect(sendPing).toHaveBeenCalled();
     expect(createInputSamplerMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        target: window,
-        bindings: expect.any(Object)
+        target: window
       })
     );
     const senderArgs = createInputSenderMock.mock.calls[0]?.[0] as { onSend?: (cmd: unknown) => void };
@@ -844,21 +790,6 @@ describe('main entry', () => {
     expect(sensitivityMock.saveSensitivity).toHaveBeenCalledWith(0.005, window.localStorage);
   });
 
-  it('updates look inversion from settings overlay', async () => {
-    envMock.getSignalingUrl.mockReturnValue(undefined);
-    envMock.getSignalingAuthToken.mockReturnValue(undefined);
-
-    await import('../src/main');
-
-    expect(settingsOptions?.onInvertLookXChange).toBeTypeOf('function');
-    settingsOptions?.onInvertLookXChange?.(true);
-    expect(lookInversionMock.saveInvertX).toHaveBeenCalledWith(true, window.localStorage);
-
-    expect(settingsOptions?.onInvertLookYChange).toBeTypeOf('function');
-    settingsOptions?.onInvertLookYChange?.(true);
-    expect(lookInversionMock.saveInvertY).toHaveBeenCalledWith(true, window.localStorage);
-  });
-
   it('updates metrics visibility from settings overlay', async () => {
     envMock.getSignalingUrl.mockReturnValue(undefined);
     envMock.getSignalingAuthToken.mockReturnValue(undefined);
@@ -917,46 +848,18 @@ describe('main entry', () => {
     expect(window.localStorage.getItem('afps.loadout.bits')).toBe(String(nextBits));
   });
 
-  it('persists bindings updates and refreshes sampler', async () => {
-    connectMock.mockResolvedValue({
-      connectionId: 'conn',
-      serverHello: { serverTickRate: 60, snapshotRate: 20 },
-      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: vi.fn() },
-      nextClientMessageSeq: () => 1,
-      getServerSeqAck: () => 0
-    });
-    envMock.getSignalingUrl.mockReturnValue('https://example.test');
-    envMock.getSignalingAuthToken.mockReturnValue('token');
-
-    await import('../src/main');
-    await flushPromises();
-
-    const updated = {
-      forward: ['KeyI'],
-      backward: ['KeyK'],
-      left: ['KeyJ'],
-      right: ['KeyL'],
-      jump: ['KeyU'],
-      sprint: ['KeyO'],
-      dash: ['KeyP'],
-      grapple: ['KeyG'],
-      shield: ['KeyH'],
-      shockwave: ['KeyR']
-    };
-    settingsOptions?.onBindingsChange?.(updated);
-
-    expect(bindingsMock.saveBindings).toHaveBeenCalledWith(updated, window.localStorage);
-    expect(samplerInstance.setBindings).toHaveBeenCalledWith(updated);
-  });
-
-  it('toggles settings on O key', async () => {
+  it('toggles debug overlays on tilde key', async () => {
     envMock.getSignalingUrl.mockReturnValue(undefined);
     envMock.getSignalingAuthToken.mockReturnValue(undefined);
 
     await import('../src/main');
 
-    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyO' }));
-    expect(settingsMock.toggle).toHaveBeenCalled();
+    statusMock.setVisible.mockClear();
+    settingsMock.setVisible.mockClear();
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Backquote' }));
+    expect(statusMock.setVisible).toHaveBeenCalledWith(true);
+    expect(settingsMock.setVisible).toHaveBeenCalledWith(true);
   });
 
   it('loads wasm sim when url is configured', async () => {
