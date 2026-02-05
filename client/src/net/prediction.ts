@@ -1,6 +1,6 @@
 import type { InputCmd } from './input_cmd';
 import type { StateSnapshot } from './protocol';
-import { SIM_CONFIG, type SimConfig } from '../sim/config';
+import { SIM_CONFIG, type SimConfig, resolveEyeHeight } from '../sim/config';
 
 export type PredictionInput = Pick<
   InputCmd,
@@ -83,14 +83,6 @@ const viewDirection = (yaw: number, pitch: number) => {
   y /= len;
   z /= len;
   return { x, y, z };
-};
-
-const resolveEyeHeight = (config: SimConfig) => {
-  const fallback = 1.6;
-  if (!Number.isFinite(config.playerHeight) || config.playerHeight <= 0) {
-    return fallback;
-  }
-  return Math.min(config.playerHeight, fallback);
 };
 
 const raycastAabb2D = (

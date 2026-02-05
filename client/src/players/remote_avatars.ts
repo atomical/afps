@@ -5,6 +5,7 @@ import { WEAPON_DEFS } from '../weapons/config';
 import { LOADOUT_BITS, hasLoadoutBit } from '../weapons/loadout';
 import type { PlayerProfile } from '../net/protocol';
 import { decodePitchQ, decodeYawQ } from '../net/quantization';
+import { SIM_CONFIG, resolvePlayerHeight } from '../sim/config';
 
 type AnimationActionLike = {
   play: () => void;
@@ -95,7 +96,7 @@ export interface RemoteAvatarManager {
   dispose: () => void;
 }
 
-const BODY_HEIGHT = 1.6;
+const BODY_HEIGHT = resolvePlayerHeight(SIM_CONFIG);
 const BODY_HALF = BODY_HEIGHT / 2;
 const STALE_MS = 8000;
 const NAMEPLATE_WIDTH = 256;

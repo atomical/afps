@@ -4,6 +4,7 @@ import { ClientPrediction, type PredictionSim } from './net/prediction';
 import { SnapshotBuffer } from './net/snapshot_buffer';
 import { loadRetroUrbanMap } from './environment/retro_urban_map';
 import { attachWeaponViewmodel, loadWeaponViewmodel } from './environment/weapon_viewmodel';
+import { SIM_CONFIG, resolveEyeHeight } from './sim/config';
 import { WEAPON_DEFS } from './weapons/config';
 import { generateDecalTexture, generateImpactTexture, generateMuzzleFlashTexture, hashString } from './rendering/procedural_textures';
 
@@ -17,6 +18,8 @@ export interface CreateAppOptions {
   loadEnvironment?: boolean;
 }
 
+const CAMERA_HEIGHT = resolveEyeHeight(SIM_CONFIG);
+
 const DEFAULTS = {
   fov: 70,
   near: 0.1,
@@ -25,7 +28,7 @@ const DEFAULTS = {
   rotationSpeed: 1.25,
   lookSensitivity: 0.002,
   maxPitch: Math.PI / 2 - 0.01,
-  cameraHeight: 1.6,
+  cameraHeight: CAMERA_HEIGHT,
   background: 0x86bff0,
   groundColor: 0xe2c38a,
   groundSize: 220,

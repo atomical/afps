@@ -502,7 +502,7 @@
     "velY": 0.0,
     "velZ": 0.0,
     "dashCooldown": 0.0,
-    "grappleCooldown": 0.833333,
+    "grappleCooldown": 0.0,
     "grappleActive": false
   }
 }

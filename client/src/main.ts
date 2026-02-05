@@ -33,6 +33,7 @@ import { loadAudioSettings, saveAudioSettings } from './audio/settings';
 import { loadWasmSimFromUrl } from './sim/wasm';
 import { createWasmPredictionSim } from './sim/wasm_adapter';
 import { runWasmParityCheck } from './sim/parity';
+import { SIM_CONFIG, resolveEyeHeight, resolvePlayerHeight } from './sim/config';
 import { WEAPON_CONFIG, WEAPON_DEFS } from './weapons/config';
 import { LOADOUT_BITS, hasLoadoutBit, loadLoadoutBits, saveLoadoutBits } from './weapons/loadout';
 import { exposeWeaponDebug } from './weapons/debug';
@@ -78,6 +79,7 @@ const RECOIL_RECOVERY_SPEED = 10;
 const RECOIL_RECOVERY_MIN = 4;
 const SERVER_STALE_TIMEOUT_MS = 4000;
 const SERVER_STALE_POLL_INTERVAL_MS = 500;
+const FOOTSTEP_STRIDE = resolvePlayerHeight(SIM_CONFIG);
 const RECONNECT_DELAY_MS = 1000;
 
 const createMemoryStorage = (): Storage => {
@@ -262,7 +264,7 @@ const updateLocalAvatar = (nowMs: number) => {
   const cubeX = Number.isFinite(cubePos?.x) ? cubePos!.x : null;
   const cubeY = Number.isFinite(cubePos?.y) ? cubePos!.y : null;
   const cubeZ = Number.isFinite(cubePos?.z) ? cubePos!.z : null;
-  const fallbackHeight = 1.6;
+  const fallbackHeight = resolveEyeHeight(SIM_CONFIG);
   let posX = Number.isFinite(pose.posX) ? pose.posX : 0;
   let posY = Number.isFinite(pose.posY) ? pose.posY : 0;
   let posZ = Number.isFinite(pose.posZ) ? pose.posZ : 0;
@@ -399,7 +401,7 @@ app.setBeforeRender((deltaSeconds, nowMs) => {
       const dy = pose.posY - lastFootstepPos.y;
       footstepDistance += Math.hypot(dx, dy);
     }
-    if (footstepDistance >= 1.6 && nowMs - lastFootstepAt > 180) {
+    if (footstepDistance >= FOOTSTEP_STRIDE && nowMs - lastFootstepAt > 180) {
       audio.play('footstep', { group: 'sfx', volume: 0.6 });
       footstepDistance = 0;
       lastFootstepAt = nowMs;
@@ -770,7 +772,7 @@ if (!signalingUrl) {
     const PROJECTILE_POS_STEP_METERS = 0.01;
     const PROJECTILE_VEL_STEP_METERS_PER_SECOND = 0.01;
     const PROJECTILE_TTL_STEP_SECONDS = 0.01;
-    const PLAYER_EYE_HEIGHT = 1.6;
+    const PLAYER_EYE_HEIGHT = resolveEyeHeight(SIM_CONFIG);
     const MUZZLE_FORWARD_OFFSET = 0.2;
 
     const resolveWeaponForSlot = (weaponSlot: number) => WEAPON_DEFS[resolveWeaponSlot(weaponSlot)] ?? null;

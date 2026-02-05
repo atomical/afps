@@ -19,7 +19,7 @@ const DEBUG_GRID_SIZE = 40;
 const DEBUG_GRID_DIVISIONS = 10;
 const DEBUG_GRID_COLOR_MAJOR = 0x335577;
 const DEBUG_GRID_COLOR_MINOR = 0x223344;
-const MAP_SCALE = 1.5;
+const MAP_SCALE = 2.5;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;

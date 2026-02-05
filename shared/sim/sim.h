@@ -100,7 +100,7 @@ inline constexpr SimConfig kDefaultSimConfig{
     10.0,
     6.0,
     10.0,
-    18.0,
+    30.0,
     0.5,
     1.7,
     0.0,

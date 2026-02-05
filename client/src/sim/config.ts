@@ -53,7 +53,7 @@ export const DEFAULT_SIM_CONFIG: SimConfig = {
   shockwaveImpulse: 10,
   shockwaveCooldown: 6,
   shockwaveDamage: 10,
-  arenaHalfSize: 50,
+  arenaHalfSize: 30,
   playerRadius: 0.5,
   playerHeight: 1.7,
   obstacleMinX: 0,
@@ -132,3 +132,13 @@ export const parseSimConfig = (value: unknown): SimConfig => {
 };
 
 export const SIM_CONFIG = parseSimConfig(rawConfig);
+
+export const resolvePlayerHeight = (config: SimConfig, fallback = DEFAULT_SIM_CONFIG.playerHeight) => {
+  if (!Number.isFinite(config.playerHeight) || config.playerHeight <= 0) {
+    return fallback;
+  }
+  return config.playerHeight;
+};
+
+export const resolveEyeHeight = (config: SimConfig, fallback = 1.6) =>
+  Math.min(resolvePlayerHeight(config, fallback), fallback);
