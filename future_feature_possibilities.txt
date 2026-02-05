@@ -1,0 +1,1 @@
+[ ] - weapons flare should appear directly in front of the barrel
