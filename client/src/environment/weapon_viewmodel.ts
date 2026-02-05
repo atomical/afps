@@ -16,7 +16,7 @@ const DEFAULT_VIEWMODEL: ViewmodelSpec = {
   rotation: [0.04, 0.12, 0],
   scale: 0.55
 };
-const VIEWMODEL_YAW_OFFSET = Math.PI;
+const VIEWMODEL_YAW_OFFSET = 0;
 
 const resolveModelUrlCandidates = (url: string) => {
   const candidates = new Set<string>();

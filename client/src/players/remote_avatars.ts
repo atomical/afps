@@ -133,7 +133,7 @@ const OVERHEAT_POSE = {
 };
 const HAND_DEFAULT_OFFSET: WeaponOffset = {
   position: [0.08, 0.02, 0],
-  rotation: [0, Math.PI / 2, 0],
+  rotation: [0, 0, 0],
   scale: 1
 };
 const MODEL_YAW_OFFSET = 0;
@@ -556,7 +556,7 @@ export const createRemoteAvatarManager = ({
   const applyDefaultWeaponTransform = (weapon: Object3DLike) => {
     weapon.position.set(0.35, 0.4, 0.15);
     weapon.rotation.x = 0;
-    weapon.rotation.y = Math.PI;
+    weapon.rotation.y = 0;
     weapon.rotation.z = 0;
   };
 

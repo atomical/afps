@@ -859,6 +859,18 @@ describe('main entry', () => {
 
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Backquote' }));
     expect(statusMock.setVisible).toHaveBeenCalledWith(true);
+    expect(settingsMock.setVisible).not.toHaveBeenCalled();
+  });
+
+  it('toggles the settings window on escape', async () => {
+    envMock.getSignalingUrl.mockReturnValue(undefined);
+    envMock.getSignalingAuthToken.mockReturnValue(undefined);
+
+    await import('../src/main');
+
+    settingsMock.setVisible.mockClear();
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape' }));
     expect(settingsMock.setVisible).toHaveBeenCalledWith(true);
   });
 

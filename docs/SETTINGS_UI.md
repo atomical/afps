@@ -22,9 +22,14 @@ The settings overlay provides:
 
 ### Toggle
 
-- **Key:** `~` (backquote)
-- **Behavior:** toggles visibility of the debug overlays, including the settings panel
+- **Key:** `Escape`
+- **Behavior:** toggles the centered settings window and releases pointer lock so the cursor can be used
 - **Implementation:** `window.addEventListener('keydown', ...)` in `client/src/main.ts`
+
+### Debug Overlays
+
+- **Key:** `~` (backquote)
+- **Behavior:** toggles the top-left debug/status overlays (net stats, WASM status, etc.)
 
 ### Sensitivity
 

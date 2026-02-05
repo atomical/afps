@@ -514,6 +514,15 @@ const settings = createSettingsOverlay(document, {
   }
 });
 settings.setAudioSettings(savedAudioSettings);
+let settingsVisible = false;
+const setSettingsVisible = (visible: boolean) => {
+  settingsVisible = visible;
+  settings.setVisible(visible);
+  if (visible && typeof document.exitPointerLock === 'function') {
+    document.exitPointerLock();
+  }
+};
+setSettingsVisible(false);
 const pointerLock = createPointerLockController({
   document,
   element: canvas,
@@ -522,6 +531,9 @@ const pointerLock = createPointerLockController({
       hudStore.dispatch({ type: 'lock', state: 'reconnecting' });
     } else {
       hudStore.dispatch({ type: 'lock', state: locked ? 'locked' : 'unlocked' });
+    }
+    if (locked) {
+      setSettingsVisible(false);
     }
     if (locked) {
       void audio.resume();
@@ -616,12 +628,17 @@ let debugOverlaysVisible = false;
 const setDebugOverlaysVisible = (visible: boolean) => {
   debugOverlaysVisible = visible;
   status.setVisible(visible);
-  settings.setVisible(visible);
   localAvatarDebug?.setVisible?.(visible);
 };
 setDebugOverlaysVisible(false);
 
 window.addEventListener('keydown', (event) => {
+  if (event.code === 'Escape') {
+    if (!event.repeat) {
+      setSettingsVisible(!settingsVisible);
+    }
+    return;
+  }
   if (event.code === 'Backquote') {
     if (!event.repeat) {
       setDebugOverlaysVisible(!debugOverlaysVisible);
