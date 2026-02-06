@@ -96,7 +96,8 @@ export interface RemoteAvatarManager {
   dispose: () => void;
 }
 
-const BODY_HEIGHT = resolvePlayerHeight(SIM_CONFIG);
+const VISUAL_HEIGHT_SCALE = 0.9;
+const BODY_HEIGHT = resolvePlayerHeight(SIM_CONFIG) * VISUAL_HEIGHT_SCALE;
 const BODY_HALF = BODY_HEIGHT / 2;
 const STALE_MS = 8000;
 const NAMEPLATE_WIDTH = 256;
