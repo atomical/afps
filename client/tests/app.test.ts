@@ -116,6 +116,11 @@ import {
 } from './fakeThree';
 
 describe('createApp', () => {
+  const flushAsync = async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  };
+
   beforeEach(() => {
     loadRetroUrbanMapMock.mockReset();
     loadWeaponViewmodelMock.mockReset();
@@ -1427,6 +1432,131 @@ describe('createApp', () => {
     expect(loadWeaponViewmodelMock).toHaveBeenCalledWith(
       expect.objectContaining({ weaponId: WEAPON_DEFS[0]?.id })
     );
+  });
+
+  it('supports map seed updates and applies loaded colliders to replacement sims', async () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const mapA = {
+      seed: 0,
+      colliders: [{ id: 1, minX: -1, minY: -1, minZ: 0, maxX: 1, maxY: 1, maxZ: 2, surfaceType: 2 }],
+      pickupSpawns: [],
+      placements: 1,
+      loaded: 1,
+      failed: 0,
+      dispose: vi.fn()
+    };
+    const mapB = {
+      seed: 42,
+      colliders: [{ id: 2, minX: 2, minY: -1, minZ: 0, maxX: 3, maxY: 1, maxZ: 2, surfaceType: 1 }],
+      pickupSpawns: [],
+      placements: 1,
+      loaded: 1,
+      failed: 0,
+      dispose: vi.fn()
+    };
+    loadRetroUrbanMapMock
+      .mockResolvedValueOnce(mapA)
+      .mockResolvedValueOnce(mapB)
+      .mockResolvedValueOnce(null);
+
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1, loadEnvironment: true });
+    await flushAsync();
+
+    expect(loadRetroUrbanMapMock).toHaveBeenCalledTimes(1);
+
+    app.setMapSeed(0);
+    expect(loadRetroUrbanMapMock).toHaveBeenCalledTimes(1);
+
+    const sim = {
+      step: vi.fn(),
+      getState: vi.fn(() => ({
+        x: 0,
+        y: 0,
+        z: 0,
+        velX: 0,
+        velY: 0,
+        velZ: 0,
+        dashCooldown: 0,
+        shieldTimer: 0,
+        shieldCooldown: 0,
+        shieldActive: false,
+        shockwaveCooldown: 0
+      })),
+      setState: vi.fn(),
+      reset: vi.fn(),
+      setConfig: vi.fn(),
+      setColliders: vi.fn()
+    };
+    app.setPredictionSim(sim);
+    expect(sim.setColliders).toHaveBeenCalledWith([expect.objectContaining(mapA.colliders[0]!)]);
+
+    app.setMapSeed(42.9);
+    await flushAsync();
+
+    expect(loadRetroUrbanMapMock).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({ seed: 42, procedural: true })
+    );
+    expect(mapA.dispose).toHaveBeenCalledTimes(1);
+    expect(sim.setColliders).toHaveBeenLastCalledWith([expect.objectContaining(mapB.colliders[0]!)]);
+
+    app.setMapSeed(Number.NaN);
+    await flushAsync();
+    expect(loadRetroUrbanMapMock).toHaveBeenNthCalledWith(
+      3,
+      expect.anything(),
+      expect.objectContaining({ seed: 0, procedural: true })
+    );
+    expect(sim.setColliders).toHaveBeenLastCalledWith([]);
+  });
+
+  it('drops stale map loads when a newer map seed request resolves first', async () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+
+    let resolveInitial: ((value: unknown) => void) | null = null;
+    let resolveNext: ((value: unknown) => void) | null = null;
+    const initialLoad = new Promise((resolve) => {
+      resolveInitial = resolve;
+    });
+    const nextLoad = new Promise((resolve) => {
+      resolveNext = resolve;
+    });
+    loadRetroUrbanMapMock.mockImplementationOnce(() => initialLoad).mockImplementationOnce(() => nextLoad);
+
+    const staleMap = {
+      seed: 0,
+      colliders: [],
+      pickupSpawns: [],
+      placements: 0,
+      loaded: 0,
+      failed: 0,
+      dispose: vi.fn()
+    };
+    const latestMap = {
+      seed: 99,
+      colliders: [{ id: 10, minX: -2, minY: -2, minZ: 0, maxX: -1, maxY: -1, maxZ: 2, surfaceType: 0 }],
+      pickupSpawns: [],
+      placements: 1,
+      loaded: 1,
+      failed: 0,
+      dispose: vi.fn()
+    };
+
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1, loadEnvironment: true });
+    app.setMapSeed(99);
+    resolveInitial?.(staleMap);
+    await flushAsync();
+
+    expect(staleMap.dispose).toHaveBeenCalledTimes(1);
+
+    resolveNext?.(latestMap);
+    await flushAsync();
+
+    app.dispose();
+    expect(latestMap.dispose).toHaveBeenCalledTimes(1);
   });
 
   it('skips weapon viewmodel loading when environment is disabled', () => {

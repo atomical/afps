@@ -1,5 +1,6 @@
 #include "config.h"
 
+#include <limits>
 #include <sstream>
 #include <string>
 
@@ -40,6 +41,28 @@ int ParseNonNegativeInt(const std::string &value, const std::string &label,
   } catch (const std::exception &) {
     errors.push_back("Invalid " + label + " value: " + value);
     return -1;
+  }
+}
+
+uint32_t ParseUnsigned32(const std::string &value, const std::string &label,
+                         std::vector<std::string> &errors, bool &ok) {
+  ok = false;
+  try {
+    size_t idx = 0;
+    const unsigned long long parsed = std::stoull(value, &idx);
+    if (idx != value.size()) {
+      errors.push_back("Invalid " + label + " value: " + value);
+      return 0;
+    }
+    if (parsed > std::numeric_limits<uint32_t>::max()) {
+      errors.push_back(label + " out of range: " + value);
+      return 0;
+    }
+    ok = true;
+    return static_cast<uint32_t>(parsed);
+  } catch (const std::exception &) {
+    errors.push_back("Invalid " + label + " value: " + value);
+    return 0;
   }
 }
 }
@@ -120,6 +143,15 @@ ParseResult ParseArgs(int argc, const char *const *argv) {
                                                  result.errors);
         if (interval >= 0) {
           result.config.snapshot_keyframe_interval = interval;
+        }
+      }
+    } else if (arg == "--map-seed") {
+      auto value = require_value("--map-seed");
+      if (!value.empty()) {
+        bool ok = false;
+        const uint32_t parsed = ParseUnsigned32(value, "map seed", result.errors, ok);
+        if (ok) {
+          result.config.map_seed = parsed;
         }
       }
     } else if (arg == "--character-manifest") {

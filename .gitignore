@@ -6,6 +6,7 @@ client/dist
 client/public/wasm
 client/coverage/**
 client/public/assets/weapons/cc0/kenney_blaster_kit/bullet-foam.glb
+node_modules/
 
 # Server
 server/build

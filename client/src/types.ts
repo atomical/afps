@@ -266,6 +266,7 @@ export interface App {
   getAbilityCooldowns: () => AbilityCooldowns;
   getRenderTick: () => number | null;
   setWeaponViewmodel: (weaponId?: string) => void;
+  setMapSeed: (seed: number) => void;
   setTickRate: (tickRate: number) => void;
   setPredictionSim: (sim: PredictionSim) => void;
   applyLookDelta: (deltaX: number, deltaY: number) => void;

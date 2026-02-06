@@ -11,6 +11,8 @@ describe('wasm sim wrapper', () => {
     _sim_reset: vi.fn(),
     _sim_set_config: vi.fn(),
     _sim_set_state: vi.fn(),
+    _sim_clear_colliders: vi.fn(),
+    _sim_add_aabb_collider: vi.fn(),
     _sim_step: vi.fn(),
     _sim_get_x: vi.fn(() => 1.5),
     _sim_get_y: vi.fn(() => -2.5),
@@ -130,6 +132,15 @@ describe('wasm sim wrapper', () => {
       Number.NaN
     );
     expect(module._sim_set_state).toHaveBeenCalledWith(42, 0, 0, 0, 0, 0, 0, 0);
+
+    sim.setColliders([
+      { id: 9, minX: 1, minY: -2, minZ: 0, maxX: 2, maxY: 3, maxZ: 4, surfaceType: 7.9 },
+      { id: 3, minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 1, maxZ: 1, surfaceType: 1 },
+      { id: 2, minX: -3, minY: -1, minZ: 0, maxX: -2, maxY: 1, maxZ: 2, surfaceType: Number.NaN }
+    ]);
+    expect(module._sim_clear_colliders).toHaveBeenCalledWith(42);
+    expect(module._sim_add_aabb_collider).toHaveBeenNthCalledWith(1, 42, 2, -3, -1, 0, -2, 1, 2, 0);
+    expect(module._sim_add_aabb_collider).toHaveBeenNthCalledWith(2, 42, 9, 1, -2, 0, 2, 3, 4, 7);
 
     expect(sim.getState()).toEqual({
       x: 1.5,

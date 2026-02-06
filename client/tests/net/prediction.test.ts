@@ -3,6 +3,7 @@ import { ClientPrediction, createJsPredictionSim } from '../../src/net/predictio
 import { SIM_CONFIG } from '../../src/sim/config';
 import type { InputCmd } from '../../src/net/input_cmd';
 import type { StateSnapshot } from '../../src/net/protocol';
+import { generateProceduralRetroUrbanMap, getBuildingColliderProfile } from '../../src/environment/procedural_map';
 
 const makeInput = (
   seq: number,
@@ -90,6 +91,42 @@ const computeLinearDistance = (ticks: number, sprint = false) => {
     distance += velocity * dt;
   }
   return distance;
+};
+
+const rotatePointByDoorSide = (x: number, y: number, doorSide: 'north' | 'east' | 'south' | 'west'): [number, number] => {
+  if (doorSide === 'west') {
+    return [-y, x];
+  }
+  if (doorSide === 'north') {
+    return [-x, -y];
+  }
+  if (doorSide === 'east') {
+    return [y, -x];
+  }
+  return [x, y];
+};
+
+const rotateBoundsByDoorSide = (
+  bounds: { minX: number; maxX: number; minY: number; maxY: number },
+  doorSide: 'north' | 'east' | 'south' | 'west'
+) => {
+  const corners = [
+    rotatePointByDoorSide(bounds.minX, bounds.minY, doorSide),
+    rotatePointByDoorSide(bounds.minX, bounds.maxY, doorSide),
+    rotatePointByDoorSide(bounds.maxX, bounds.minY, doorSide),
+    rotatePointByDoorSide(bounds.maxX, bounds.maxY, doorSide)
+  ];
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const [x, y] of corners) {
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y);
+  }
+  return { minX, maxX, minY, maxY };
 };
 
 describe('ClientPrediction', () => {
@@ -1150,6 +1187,74 @@ describe('ClientPrediction', () => {
     }
   });
 
+  it('passes through doorway gaps with multi-collider room walls', () => {
+    const sim = createJsPredictionSim({
+      ...SIM_CONFIG,
+      arenaHalfSize: 0,
+      obstacleMinX: 0,
+      obstacleMaxX: 0,
+      obstacleMinY: 0,
+      obstacleMaxY: 0
+    });
+
+    sim.setColliders?.([
+      { id: 1, minX: -2, maxX: -1.7, minY: -2, maxY: 2, minZ: 0, maxZ: 3 },
+      { id: 2, minX: 1.7, maxX: 2, minY: -2, maxY: 2, minZ: 0, maxZ: 3 },
+      { id: 3, minX: -2, maxX: 2, minY: 1.7, maxY: 2, minZ: 0, maxZ: 3 },
+      { id: 4, minX: -2, maxX: -0.65, minY: -2, maxY: -1.7, minZ: 0, maxZ: 3 },
+      { id: 5, minX: 0.65, maxX: 2, minY: -2, maxY: -1.7, minZ: 0, maxZ: 3 },
+      { id: 6, minX: -0.65, maxX: 0.65, minY: -2, maxY: -1.7, minZ: 2.1, maxZ: 3 }
+    ]);
+
+    sim.setState(0, -3, 0, 0, 0, 0, 0);
+    for (let i = 0; i < 120; i += 1) {
+      sim.step(
+        { moveX: 0, moveY: 1, sprint: false, jump: false, dash: false, grapple: false, shield: false, shockwave: false },
+        1 / 60
+      );
+    }
+
+    const state = sim.getState();
+    expect(state.x).toBeCloseTo(0, 2);
+    expect(state.y).toBeGreaterThan(-1.3);
+  });
+
+  it('blocks movement into procedural buildings from outside', () => {
+    const map = generateProceduralRetroUrbanMap({ seed: 42, arenaHalfSize: 30, tickRate: 60 });
+    const building = map.buildings[0];
+    expect(building).toBeDefined();
+    if (!building) {
+      return;
+    }
+
+    const sim = createJsPredictionSim({
+      ...SIM_CONFIG,
+      arenaHalfSize: 0,
+      obstacleMinX: 0,
+      obstacleMaxX: 0,
+      obstacleMinY: 0,
+      obstacleMaxY: 0
+    });
+    sim.setColliders?.(map.colliders);
+
+    const cx = building.cellX * map.tileSize * map.mapScale;
+    const cy = building.cellY * map.tileSize * map.mapScale;
+    const radius = Math.max(0, SIM_CONFIG.playerRadius);
+    const bounds = rotateBoundsByDoorSide(getBuildingColliderProfile(building.file).bounds, building.doorSide);
+
+    sim.setState(cx, cy + bounds.maxY + radius + 1.2, 0, 0, 0, 0, 0);
+
+    for (let i = 0; i < 180; i += 1) {
+      sim.step(
+        { moveX: 0, moveY: -1, sprint: false, jump: false, dash: false, grapple: false, shield: false, shockwave: false },
+        1 / 60
+      );
+    }
+
+    const state = sim.getState();
+    expect(state.y).toBeGreaterThanOrEqual(cy + bounds.maxY + radius - 0.05);
+  });
+
   it('grapple pulls toward anchor when stretched', () => {
     const config = {
       ...SIM_CONFIG,
@@ -1259,6 +1364,39 @@ describe('ClientPrediction', () => {
     const state = sim.getState() as ReturnType<typeof sim.getState> & { grappleActive: boolean; grappleAnchorZ: number };
     expect(state.grappleActive).toBe(true);
     expect(state.grappleAnchorZ).toBeCloseTo(1.6);
+  });
+
+  it('attaches grapple anchors to custom AABB colliders', () => {
+    const sim = createJsPredictionSim({
+      ...SIM_CONFIG,
+      moveSpeed: 0,
+      accel: 0,
+      friction: 0,
+      gravity: 0,
+      arenaHalfSize: 0,
+      obstacleMinX: 0,
+      obstacleMaxX: 0,
+      obstacleMinY: 0,
+      obstacleMaxY: 0,
+      grappleMaxDistance: 10,
+      grappleCooldown: 0
+    });
+    sim.setColliders?.([{ id: 5, minX: 2, minY: -1, minZ: 0, maxX: 3, maxY: 1, maxZ: 3 }]);
+    const dt = 1 / 60;
+
+    sim.step(
+      { moveX: 0, moveY: 0, sprint: false, jump: false, dash: false, grapple: true, shield: false, shockwave: false, viewYaw: Math.PI / 2, viewPitch: 0 },
+      dt
+    );
+
+    const state = sim.getState() as ReturnType<typeof sim.getState> & {
+      grappleActive: boolean;
+      grappleAnchorZ: number;
+      grappleLength: number;
+    };
+    expect(state.grappleActive).toBe(true);
+    expect(state.grappleAnchorZ).toBeGreaterThan(0);
+    expect(state.grappleLength).toBeGreaterThan(0);
   });
 
   it('grapple skips acceleration when pull strength is zero', () => {

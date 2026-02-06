@@ -5,6 +5,8 @@
 import { HitConfirmedFx, HitConfirmedFxT } from '../../afps/protocol/hit-confirmed-fx.js';
 import { NearMissFx, NearMissFxT } from '../../afps/protocol/near-miss-fx.js';
 import { OverheatFx, OverheatFxT } from '../../afps/protocol/overheat-fx.js';
+import { PickupSpawnedFx, PickupSpawnedFxT } from '../../afps/protocol/pickup-spawned-fx.js';
+import { PickupTakenFx, PickupTakenFxT } from '../../afps/protocol/pickup-taken-fx.js';
 import { ProjectileImpactFx, ProjectileImpactFxT } from '../../afps/protocol/projectile-impact-fx.js';
 import { ProjectileRemoveFx, ProjectileRemoveFxT } from '../../afps/protocol/projectile-remove-fx.js';
 import { ProjectileSpawnFx, ProjectileSpawnFxT } from '../../afps/protocol/projectile-spawn-fx.js';
@@ -25,13 +27,15 @@ export enum FxEvent {
   HitConfirmedFx = 7,
   ProjectileSpawnFx = 8,
   ProjectileImpactFx = 9,
-  ProjectileRemoveFx = 10
+  ProjectileRemoveFx = 10,
+  PickupSpawnedFx = 11,
+  PickupTakenFx = 12
 }
 
 export function unionToFxEvent(
   type: FxEvent,
-  accessor: (obj:HitConfirmedFx|NearMissFx|OverheatFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx) => HitConfirmedFx|NearMissFx|OverheatFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx|null
-): HitConfirmedFx|NearMissFx|OverheatFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx|null {
+  accessor: (obj:HitConfirmedFx|NearMissFx|OverheatFx|PickupSpawnedFx|PickupTakenFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx) => HitConfirmedFx|NearMissFx|OverheatFx|PickupSpawnedFx|PickupTakenFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx|null
+): HitConfirmedFx|NearMissFx|OverheatFx|PickupSpawnedFx|PickupTakenFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx|null {
   switch(FxEvent[type]) {
     case 'NONE': return null; 
     case 'ShotFiredFx': return accessor(new ShotFiredFx())! as ShotFiredFx;
@@ -44,15 +48,17 @@ export function unionToFxEvent(
     case 'ProjectileSpawnFx': return accessor(new ProjectileSpawnFx())! as ProjectileSpawnFx;
     case 'ProjectileImpactFx': return accessor(new ProjectileImpactFx())! as ProjectileImpactFx;
     case 'ProjectileRemoveFx': return accessor(new ProjectileRemoveFx())! as ProjectileRemoveFx;
+    case 'PickupSpawnedFx': return accessor(new PickupSpawnedFx())! as PickupSpawnedFx;
+    case 'PickupTakenFx': return accessor(new PickupTakenFx())! as PickupTakenFx;
     default: return null;
   }
 }
 
 export function unionListToFxEvent(
   type: FxEvent, 
-  accessor: (index: number, obj:HitConfirmedFx|NearMissFx|OverheatFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx) => HitConfirmedFx|NearMissFx|OverheatFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx|null, 
+  accessor: (index: number, obj:HitConfirmedFx|NearMissFx|OverheatFx|PickupSpawnedFx|PickupTakenFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx) => HitConfirmedFx|NearMissFx|OverheatFx|PickupSpawnedFx|PickupTakenFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx|null, 
   index: number
-): HitConfirmedFx|NearMissFx|OverheatFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx|null {
+): HitConfirmedFx|NearMissFx|OverheatFx|PickupSpawnedFx|PickupTakenFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx|null {
   switch(FxEvent[type]) {
     case 'NONE': return null; 
     case 'ShotFiredFx': return accessor(index, new ShotFiredFx())! as ShotFiredFx;
@@ -65,6 +71,8 @@ export function unionListToFxEvent(
     case 'ProjectileSpawnFx': return accessor(index, new ProjectileSpawnFx())! as ProjectileSpawnFx;
     case 'ProjectileImpactFx': return accessor(index, new ProjectileImpactFx())! as ProjectileImpactFx;
     case 'ProjectileRemoveFx': return accessor(index, new ProjectileRemoveFx())! as ProjectileRemoveFx;
+    case 'PickupSpawnedFx': return accessor(index, new PickupSpawnedFx())! as PickupSpawnedFx;
+    case 'PickupTakenFx': return accessor(index, new PickupTakenFx())! as PickupTakenFx;
     default: return null;
   }
 }

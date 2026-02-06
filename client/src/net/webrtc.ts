@@ -303,7 +303,13 @@ export const createWebRtcConnector = ({
       if (!candidate.candidate || !candidate.sdpMid) {
         return;
       }
-      void signaling.sendCandidate(session.sessionToken, connection.connectionId, candidate);
+      void signaling.sendCandidate(session.sessionToken, connection.connectionId, candidate).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes('Request failed: 400') || message.includes('invalid_request')) {
+          return;
+        }
+        logger.warn(`candidate send failed: ${message}`);
+      });
     };
 
     peerConnection.oniceconnectionstatechange = () => {

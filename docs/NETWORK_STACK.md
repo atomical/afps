@@ -104,6 +104,7 @@ Schema: `shared/schema/afps_protocol.fbs`.
 
 **ServerHello** fields include:
 - `protocolVersion`, `connectionId`, `clientId`, `serverTickRate`, `snapshotRate`, `snapshotKeyframeInterval`.
+- `mapSeed` (deterministic procedural map seed used by clients to build matching map/collider state).
 
 ---
 
@@ -118,7 +119,7 @@ Schema: `shared/schema/afps_protocol.fbs`.
 
 - **StateSnapshot:** Full snapshot keyframes.
 - **StateSnapshotDelta:** Masked deltas between keyframes.
-- **GameEvent:** Hit confirmations, projectile events, etc.
+- **GameEvent:** Hit confirmations, projectile events, pickup spawn/taken events, etc.
 - **Pong:** Echoes `clientTimeMs`.
 
 ### Server → Client (reliable)
@@ -132,6 +133,7 @@ Schema: `shared/schema/afps_protocol.fbs`.
 - **Server tick:** 60 Hz.
 - **Snapshot rate:** 20 Hz.
 - **Keyframe interval:** Default 5 snapshots; configurable via `--snapshot-keyframe-interval`.
+- **World seed:** `ServerHello.mapSeed` drives deterministic map/collider generation on clients.
 - **Delta application:** Client applies deltas on top of the most recent keyframe; deltas before the first keyframe are ignored.
 - **Mask semantics:** A delta with `mask = 0` is valid and means "no field changes".
 

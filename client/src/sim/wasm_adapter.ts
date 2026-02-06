@@ -31,5 +31,6 @@ export const createWasmPredictionSim = (sim: WasmSimInstance): PredictionSim => 
   },
   setState: (x, y, z, velX, velY, velZ, dashCooldown) => sim.setState(x, y, z, velX, velY, velZ, dashCooldown),
   reset: () => sim.reset(),
-  setConfig: (config) => sim.setConfig(config)
+  setConfig: (config) => sim.setConfig(config),
+  setColliders: (colliders) => sim.setColliders(colliders)
 });

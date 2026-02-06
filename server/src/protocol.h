@@ -6,7 +6,7 @@
 #include <variant>
 #include <vector>
 
-constexpr int kProtocolVersion = 6;
+constexpr int kProtocolVersion = 7;
 constexpr int kServerTickRate = 60;
 constexpr int kSnapshotRate = 20;
 constexpr int kSnapshotKeyframeInterval = 5;
@@ -58,6 +58,7 @@ struct ServerHello {
   int snapshot_keyframe_interval = 0;
   std::string motd;
   std::string connection_nonce;
+  uint32_t map_seed = 0;
 };
 
 struct InputCmd {
@@ -116,6 +117,11 @@ enum class SurfaceType : uint8_t {
   Energy = 3,
 };
 
+enum class PickupKind : uint8_t {
+  Health = 1,
+  Weapon = 2,
+};
+
 struct ShotFiredFx {
   std::string shooter_id;
   uint8_t weapon_slot = 0;
@@ -135,6 +141,9 @@ struct ShotTraceFx {
   int16_t normal_oct_x = 0;
   int16_t normal_oct_y = 0;
   bool show_tracer = false;
+  int16_t hit_pos_x_q = 0;
+  int16_t hit_pos_y_q = 0;
+  int16_t hit_pos_z_q = 0;
 };
 
 struct ReloadFx {
@@ -195,6 +204,22 @@ struct ProjectileRemoveFx {
   int projectile_id = 0;
 };
 
+struct PickupSpawnedFx {
+  uint32_t pickup_id = 0;
+  PickupKind kind = PickupKind::Health;
+  int16_t pos_x_q = 0;
+  int16_t pos_y_q = 0;
+  int16_t pos_z_q = 0;
+  uint8_t weapon_slot = 0;
+  uint16_t amount = 0;
+};
+
+struct PickupTakenFx {
+  uint32_t pickup_id = 0;
+  std::string taker_id;
+  int server_tick = 0;
+};
+
 using FxEventData = std::variant<ShotFiredFx,
                                  ShotTraceFx,
                                  ReloadFx,
@@ -204,7 +229,9 @@ using FxEventData = std::variant<ShotFiredFx,
                                  HitConfirmedFx,
                                  ProjectileSpawnFx,
                                  ProjectileImpactFx,
-                                 ProjectileRemoveFx>;
+                                 ProjectileRemoveFx,
+                                 PickupSpawnedFx,
+                                 PickupTakenFx>;
 
 struct GameEventBatch {
   int server_tick = 0;

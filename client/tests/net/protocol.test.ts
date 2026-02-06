@@ -51,6 +51,9 @@ import { HitConfirmedFxT } from '../../src/net/fbs/afps/protocol/hit-confirmed-f
 import { HitKind } from '../../src/net/fbs/afps/protocol/hit-kind';
 import { NearMissFxT } from '../../src/net/fbs/afps/protocol/near-miss-fx';
 import { OverheatFxT } from '../../src/net/fbs/afps/protocol/overheat-fx';
+import { PickupKind } from '../../src/net/fbs/afps/protocol/pickup-kind';
+import { PickupSpawnedFxT } from '../../src/net/fbs/afps/protocol/pickup-spawned-fx';
+import { PickupTakenFxT } from '../../src/net/fbs/afps/protocol/pickup-taken-fx';
 import { PlayerProfile } from '../../src/net/fbs/afps/protocol/player-profile';
 import { Pong } from '../../src/net/fbs/afps/protocol/pong';
 import { ProjectileImpactFxT } from '../../src/net/fbs/afps/protocol/projectile-impact-fx';
@@ -192,7 +195,9 @@ const buildGameEventPayload = () => {
     FxEvent.ProjectileSpawnFx,
     FxEvent.ProjectileImpactFx,
     FxEvent.ProjectileImpactFx,
-    FxEvent.ProjectileRemoveFx
+    FxEvent.ProjectileRemoveFx,
+    FxEvent.PickupSpawnedFx,
+    FxEvent.PickupTakenFx
   ];
 
   const events = [
@@ -210,7 +215,10 @@ const buildGameEventPayload = () => {
       SurfaceType.Metal,
       5,
       6,
-      true
+      true,
+      111,
+      -222,
+      333
     ),
     new ReloadFxT('shooter-1', 1),
     new NearMissFxT('shooter-2', 7, 200),
@@ -220,7 +228,9 @@ const buildGameEventPayload = () => {
     new ProjectileSpawnFxT('shooter-4', 0, 9, 33, 1, 2, 3, 4, 5, 6, 50),
     new ProjectileImpactFxT(33, true, '', 10, 11, 12, -123, 456, SurfaceType.Stone),
     new ProjectileImpactFxT(34, false, 'target-2', 20, 21, 22, 222, -333, SurfaceType.Dirt),
-    new ProjectileRemoveFxT(33)
+    new ProjectileRemoveFxT(33),
+    new PickupSpawnedFxT(99, PickupKind.Health, 160, -80, 12, 0, 25),
+    new PickupTakenFxT(99, 'client-3', 123)
   ];
 
   const payload = new GameEventT(123, types, events as never).pack(builder);
@@ -260,7 +270,8 @@ describe('protocol helpers', () => {
       20,
       5,
       motd,
-      nonce
+      nonce,
+      1337
     );
     builder.finish(offset);
     const envelope = encodeEnvelope(MessageType.ServerHello, builder.asUint8Array(), 2, 1);
@@ -275,7 +286,8 @@ describe('protocol helpers', () => {
       snapshotKeyframeInterval: 5,
       motd: 'hi',
       clientId: 'client',
-      connectionNonce: 'nonce'
+      connectionNonce: 'nonce',
+      mapSeed: 1337
     });
   });
 
@@ -291,6 +303,7 @@ describe('protocol helpers', () => {
       20,
       0,
       0,
+      0,
       0
     );
     builder.finish(offset);
@@ -304,7 +317,8 @@ describe('protocol helpers', () => {
       snapshotKeyframeInterval: 0,
       motd: undefined,
       clientId: undefined,
-      connectionNonce: undefined
+      connectionNonce: undefined,
+      mapSeed: 0
     });
   });
 
@@ -532,7 +546,10 @@ describe('protocol helpers', () => {
           surfaceType: SurfaceType.Metal,
           normalOctX: 5,
           normalOctY: 6,
-          showTracer: true
+          showTracer: true,
+          hitPosXQ: 111,
+          hitPosYQ: -222,
+          hitPosZQ: 333
         },
         { type: 'ReloadFx', shooterId: 'shooter-1', weaponSlot: 1 },
         { type: 'NearMissFx', shooterId: 'shooter-2', shotSeq: 7, strength: 200 },
@@ -577,7 +594,23 @@ describe('protocol helpers', () => {
           normalOctY: -333,
           surfaceType: SurfaceType.Dirt
         },
-        { type: 'ProjectileRemoveFx', projectileId: 33 }
+        { type: 'ProjectileRemoveFx', projectileId: 33 },
+        {
+          type: 'PickupSpawnedFx',
+          pickupId: 99,
+          kind: PickupKind.Health,
+          posXQ: 160,
+          posYQ: -80,
+          posZQ: 12,
+          weaponSlot: 0,
+          amount: 25
+        },
+        {
+          type: 'PickupTakenFx',
+          pickupId: 99,
+          takerId: 'client-3',
+          serverTick: 123
+        }
       ]
     });
   });
@@ -596,6 +629,26 @@ describe('protocol helpers', () => {
       expect.objectContaining({
         type: 'ProjectileImpactFx',
         targetId: undefined
+      })
+    );
+  });
+
+  it('parses pickup taken events with empty taker ids', () => {
+    const builder = new flatbuffers.Builder(128);
+    const payload = new GameEventT(
+      3,
+      [FxEvent.PickupTakenFx],
+      [new PickupTakenFxT(9, '', 77)] as never
+    ).pack(builder);
+    builder.finish(payload);
+
+    const parsed = parseGameEventPayload(builder.asUint8Array());
+    expect(parsed?.events[0]).toEqual(
+      expect.objectContaining({
+        type: 'PickupTakenFx',
+        pickupId: 9,
+        takerId: undefined,
+        serverTick: 77
       })
     );
   });
@@ -682,7 +735,7 @@ describe('protocol helpers', () => {
     const helloBuilder = new flatbuffers.Builder(128);
     const connectionId = helloBuilder.createString('');
     const clientId = helloBuilder.createString('client');
-    const helloOffset = ServerHello.createServerHello(helloBuilder, 0, connectionId, clientId, 60, 20, 0, 0, 0);
+    const helloOffset = ServerHello.createServerHello(helloBuilder, 0, connectionId, clientId, 60, 20, 0, 0, 0, 0);
     helloBuilder.finish(helloOffset);
     expect(parseServerHelloPayload(helloBuilder.asUint8Array())).toBeNull();
 

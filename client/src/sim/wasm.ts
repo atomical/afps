@@ -1,4 +1,5 @@
 import { SIM_CONFIG, type SimConfig } from './config';
+import { sanitizeColliders, type AabbCollider } from '../world/collision';
 
 export interface WasmInput {
   moveX: number;
@@ -71,6 +72,18 @@ export interface WasmSimModule {
     velZ: number,
     dashCooldown: number
   ) => void;
+  _sim_clear_colliders: (handle: number) => void;
+  _sim_add_aabb_collider: (
+    handle: number,
+    id: number,
+    minX: number,
+    minY: number,
+    minZ: number,
+    maxX: number,
+    maxY: number,
+    maxZ: number,
+    surfaceType: number
+  ) => void;
   _sim_step: (
     handle: number,
     dt: number,
@@ -103,6 +116,7 @@ export interface WasmSimInstance {
   reset: () => void;
   setState: (x: number, y: number, z: number, velX: number, velY: number, velZ: number, dashCooldown: number) => void;
   setConfig: (config: SimConfig) => void;
+  setColliders: (colliders: readonly AabbCollider[]) => void;
   dispose: () => void;
 }
 
@@ -194,11 +208,29 @@ export const createWasmSim = (module: WasmSimModule, config: SimConfig = SIM_CON
     );
   };
 
+  const setColliders = (colliders: readonly AabbCollider[]) => {
+    module._sim_clear_colliders(handle);
+    const sanitized = sanitizeColliders(colliders);
+    for (const collider of sanitized) {
+      module._sim_add_aabb_collider(
+        handle,
+        collider.id,
+        collider.minX,
+        collider.minY,
+        collider.minZ,
+        collider.maxX,
+        collider.maxY,
+        collider.maxZ,
+        Number.isFinite(collider.surfaceType) ? Math.floor(collider.surfaceType!) : 0
+      );
+    }
+  };
+
   const dispose = () => {
     module._sim_destroy(handle);
   };
 
-  return { step, getState, reset, setState, setConfig, dispose };
+  return { step, getState, reset, setState, setConfig, setColliders, dispose };
 };
 
 export type WasmModuleFactory = () => Promise<WasmSimModule>;

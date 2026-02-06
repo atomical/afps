@@ -56,6 +56,14 @@ struct ProjectileRemoveFx;
 struct ProjectileRemoveFxBuilder;
 struct ProjectileRemoveFxT;
 
+struct PickupSpawnedFx;
+struct PickupSpawnedFxBuilder;
+struct PickupSpawnedFxT;
+
+struct PickupTakenFx;
+struct PickupTakenFxBuilder;
+struct PickupTakenFxT;
+
 struct ClientHello;
 struct ClientHelloBuilder;
 struct ClientHelloT;
@@ -281,6 +289,39 @@ inline const char *EnumNameSurfaceType(SurfaceType e) {
   return EnumNamesSurfaceType()[index];
 }
 
+enum class PickupKind : uint8_t {
+  None = 0,
+  Health = 1,
+  Weapon = 2,
+  MIN = None,
+  MAX = Weapon
+};
+
+inline const PickupKind (&EnumValuesPickupKind())[3] {
+  static const PickupKind values[] = {
+    PickupKind::None,
+    PickupKind::Health,
+    PickupKind::Weapon
+  };
+  return values;
+}
+
+inline const char * const *EnumNamesPickupKind() {
+  static const char * const names[4] = {
+    "None",
+    "Health",
+    "Weapon",
+    nullptr
+  };
+  return names;
+}
+
+inline const char *EnumNamePickupKind(PickupKind e) {
+  if (::flatbuffers::IsOutRange(e, PickupKind::None, PickupKind::Weapon)) return "";
+  const size_t index = static_cast<size_t>(e);
+  return EnumNamesPickupKind()[index];
+}
+
 enum class FxEvent : uint8_t {
   NONE = 0,
   ShotFiredFx = 1,
@@ -293,11 +334,13 @@ enum class FxEvent : uint8_t {
   ProjectileSpawnFx = 8,
   ProjectileImpactFx = 9,
   ProjectileRemoveFx = 10,
+  PickupSpawnedFx = 11,
+  PickupTakenFx = 12,
   MIN = NONE,
-  MAX = ProjectileRemoveFx
+  MAX = PickupTakenFx
 };
 
-inline const FxEvent (&EnumValuesFxEvent())[11] {
+inline const FxEvent (&EnumValuesFxEvent())[13] {
   static const FxEvent values[] = {
     FxEvent::NONE,
     FxEvent::ShotFiredFx,
@@ -309,13 +352,15 @@ inline const FxEvent (&EnumValuesFxEvent())[11] {
     FxEvent::HitConfirmedFx,
     FxEvent::ProjectileSpawnFx,
     FxEvent::ProjectileImpactFx,
-    FxEvent::ProjectileRemoveFx
+    FxEvent::ProjectileRemoveFx,
+    FxEvent::PickupSpawnedFx,
+    FxEvent::PickupTakenFx
   };
   return values;
 }
 
 inline const char * const *EnumNamesFxEvent() {
-  static const char * const names[12] = {
+  static const char * const names[14] = {
     "NONE",
     "ShotFiredFx",
     "ShotTraceFx",
@@ -327,13 +372,15 @@ inline const char * const *EnumNamesFxEvent() {
     "ProjectileSpawnFx",
     "ProjectileImpactFx",
     "ProjectileRemoveFx",
+    "PickupSpawnedFx",
+    "PickupTakenFx",
     nullptr
   };
   return names;
 }
 
 inline const char *EnumNameFxEvent(FxEvent e) {
-  if (::flatbuffers::IsOutRange(e, FxEvent::NONE, FxEvent::ProjectileRemoveFx)) return "";
+  if (::flatbuffers::IsOutRange(e, FxEvent::NONE, FxEvent::PickupTakenFx)) return "";
   const size_t index = static_cast<size_t>(e);
   return EnumNamesFxEvent()[index];
 }
@@ -382,6 +429,14 @@ template<> struct FxEventTraits<afps::protocol::ProjectileRemoveFx> {
   static const FxEvent enum_value = FxEvent::ProjectileRemoveFx;
 };
 
+template<> struct FxEventTraits<afps::protocol::PickupSpawnedFx> {
+  static const FxEvent enum_value = FxEvent::PickupSpawnedFx;
+};
+
+template<> struct FxEventTraits<afps::protocol::PickupTakenFx> {
+  static const FxEvent enum_value = FxEvent::PickupTakenFx;
+};
+
 template<typename T> struct FxEventUnionTraits {
   static const FxEvent enum_value = FxEvent::NONE;
 };
@@ -424,6 +479,14 @@ template<> struct FxEventUnionTraits<afps::protocol::ProjectileImpactFxT> {
 
 template<> struct FxEventUnionTraits<afps::protocol::ProjectileRemoveFxT> {
   static const FxEvent enum_value = FxEvent::ProjectileRemoveFx;
+};
+
+template<> struct FxEventUnionTraits<afps::protocol::PickupSpawnedFxT> {
+  static const FxEvent enum_value = FxEvent::PickupSpawnedFx;
+};
+
+template<> struct FxEventUnionTraits<afps::protocol::PickupTakenFxT> {
+  static const FxEvent enum_value = FxEvent::PickupTakenFx;
 };
 
 struct FxEventUnion {
@@ -535,6 +598,22 @@ struct FxEventUnion {
   const afps::protocol::ProjectileRemoveFxT *AsProjectileRemoveFx() const {
     return type == FxEvent::ProjectileRemoveFx ?
       reinterpret_cast<const afps::protocol::ProjectileRemoveFxT *>(value) : nullptr;
+  }
+  afps::protocol::PickupSpawnedFxT *AsPickupSpawnedFx() {
+    return type == FxEvent::PickupSpawnedFx ?
+      reinterpret_cast<afps::protocol::PickupSpawnedFxT *>(value) : nullptr;
+  }
+  const afps::protocol::PickupSpawnedFxT *AsPickupSpawnedFx() const {
+    return type == FxEvent::PickupSpawnedFx ?
+      reinterpret_cast<const afps::protocol::PickupSpawnedFxT *>(value) : nullptr;
+  }
+  afps::protocol::PickupTakenFxT *AsPickupTakenFx() {
+    return type == FxEvent::PickupTakenFx ?
+      reinterpret_cast<afps::protocol::PickupTakenFxT *>(value) : nullptr;
+  }
+  const afps::protocol::PickupTakenFxT *AsPickupTakenFx() const {
+    return type == FxEvent::PickupTakenFx ?
+      reinterpret_cast<const afps::protocol::PickupTakenFxT *>(value) : nullptr;
   }
 };
 
@@ -658,6 +737,9 @@ struct ShotTraceFxT : public ::flatbuffers::NativeTable {
   int16_t normal_oct_x = 0;
   int16_t normal_oct_y = 0;
   bool show_tracer = false;
+  int16_t hit_pos_x_q = 0;
+  int16_t hit_pos_y_q = 0;
+  int16_t hit_pos_z_q = 0;
 };
 
 struct ShotTraceFx FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -674,7 +756,10 @@ struct ShotTraceFx FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_SURFACE_TYPE = 18,
     VT_NORMAL_OCT_X = 20,
     VT_NORMAL_OCT_Y = 22,
-    VT_SHOW_TRACER = 24
+    VT_SHOW_TRACER = 24,
+    VT_HIT_POS_X_Q = 26,
+    VT_HIT_POS_Y_Q = 28,
+    VT_HIT_POS_Z_Q = 30
   };
   const ::flatbuffers::String *shooter_id() const {
     return GetPointer<const ::flatbuffers::String *>(VT_SHOOTER_ID);
@@ -709,6 +794,15 @@ struct ShotTraceFx FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   bool show_tracer() const {
     return GetField<uint8_t>(VT_SHOW_TRACER, 0) != 0;
   }
+  int16_t hit_pos_x_q() const {
+    return GetField<int16_t>(VT_HIT_POS_X_Q, 0);
+  }
+  int16_t hit_pos_y_q() const {
+    return GetField<int16_t>(VT_HIT_POS_Y_Q, 0);
+  }
+  int16_t hit_pos_z_q() const {
+    return GetField<int16_t>(VT_HIT_POS_Z_Q, 0);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -724,6 +818,9 @@ struct ShotTraceFx FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<int16_t>(verifier, VT_NORMAL_OCT_X, 2) &&
            VerifyField<int16_t>(verifier, VT_NORMAL_OCT_Y, 2) &&
            VerifyField<uint8_t>(verifier, VT_SHOW_TRACER, 1) &&
+           VerifyField<int16_t>(verifier, VT_HIT_POS_X_Q, 2) &&
+           VerifyField<int16_t>(verifier, VT_HIT_POS_Y_Q, 2) &&
+           VerifyField<int16_t>(verifier, VT_HIT_POS_Z_Q, 2) &&
            verifier.EndTable();
   }
   ShotTraceFxT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -768,6 +865,15 @@ struct ShotTraceFxBuilder {
   void add_show_tracer(bool show_tracer) {
     fbb_.AddElement<uint8_t>(ShotTraceFx::VT_SHOW_TRACER, static_cast<uint8_t>(show_tracer), 0);
   }
+  void add_hit_pos_x_q(int16_t hit_pos_x_q) {
+    fbb_.AddElement<int16_t>(ShotTraceFx::VT_HIT_POS_X_Q, hit_pos_x_q, 0);
+  }
+  void add_hit_pos_y_q(int16_t hit_pos_y_q) {
+    fbb_.AddElement<int16_t>(ShotTraceFx::VT_HIT_POS_Y_Q, hit_pos_y_q, 0);
+  }
+  void add_hit_pos_z_q(int16_t hit_pos_z_q) {
+    fbb_.AddElement<int16_t>(ShotTraceFx::VT_HIT_POS_Z_Q, hit_pos_z_q, 0);
+  }
   explicit ShotTraceFxBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -791,10 +897,16 @@ inline ::flatbuffers::Offset<ShotTraceFx> CreateShotTraceFx(
     afps::protocol::SurfaceType surface_type = afps::protocol::SurfaceType::Stone,
     int16_t normal_oct_x = 0,
     int16_t normal_oct_y = 0,
-    bool show_tracer = false) {
+    bool show_tracer = false,
+    int16_t hit_pos_x_q = 0,
+    int16_t hit_pos_y_q = 0,
+    int16_t hit_pos_z_q = 0) {
   ShotTraceFxBuilder builder_(_fbb);
   builder_.add_shot_seq(shot_seq);
   builder_.add_shooter_id(shooter_id);
+  builder_.add_hit_pos_z_q(hit_pos_z_q);
+  builder_.add_hit_pos_y_q(hit_pos_y_q);
+  builder_.add_hit_pos_x_q(hit_pos_x_q);
   builder_.add_normal_oct_y(normal_oct_y);
   builder_.add_normal_oct_x(normal_oct_x);
   builder_.add_hit_dist_q(hit_dist_q);
@@ -819,7 +931,10 @@ inline ::flatbuffers::Offset<ShotTraceFx> CreateShotTraceFxDirect(
     afps::protocol::SurfaceType surface_type = afps::protocol::SurfaceType::Stone,
     int16_t normal_oct_x = 0,
     int16_t normal_oct_y = 0,
-    bool show_tracer = false) {
+    bool show_tracer = false,
+    int16_t hit_pos_x_q = 0,
+    int16_t hit_pos_y_q = 0,
+    int16_t hit_pos_z_q = 0) {
   auto shooter_id__ = shooter_id ? _fbb.CreateString(shooter_id) : 0;
   return afps::protocol::CreateShotTraceFx(
       _fbb,
@@ -833,7 +948,10 @@ inline ::flatbuffers::Offset<ShotTraceFx> CreateShotTraceFxDirect(
       surface_type,
       normal_oct_x,
       normal_oct_y,
-      show_tracer);
+      show_tracer,
+      hit_pos_x_q,
+      hit_pos_y_q,
+      hit_pos_z_q);
 }
 
 ::flatbuffers::Offset<ShotTraceFx> CreateShotTraceFx(::flatbuffers::FlatBufferBuilder &_fbb, const ShotTraceFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
@@ -1670,6 +1788,214 @@ inline ::flatbuffers::Offset<ProjectileRemoveFx> CreateProjectileRemoveFx(
 
 ::flatbuffers::Offset<ProjectileRemoveFx> CreateProjectileRemoveFx(::flatbuffers::FlatBufferBuilder &_fbb, const ProjectileRemoveFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
 
+struct PickupSpawnedFxT : public ::flatbuffers::NativeTable {
+  typedef PickupSpawnedFx TableType;
+  uint32_t pickup_id = 0;
+  afps::protocol::PickupKind kind = afps::protocol::PickupKind::None;
+  int16_t pos_x_q = 0;
+  int16_t pos_y_q = 0;
+  int16_t pos_z_q = 0;
+  uint8_t weapon_slot = 0;
+  uint16_t amount = 0;
+};
+
+struct PickupSpawnedFx FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef PickupSpawnedFxT NativeTableType;
+  typedef PickupSpawnedFxBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_PICKUP_ID = 4,
+    VT_KIND = 6,
+    VT_POS_X_Q = 8,
+    VT_POS_Y_Q = 10,
+    VT_POS_Z_Q = 12,
+    VT_WEAPON_SLOT = 14,
+    VT_AMOUNT = 16
+  };
+  uint32_t pickup_id() const {
+    return GetField<uint32_t>(VT_PICKUP_ID, 0);
+  }
+  afps::protocol::PickupKind kind() const {
+    return static_cast<afps::protocol::PickupKind>(GetField<uint8_t>(VT_KIND, 0));
+  }
+  int16_t pos_x_q() const {
+    return GetField<int16_t>(VT_POS_X_Q, 0);
+  }
+  int16_t pos_y_q() const {
+    return GetField<int16_t>(VT_POS_Y_Q, 0);
+  }
+  int16_t pos_z_q() const {
+    return GetField<int16_t>(VT_POS_Z_Q, 0);
+  }
+  uint8_t weapon_slot() const {
+    return GetField<uint8_t>(VT_WEAPON_SLOT, 0);
+  }
+  uint16_t amount() const {
+    return GetField<uint16_t>(VT_AMOUNT, 0);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint32_t>(verifier, VT_PICKUP_ID, 4) &&
+           VerifyField<uint8_t>(verifier, VT_KIND, 1) &&
+           VerifyField<int16_t>(verifier, VT_POS_X_Q, 2) &&
+           VerifyField<int16_t>(verifier, VT_POS_Y_Q, 2) &&
+           VerifyField<int16_t>(verifier, VT_POS_Z_Q, 2) &&
+           VerifyField<uint8_t>(verifier, VT_WEAPON_SLOT, 1) &&
+           VerifyField<uint16_t>(verifier, VT_AMOUNT, 2) &&
+           verifier.EndTable();
+  }
+  PickupSpawnedFxT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  void UnPackTo(PickupSpawnedFxT *_o, const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  static ::flatbuffers::Offset<PickupSpawnedFx> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const PickupSpawnedFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+};
+
+struct PickupSpawnedFxBuilder {
+  typedef PickupSpawnedFx Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_pickup_id(uint32_t pickup_id) {
+    fbb_.AddElement<uint32_t>(PickupSpawnedFx::VT_PICKUP_ID, pickup_id, 0);
+  }
+  void add_kind(afps::protocol::PickupKind kind) {
+    fbb_.AddElement<uint8_t>(PickupSpawnedFx::VT_KIND, static_cast<uint8_t>(kind), 0);
+  }
+  void add_pos_x_q(int16_t pos_x_q) {
+    fbb_.AddElement<int16_t>(PickupSpawnedFx::VT_POS_X_Q, pos_x_q, 0);
+  }
+  void add_pos_y_q(int16_t pos_y_q) {
+    fbb_.AddElement<int16_t>(PickupSpawnedFx::VT_POS_Y_Q, pos_y_q, 0);
+  }
+  void add_pos_z_q(int16_t pos_z_q) {
+    fbb_.AddElement<int16_t>(PickupSpawnedFx::VT_POS_Z_Q, pos_z_q, 0);
+  }
+  void add_weapon_slot(uint8_t weapon_slot) {
+    fbb_.AddElement<uint8_t>(PickupSpawnedFx::VT_WEAPON_SLOT, weapon_slot, 0);
+  }
+  void add_amount(uint16_t amount) {
+    fbb_.AddElement<uint16_t>(PickupSpawnedFx::VT_AMOUNT, amount, 0);
+  }
+  explicit PickupSpawnedFxBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<PickupSpawnedFx> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<PickupSpawnedFx>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<PickupSpawnedFx> CreatePickupSpawnedFx(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t pickup_id = 0,
+    afps::protocol::PickupKind kind = afps::protocol::PickupKind::None,
+    int16_t pos_x_q = 0,
+    int16_t pos_y_q = 0,
+    int16_t pos_z_q = 0,
+    uint8_t weapon_slot = 0,
+    uint16_t amount = 0) {
+  PickupSpawnedFxBuilder builder_(_fbb);
+  builder_.add_pickup_id(pickup_id);
+  builder_.add_amount(amount);
+  builder_.add_pos_z_q(pos_z_q);
+  builder_.add_pos_y_q(pos_y_q);
+  builder_.add_pos_x_q(pos_x_q);
+  builder_.add_weapon_slot(weapon_slot);
+  builder_.add_kind(kind);
+  return builder_.Finish();
+}
+
+::flatbuffers::Offset<PickupSpawnedFx> CreatePickupSpawnedFx(::flatbuffers::FlatBufferBuilder &_fbb, const PickupSpawnedFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+
+struct PickupTakenFxT : public ::flatbuffers::NativeTable {
+  typedef PickupTakenFx TableType;
+  uint32_t pickup_id = 0;
+  std::string taker_id{};
+  int32_t server_tick = 0;
+};
+
+struct PickupTakenFx FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef PickupTakenFxT NativeTableType;
+  typedef PickupTakenFxBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_PICKUP_ID = 4,
+    VT_TAKER_ID = 6,
+    VT_SERVER_TICK = 8
+  };
+  uint32_t pickup_id() const {
+    return GetField<uint32_t>(VT_PICKUP_ID, 0);
+  }
+  const ::flatbuffers::String *taker_id() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_TAKER_ID);
+  }
+  int32_t server_tick() const {
+    return GetField<int32_t>(VT_SERVER_TICK, 0);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint32_t>(verifier, VT_PICKUP_ID, 4) &&
+           VerifyOffset(verifier, VT_TAKER_ID) &&
+           verifier.VerifyString(taker_id()) &&
+           VerifyField<int32_t>(verifier, VT_SERVER_TICK, 4) &&
+           verifier.EndTable();
+  }
+  PickupTakenFxT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  void UnPackTo(PickupTakenFxT *_o, const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  static ::flatbuffers::Offset<PickupTakenFx> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const PickupTakenFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+};
+
+struct PickupTakenFxBuilder {
+  typedef PickupTakenFx Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_pickup_id(uint32_t pickup_id) {
+    fbb_.AddElement<uint32_t>(PickupTakenFx::VT_PICKUP_ID, pickup_id, 0);
+  }
+  void add_taker_id(::flatbuffers::Offset<::flatbuffers::String> taker_id) {
+    fbb_.AddOffset(PickupTakenFx::VT_TAKER_ID, taker_id);
+  }
+  void add_server_tick(int32_t server_tick) {
+    fbb_.AddElement<int32_t>(PickupTakenFx::VT_SERVER_TICK, server_tick, 0);
+  }
+  explicit PickupTakenFxBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<PickupTakenFx> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<PickupTakenFx>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<PickupTakenFx> CreatePickupTakenFx(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t pickup_id = 0,
+    ::flatbuffers::Offset<::flatbuffers::String> taker_id = 0,
+    int32_t server_tick = 0) {
+  PickupTakenFxBuilder builder_(_fbb);
+  builder_.add_server_tick(server_tick);
+  builder_.add_taker_id(taker_id);
+  builder_.add_pickup_id(pickup_id);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<PickupTakenFx> CreatePickupTakenFxDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t pickup_id = 0,
+    const char *taker_id = nullptr,
+    int32_t server_tick = 0) {
+  auto taker_id__ = taker_id ? _fbb.CreateString(taker_id) : 0;
+  return afps::protocol::CreatePickupTakenFx(
+      _fbb,
+      pickup_id,
+      taker_id__,
+      server_tick);
+}
+
+::flatbuffers::Offset<PickupTakenFx> CreatePickupTakenFx(::flatbuffers::FlatBufferBuilder &_fbb, const PickupTakenFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+
 struct ClientHelloT : public ::flatbuffers::NativeTable {
   typedef ClientHello TableType;
   uint16_t protocol_version = 0;
@@ -1816,6 +2142,7 @@ struct ServerHelloT : public ::flatbuffers::NativeTable {
   uint16_t snapshot_keyframe_interval = 0;
   std::string motd{};
   std::string connection_nonce{};
+  uint32_t map_seed = 0;
 };
 
 struct ServerHello FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -1829,7 +2156,8 @@ struct ServerHello FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_SNAPSHOT_RATE = 12,
     VT_SNAPSHOT_KEYFRAME_INTERVAL = 14,
     VT_MOTD = 16,
-    VT_CONNECTION_NONCE = 18
+    VT_CONNECTION_NONCE = 18,
+    VT_MAP_SEED = 20
   };
   uint16_t protocol_version() const {
     return GetField<uint16_t>(VT_PROTOCOL_VERSION, 0);
@@ -1855,6 +2183,9 @@ struct ServerHello FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   const ::flatbuffers::String *connection_nonce() const {
     return GetPointer<const ::flatbuffers::String *>(VT_CONNECTION_NONCE);
   }
+  uint32_t map_seed() const {
+    return GetField<uint32_t>(VT_MAP_SEED, 0);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -1870,6 +2201,7 @@ struct ServerHello FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            verifier.VerifyString(motd()) &&
            VerifyOffset(verifier, VT_CONNECTION_NONCE) &&
            verifier.VerifyString(connection_nonce()) &&
+           VerifyField<uint32_t>(verifier, VT_MAP_SEED, 4) &&
            verifier.EndTable();
   }
   ServerHelloT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -1905,6 +2237,9 @@ struct ServerHelloBuilder {
   void add_connection_nonce(::flatbuffers::Offset<::flatbuffers::String> connection_nonce) {
     fbb_.AddOffset(ServerHello::VT_CONNECTION_NONCE, connection_nonce);
   }
+  void add_map_seed(uint32_t map_seed) {
+    fbb_.AddElement<uint32_t>(ServerHello::VT_MAP_SEED, map_seed, 0);
+  }
   explicit ServerHelloBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -1925,8 +2260,10 @@ inline ::flatbuffers::Offset<ServerHello> CreateServerHello(
     uint16_t snapshot_rate = 0,
     uint16_t snapshot_keyframe_interval = 0,
     ::flatbuffers::Offset<::flatbuffers::String> motd = 0,
-    ::flatbuffers::Offset<::flatbuffers::String> connection_nonce = 0) {
+    ::flatbuffers::Offset<::flatbuffers::String> connection_nonce = 0,
+    uint32_t map_seed = 0) {
   ServerHelloBuilder builder_(_fbb);
+  builder_.add_map_seed(map_seed);
   builder_.add_connection_nonce(connection_nonce);
   builder_.add_motd(motd);
   builder_.add_client_id(client_id);
@@ -1947,7 +2284,8 @@ inline ::flatbuffers::Offset<ServerHello> CreateServerHelloDirect(
     uint16_t snapshot_rate = 0,
     uint16_t snapshot_keyframe_interval = 0,
     const char *motd = nullptr,
-    const char *connection_nonce = nullptr) {
+    const char *connection_nonce = nullptr,
+    uint32_t map_seed = 0) {
   auto connection_id__ = connection_id ? _fbb.CreateString(connection_id) : 0;
   auto client_id__ = client_id ? _fbb.CreateString(client_id) : 0;
   auto motd__ = motd ? _fbb.CreateString(motd) : 0;
@@ -1961,7 +2299,8 @@ inline ::flatbuffers::Offset<ServerHello> CreateServerHelloDirect(
       snapshot_rate,
       snapshot_keyframe_interval,
       motd__,
-      connection_nonce__);
+      connection_nonce__,
+      map_seed);
 }
 
 ::flatbuffers::Offset<ServerHello> CreateServerHello(::flatbuffers::FlatBufferBuilder &_fbb, const ServerHelloT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
@@ -3692,6 +4031,9 @@ inline void ShotTraceFx::UnPackTo(ShotTraceFxT *_o, const ::flatbuffers::resolve
   { auto _e = normal_oct_x(); _o->normal_oct_x = _e; }
   { auto _e = normal_oct_y(); _o->normal_oct_y = _e; }
   { auto _e = show_tracer(); _o->show_tracer = _e; }
+  { auto _e = hit_pos_x_q(); _o->hit_pos_x_q = _e; }
+  { auto _e = hit_pos_y_q(); _o->hit_pos_y_q = _e; }
+  { auto _e = hit_pos_z_q(); _o->hit_pos_z_q = _e; }
 }
 
 inline ::flatbuffers::Offset<ShotTraceFx> CreateShotTraceFx(::flatbuffers::FlatBufferBuilder &_fbb, const ShotTraceFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
@@ -3713,6 +4055,9 @@ inline ::flatbuffers::Offset<ShotTraceFx> ShotTraceFx::Pack(::flatbuffers::FlatB
   auto _normal_oct_x = _o->normal_oct_x;
   auto _normal_oct_y = _o->normal_oct_y;
   auto _show_tracer = _o->show_tracer;
+  auto _hit_pos_x_q = _o->hit_pos_x_q;
+  auto _hit_pos_y_q = _o->hit_pos_y_q;
+  auto _hit_pos_z_q = _o->hit_pos_z_q;
   return afps::protocol::CreateShotTraceFx(
       _fbb,
       _shooter_id,
@@ -3725,7 +4070,10 @@ inline ::flatbuffers::Offset<ShotTraceFx> ShotTraceFx::Pack(::flatbuffers::FlatB
       _surface_type,
       _normal_oct_x,
       _normal_oct_y,
-      _show_tracer);
+      _show_tracer,
+      _hit_pos_x_q,
+      _hit_pos_y_q,
+      _hit_pos_z_q);
 }
 
 inline ReloadFxT *ReloadFx::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
@@ -4014,6 +4362,82 @@ inline ::flatbuffers::Offset<ProjectileRemoveFx> ProjectileRemoveFx::Pack(::flat
       _projectile_id);
 }
 
+inline PickupSpawnedFxT *PickupSpawnedFx::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
+  auto _o = std::unique_ptr<PickupSpawnedFxT>(new PickupSpawnedFxT());
+  UnPackTo(_o.get(), _resolver);
+  return _o.release();
+}
+
+inline void PickupSpawnedFx::UnPackTo(PickupSpawnedFxT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
+  (void)_o;
+  (void)_resolver;
+  { auto _e = pickup_id(); _o->pickup_id = _e; }
+  { auto _e = kind(); _o->kind = _e; }
+  { auto _e = pos_x_q(); _o->pos_x_q = _e; }
+  { auto _e = pos_y_q(); _o->pos_y_q = _e; }
+  { auto _e = pos_z_q(); _o->pos_z_q = _e; }
+  { auto _e = weapon_slot(); _o->weapon_slot = _e; }
+  { auto _e = amount(); _o->amount = _e; }
+}
+
+inline ::flatbuffers::Offset<PickupSpawnedFx> CreatePickupSpawnedFx(::flatbuffers::FlatBufferBuilder &_fbb, const PickupSpawnedFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  return PickupSpawnedFx::Pack(_fbb, _o, _rehasher);
+}
+
+inline ::flatbuffers::Offset<PickupSpawnedFx> PickupSpawnedFx::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const PickupSpawnedFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  (void)_rehasher;
+  (void)_o;
+  struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const PickupSpawnedFxT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
+  auto _pickup_id = _o->pickup_id;
+  auto _kind = _o->kind;
+  auto _pos_x_q = _o->pos_x_q;
+  auto _pos_y_q = _o->pos_y_q;
+  auto _pos_z_q = _o->pos_z_q;
+  auto _weapon_slot = _o->weapon_slot;
+  auto _amount = _o->amount;
+  return afps::protocol::CreatePickupSpawnedFx(
+      _fbb,
+      _pickup_id,
+      _kind,
+      _pos_x_q,
+      _pos_y_q,
+      _pos_z_q,
+      _weapon_slot,
+      _amount);
+}
+
+inline PickupTakenFxT *PickupTakenFx::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
+  auto _o = std::unique_ptr<PickupTakenFxT>(new PickupTakenFxT());
+  UnPackTo(_o.get(), _resolver);
+  return _o.release();
+}
+
+inline void PickupTakenFx::UnPackTo(PickupTakenFxT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
+  (void)_o;
+  (void)_resolver;
+  { auto _e = pickup_id(); _o->pickup_id = _e; }
+  { auto _e = taker_id(); if (_e) _o->taker_id = _e->str(); }
+  { auto _e = server_tick(); _o->server_tick = _e; }
+}
+
+inline ::flatbuffers::Offset<PickupTakenFx> CreatePickupTakenFx(::flatbuffers::FlatBufferBuilder &_fbb, const PickupTakenFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  return PickupTakenFx::Pack(_fbb, _o, _rehasher);
+}
+
+inline ::flatbuffers::Offset<PickupTakenFx> PickupTakenFx::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const PickupTakenFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  (void)_rehasher;
+  (void)_o;
+  struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const PickupTakenFxT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
+  auto _pickup_id = _o->pickup_id;
+  auto _taker_id = _o->taker_id.empty() ? 0 : _fbb.CreateString(_o->taker_id);
+  auto _server_tick = _o->server_tick;
+  return afps::protocol::CreatePickupTakenFx(
+      _fbb,
+      _pickup_id,
+      _taker_id,
+      _server_tick);
+}
+
 inline ClientHelloT *ClientHello::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
   auto _o = std::unique_ptr<ClientHelloT>(new ClientHelloT());
   UnPackTo(_o.get(), _resolver);
@@ -4072,6 +4496,7 @@ inline void ServerHello::UnPackTo(ServerHelloT *_o, const ::flatbuffers::resolve
   { auto _e = snapshot_keyframe_interval(); _o->snapshot_keyframe_interval = _e; }
   { auto _e = motd(); if (_e) _o->motd = _e->str(); }
   { auto _e = connection_nonce(); if (_e) _o->connection_nonce = _e->str(); }
+  { auto _e = map_seed(); _o->map_seed = _e; }
 }
 
 inline ::flatbuffers::Offset<ServerHello> CreateServerHello(::flatbuffers::FlatBufferBuilder &_fbb, const ServerHelloT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
@@ -4090,6 +4515,7 @@ inline ::flatbuffers::Offset<ServerHello> ServerHello::Pack(::flatbuffers::FlatB
   auto _snapshot_keyframe_interval = _o->snapshot_keyframe_interval;
   auto _motd = _o->motd.empty() ? 0 : _fbb.CreateString(_o->motd);
   auto _connection_nonce = _o->connection_nonce.empty() ? 0 : _fbb.CreateString(_o->connection_nonce);
+  auto _map_seed = _o->map_seed;
   return afps::protocol::CreateServerHello(
       _fbb,
       _protocol_version,
@@ -4099,7 +4525,8 @@ inline ::flatbuffers::Offset<ServerHello> ServerHello::Pack(::flatbuffers::FlatB
       _snapshot_rate,
       _snapshot_keyframe_interval,
       _motd,
-      _connection_nonce);
+      _connection_nonce,
+      _map_seed);
 }
 
 inline JoinRequestT *JoinRequest::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
@@ -4696,6 +5123,14 @@ inline bool VerifyFxEvent(::flatbuffers::VerifierTemplate<B> &verifier, const vo
       auto ptr = reinterpret_cast<const afps::protocol::ProjectileRemoveFx *>(obj);
       return verifier.VerifyTable(ptr);
     }
+    case FxEvent::PickupSpawnedFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::PickupSpawnedFx *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case FxEvent::PickupTakenFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::PickupTakenFx *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
     default: return true;
   }
 }
@@ -4756,6 +5191,14 @@ inline void *FxEventUnion::UnPack(const void *obj, FxEvent type, const ::flatbuf
       auto ptr = reinterpret_cast<const afps::protocol::ProjectileRemoveFx *>(obj);
       return ptr->UnPack(resolver);
     }
+    case FxEvent::PickupSpawnedFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::PickupSpawnedFx *>(obj);
+      return ptr->UnPack(resolver);
+    }
+    case FxEvent::PickupTakenFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::PickupTakenFx *>(obj);
+      return ptr->UnPack(resolver);
+    }
     default: return nullptr;
   }
 }
@@ -4803,6 +5246,14 @@ inline ::flatbuffers::Offset<void> FxEventUnion::Pack(::flatbuffers::FlatBufferB
       auto ptr = reinterpret_cast<const afps::protocol::ProjectileRemoveFxT *>(value);
       return CreateProjectileRemoveFx(_fbb, ptr, _rehasher).Union();
     }
+    case FxEvent::PickupSpawnedFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::PickupSpawnedFxT *>(value);
+      return CreatePickupSpawnedFx(_fbb, ptr, _rehasher).Union();
+    }
+    case FxEvent::PickupTakenFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::PickupTakenFxT *>(value);
+      return CreatePickupTakenFx(_fbb, ptr, _rehasher).Union();
+    }
     default: return 0;
   }
 }
@@ -4847,6 +5298,14 @@ inline FxEventUnion::FxEventUnion(const FxEventUnion &u) : type(u.type), value(n
     }
     case FxEvent::ProjectileRemoveFx: {
       value = new afps::protocol::ProjectileRemoveFxT(*reinterpret_cast<afps::protocol::ProjectileRemoveFxT *>(u.value));
+      break;
+    }
+    case FxEvent::PickupSpawnedFx: {
+      value = new afps::protocol::PickupSpawnedFxT(*reinterpret_cast<afps::protocol::PickupSpawnedFxT *>(u.value));
+      break;
+    }
+    case FxEvent::PickupTakenFx: {
+      value = new afps::protocol::PickupTakenFxT(*reinterpret_cast<afps::protocol::PickupTakenFxT *>(u.value));
       break;
     }
     default:
@@ -4903,6 +5362,16 @@ inline void FxEventUnion::Reset() {
     }
     case FxEvent::ProjectileRemoveFx: {
       auto ptr = reinterpret_cast<afps::protocol::ProjectileRemoveFxT *>(value);
+      delete ptr;
+      break;
+    }
+    case FxEvent::PickupSpawnedFx: {
+      auto ptr = reinterpret_cast<afps::protocol::PickupSpawnedFxT *>(value);
+      delete ptr;
+      break;
+    }
+    case FxEvent::PickupTakenFx: {
+      auto ptr = reinterpret_cast<afps::protocol::PickupTakenFxT *>(value);
       delete ptr;
       break;
     }

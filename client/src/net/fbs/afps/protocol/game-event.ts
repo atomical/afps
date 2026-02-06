@@ -8,6 +8,8 @@ import { FxEvent, unionToFxEvent, unionListToFxEvent } from '../../afps/protocol
 import { HitConfirmedFx, HitConfirmedFxT } from '../../afps/protocol/hit-confirmed-fx.js';
 import { NearMissFx, NearMissFxT } from '../../afps/protocol/near-miss-fx.js';
 import { OverheatFx, OverheatFxT } from '../../afps/protocol/overheat-fx.js';
+import { PickupSpawnedFx, PickupSpawnedFxT } from '../../afps/protocol/pickup-spawned-fx.js';
+import { PickupTakenFx, PickupTakenFxT } from '../../afps/protocol/pickup-taken-fx.js';
 import { ProjectileImpactFx, ProjectileImpactFxT } from '../../afps/protocol/projectile-impact-fx.js';
 import { ProjectileRemoveFx, ProjectileRemoveFxT } from '../../afps/protocol/projectile-remove-fx.js';
 import { ProjectileSpawnFx, ProjectileSpawnFxT } from '../../afps/protocol/projectile-spawn-fx.js';
@@ -123,7 +125,7 @@ unpack(): GameEventT {
     this.serverTick(),
     this.bb!.createScalarList<FxEvent>(this.eventsType.bind(this), this.eventsTypeLength()),
     (() => {
-    const ret: (HitConfirmedFxT|NearMissFxT|OverheatFxT|ProjectileImpactFxT|ProjectileRemoveFxT|ProjectileSpawnFxT|ReloadFxT|ShotFiredFxT|ShotTraceFxT|VentFxT)[] = [];
+    const ret: (HitConfirmedFxT|NearMissFxT|OverheatFxT|PickupSpawnedFxT|PickupTakenFxT|ProjectileImpactFxT|ProjectileRemoveFxT|ProjectileSpawnFxT|ReloadFxT|ShotFiredFxT|ShotTraceFxT|VentFxT)[] = [];
     for(let targetEnumIndex = 0; targetEnumIndex < this.eventsTypeLength(); ++targetEnumIndex) {
       const targetEnum = this.eventsType(targetEnumIndex);
       if(targetEnum === null || FxEvent[targetEnum!] === 'NONE') { continue; }
@@ -142,7 +144,7 @@ unpackTo(_o: GameEventT): void {
   _o.serverTick = this.serverTick();
   _o.eventsType = this.bb!.createScalarList<FxEvent>(this.eventsType.bind(this), this.eventsTypeLength());
   _o.events = (() => {
-    const ret: (HitConfirmedFxT|NearMissFxT|OverheatFxT|ProjectileImpactFxT|ProjectileRemoveFxT|ProjectileSpawnFxT|ReloadFxT|ShotFiredFxT|ShotTraceFxT|VentFxT)[] = [];
+    const ret: (HitConfirmedFxT|NearMissFxT|OverheatFxT|PickupSpawnedFxT|PickupTakenFxT|ProjectileImpactFxT|ProjectileRemoveFxT|ProjectileSpawnFxT|ReloadFxT|ShotFiredFxT|ShotTraceFxT|VentFxT)[] = [];
     for(let targetEnumIndex = 0; targetEnumIndex < this.eventsTypeLength(); ++targetEnumIndex) {
       const targetEnum = this.eventsType(targetEnumIndex);
       if(targetEnum === null || FxEvent[targetEnum!] === 'NONE') { continue; }
@@ -160,7 +162,7 @@ export class GameEventT implements flatbuffers.IGeneratedObject {
 constructor(
   public serverTick: number = 0,
   public eventsType: (FxEvent)[] = [],
-  public events: (HitConfirmedFxT|NearMissFxT|OverheatFxT|ProjectileImpactFxT|ProjectileRemoveFxT|ProjectileSpawnFxT|ReloadFxT|ShotFiredFxT|ShotTraceFxT|VentFxT)[] = []
+  public events: (HitConfirmedFxT|NearMissFxT|OverheatFxT|PickupSpawnedFxT|PickupTakenFxT|ProjectileImpactFxT|ProjectileRemoveFxT|ProjectileSpawnFxT|ReloadFxT|ShotFiredFxT|ShotTraceFxT|VentFxT)[] = []
 ){}
 
 

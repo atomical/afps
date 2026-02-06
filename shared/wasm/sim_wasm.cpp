@@ -7,6 +7,7 @@ extern "C" {
 struct WasmSimState {
   afps::sim::PlayerState player;
   afps::sim::SimConfig config;
+  afps::sim::CollisionWorld world;
 };
 
 WasmSimState *sim_create() {
@@ -22,6 +23,32 @@ void sim_reset(WasmSimState *state) {
     return;
   }
   state->player = afps::sim::PlayerState{};
+}
+
+void sim_clear_colliders(WasmSimState *state) {
+  if (!state) {
+    return;
+  }
+  afps::sim::ClearColliders(state->world);
+}
+
+void sim_add_aabb_collider(WasmSimState *state, int id, double min_x, double min_y, double min_z, double max_x,
+                           double max_y, double max_z, int surface_type) {
+  if (!state) {
+    return;
+  }
+  afps::sim::AabbCollider collider;
+  collider.id = id;
+  collider.min_x = min_x;
+  collider.min_y = min_y;
+  collider.min_z = min_z;
+  collider.max_x = max_x;
+  collider.max_y = max_y;
+  collider.max_z = max_z;
+  if (surface_type >= 0 && surface_type <= 255) {
+    collider.surface_type = static_cast<uint8_t>(surface_type);
+  }
+  afps::sim::AddAabbCollider(state->world, collider);
 }
 
 void sim_set_config(WasmSimState *state, double move_speed, double sprint_multiplier, double accel,
@@ -163,7 +190,7 @@ void sim_step(WasmSimState *state,
   const auto input =
       afps::sim::MakeInput(move_x, move_y, sprint != 0, jump != 0, dash != 0, grapple != 0, shield != 0,
                            shockwave != 0, view_yaw, view_pitch);
-  afps::sim::StepPlayer(state->player, input, state->config, dt);
+  afps::sim::StepPlayer(state->player, input, state->config, dt, &state->world);
 }
 
 double sim_get_x(WasmSimState *state) {

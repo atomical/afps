@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { loadRetroUrbanMap } from '../../src/environment/retro_urban_map';
+import { __test, loadRetroUrbanMap } from '../../src/environment/retro_urban_map';
 
 let mode: 'ok' | 'error' | 'throw' = 'ok';
 let loadCalls: string[] = [];
@@ -72,6 +72,7 @@ vi.mock('three', () => ({
 
 describe('retro urban map loader', () => {
   afterEach(() => {
+    __test.clearCache();
     vi.unstubAllGlobals();
     loadCalls = [];
     loadedObjects = [];
@@ -99,10 +100,11 @@ describe('retro urban map loader', () => {
     await loadRetroUrbanMap(scene);
 
     expect(fetchMock).toHaveBeenCalled();
-    expect(loadCalls).toHaveLength(placements.length);
+    expect(loadCalls).toHaveLength(2);
     expect(added.length).toBe(placements.length);
-    expect(loadedObjects[1].rotation.y).toBe(1);
-    expect(loadedObjects.some((obj) => obj.scale.set.mock.calls.length > 0)).toBe(true);
+    const rotations = added.map((entry) => (entry as { rotation: { y: number } }).rotation.y);
+    expect(rotations).toContain(1);
+    expect(rotations).toContain(0.25);
     expect(warnSpy).not.toHaveBeenCalled();
     warnSpy.mockRestore();
   });

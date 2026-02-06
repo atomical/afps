@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -16,6 +17,7 @@ struct ServerConfig {
   std::string turn_user = "afps";
   int turn_ttl_seconds = 3600;
   int snapshot_keyframe_interval = kSnapshotKeyframeInterval;
+  uint32_t map_seed = 0;
   std::string character_manifest_path;
   bool use_https = true;
   bool show_help = false;

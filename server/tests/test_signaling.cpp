@@ -180,6 +180,23 @@ TEST_CASE("SignalingStore handles answer and candidate flow") {
   CHECK(drained.value.has_value());
 }
 
+TEST_CASE("SignalingStore treats non-actionable remote candidates as no-op") {
+  SignalingConfig config;
+  SignalingStore store(config);
+
+  const auto session = store.CreateSession();
+  auto connect = store.CreateConnection(session.token, std::chrono::milliseconds(2000));
+  REQUIRE(connect.ok);
+  REQUIRE(connect.value.has_value());
+
+  const auto candidate_error = store.AddRemoteCandidate(session.token, connect.value->connection_id, "", "0");
+  CHECK(candidate_error == SignalingError::None);
+
+  const auto malformed_error =
+      store.AddRemoteCandidate(session.token, connect.value->connection_id, "not-a-valid-candidate", "0");
+  CHECK(malformed_error == SignalingError::None);
+}
+
 TEST_CASE("SignalingStore expires sessions") {
   SignalingConfig config;
   config.session_ttl = std::chrono::seconds(0);
@@ -197,6 +214,7 @@ TEST_CASE("SignalingStore queues input commands after handshake") {
 
   SignalingConfig config;
   config.snapshot_keyframe_interval = 7;
+  config.map_seed = 777u;
   SignalingStore store(config);
 
   const auto session = store.CreateSession();
@@ -297,6 +315,7 @@ TEST_CASE("SignalingStore queues input commands after handshake") {
   CHECK(envelope.header.msg_type == MessageType::ServerHello);
   const auto *parsed = flatbuffers::GetRoot<afps::protocol::ServerHello>(envelope.payload.data());
   CHECK(parsed->snapshot_keyframe_interval() == config.snapshot_keyframe_interval);
+  CHECK(static_cast<uint32_t>(parsed->map_seed()) == config.map_seed);
 
   auto batches = store.DrainAllInputs();
   REQUIRE(batches.size() == 1);

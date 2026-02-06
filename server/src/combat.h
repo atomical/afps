@@ -1,6 +1,7 @@
 #pragma once
 
 #include <deque>
+#include <cstdint>
 #include <limits>
 #include <string>
 #include <unordered_map>
@@ -75,6 +76,8 @@ struct ProjectileImpact {
   std::string target_id;
   double t = 1.0;
   Vec3 position{};
+  Vec3 normal{0.0, 0.0, 1.0};
+  uint8_t surface_type = 0;
 };
 
 struct ExplosionHit {
@@ -118,13 +121,15 @@ HitResult ResolveHitscan(const std::string &shooter_id,
                          int rewind_tick,
                          const ViewAngles &view,
                          const afps::sim::SimConfig &config,
-                         double range);
+                         double range,
+                         const afps::sim::CollisionWorld *world = nullptr);
 
 ProjectileImpact ResolveProjectileImpact(const ProjectileState &projectile,
                                          const Vec3 &delta,
                                          const afps::sim::SimConfig &config,
                                          const std::unordered_map<std::string, afps::sim::PlayerState> &players,
-                                         const std::string &ignore_id);
+                                         const std::string &ignore_id,
+                                         const afps::sim::CollisionWorld *world = nullptr);
 
 std::vector<ExplosionHit> ComputeExplosionDamage(
     const Vec3 &center,
@@ -140,6 +145,7 @@ std::vector<ShockwaveHit> ComputeShockwaveHits(
     double max_damage,
     const afps::sim::SimConfig &config,
     const std::unordered_map<std::string, afps::sim::PlayerState> &players,
-    const std::string &ignore_id);
+    const std::string &ignore_id,
+    const afps::sim::CollisionWorld *world = nullptr);
 
 }  // namespace afps::combat

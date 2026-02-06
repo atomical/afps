@@ -30,13 +30,14 @@ private:
 #include <vector>
 
 #include "combat.h"
+#include "map_world.h"
 #include "signaling.h"
 #include "sim/sim.h"
 #include "weapons/weapon_defs.h"
 
 class TickLoop {
 public:
-  TickLoop(SignalingStore &store, int tick_rate, int snapshot_keyframe_interval);
+  TickLoop(SignalingStore &store, int tick_rate, int snapshot_keyframe_interval, uint32_t map_seed = 0);
   ~TickLoop();
 
   void Start();
@@ -54,6 +55,12 @@ private:
   struct PlayerWeaponState {
     std::vector<WeaponSlotState> slots;
     int shot_seq = 0;
+  };
+
+  struct PickupState {
+    afps::world::PickupSpawn definition{};
+    bool active = true;
+    int respawn_tick = -1;
   };
 
   void Run();
@@ -74,7 +81,11 @@ private:
   std::unordered_map<std::string, afps::combat::PoseHistory> pose_histories_;
   std::unordered_map<std::string, afps::combat::CombatState> combat_states_;
   std::vector<afps::combat::ProjectileState> projectiles_;
+  std::vector<PickupState> pickups_;
+  std::unordered_set<std::string> pickup_sync_sent_;
   int next_projectile_id_ = 1;
+  uint32_t map_seed_ = 0;
+  afps::sim::CollisionWorld collision_world_;
   afps::sim::SimConfig sim_config_ = afps::sim::kDefaultSimConfig;
   afps::weapons::WeaponConfig weapon_config_ = afps::weapons::BuildDefaultWeaponConfig();
   int server_tick_ = 0;

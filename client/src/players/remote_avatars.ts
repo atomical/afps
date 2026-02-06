@@ -96,7 +96,7 @@ export interface RemoteAvatarManager {
   dispose: () => void;
 }
 
-const VISUAL_HEIGHT_SCALE = 0.75;
+const VISUAL_HEIGHT_SCALE = 0.65;
 const BODY_HEIGHT = resolvePlayerHeight(SIM_CONFIG) * VISUAL_HEIGHT_SCALE;
 const BODY_HALF = BODY_HEIGHT / 2;
 const STALE_MS = 8000;
@@ -239,7 +239,7 @@ export const createRemoteAvatarManager = ({
   const profiles = new Map<string, PlayerProfile>();
   let catalog: CharacterCatalog | null = null;
   let localClientId: string | null = null;
-  const bodyGeometry = new three.BoxGeometry(0.6, BODY_HEIGHT, 0.4);
+  const bodyGeometry = new three.BoxGeometry(0.45, BODY_HEIGHT, 0.3);
   const bodyMaterial = new three.MeshToonMaterial({ color: 0x6d6d6d });
   const weaponMaterial = new three.MeshToonMaterial({ color: 0x2b2b2b });
   const aimDebugGeometry = new three.BoxGeometry(1, 1, 1);

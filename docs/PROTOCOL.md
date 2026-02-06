@@ -6,7 +6,7 @@ This document describes the current signaling and gameplay protocol. Signaling i
 
 ## Versioning & constants
 
-- Protocol version: `6`
+- Protocol version: `7`
 - DataChannel labels:
   - Reliable: `afps_reliable`
   - Unreliable: `afps_unreliable`
@@ -174,6 +174,7 @@ Fields (see schema):
 - `snapshotKeyframeInterval`
 - `motd` (optional)
 - `connectionNonce` (optional)
+- `mapSeed` (u32, deterministic world seed; `0` by default)
 
 ### Error (server → client, reliable)
 
@@ -194,6 +195,12 @@ Fields include:
 - `viewYaw`, `viewPitch`
 - `weaponSlot`, `jump`, `fire`, `sprint`, `dash`, `grapple`, `shield`, `shockwave`
 
+### FireWeaponRequest / SetLoadoutRequest (client → server, unreliable)
+
+Fields include:
+- `FireWeaponRequest`: `weaponSlot`, `clientShotSeq`
+- `SetLoadoutRequest`: `loadoutBits`
+
 ### StateSnapshot / StateSnapshotDelta (server → client, unreliable)
 
 Snapshots include:
@@ -207,8 +214,21 @@ Deltas include a `mask` describing which fields are present.
 
 Examples:
 - `HitConfirmed`
+- `ShotTrace` (hitscan impact/tracer metadata)
 - `ProjectileSpawn`
 - `ProjectileRemove`
+- `PickupSpawned`
+- `PickupTaken`
+
+Pickup event fields:
+- `PickupSpawned`: `pickupId`, `kind` (`Health`/`Weapon`), `posXQ`, `posYQ`, `posZQ`, `weaponSlot`, `amount`
+- `PickupTaken`: `pickupId`, optional `takerId`, `serverTick`
+- `ShotTrace`: `dirOct*`, `hitDistQ`, `hitKind`, `surfaceType`, `normalOct*`, `showTracer`, `hitPosXQ/YQ/ZQ`
+
+Quantization notes:
+- `ShotTrace` hit positions use signed int16 quantization (`hitPos*Q`) at `0.01m` step.
+- Pickup positions use signed int16 quantization (`*_Q`) with the same shared helpers as other gameplay FX.
+- Server and client currently use a pickup position step of `1/16` meter.
 
 ### Ping / Pong (client ↔ server, unreliable)
 

@@ -35,6 +35,12 @@ enum SurfaceType:ubyte {
   Energy = 3
 }
 
+enum PickupKind:ubyte {
+  None = 0,
+  Health = 1,
+  Weapon = 2
+}
+
 table ShotFiredFx {
   shooter_id:string;
   weapon_slot:ubyte;
@@ -54,6 +60,9 @@ table ShotTraceFx {
   normal_oct_x:short;
   normal_oct_y:short;
   show_tracer:bool;
+  hit_pos_x_q:short;
+  hit_pos_y_q:short;
+  hit_pos_z_q:short;
 }
 
 table ReloadFx {
@@ -114,6 +123,22 @@ table ProjectileRemoveFx {
   projectile_id:int;
 }
 
+table PickupSpawnedFx {
+  pickup_id:uint;
+  kind:PickupKind;
+  pos_x_q:short;
+  pos_y_q:short;
+  pos_z_q:short;
+  weapon_slot:ubyte;
+  amount:ushort;
+}
+
+table PickupTakenFx {
+  pickup_id:uint;
+  taker_id:string;
+  server_tick:int;
+}
+
 union FxEvent {
   ShotFiredFx,
   ShotTraceFx,
@@ -124,7 +149,9 @@ union FxEvent {
   HitConfirmedFx,
   ProjectileSpawnFx,
   ProjectileImpactFx,
-  ProjectileRemoveFx
+  ProjectileRemoveFx,
+  PickupSpawnedFx,
+  PickupTakenFx
 }
 
 table ClientHello {
@@ -145,6 +172,7 @@ table ServerHello {
   snapshot_keyframe_interval:ushort;
   motd:string;
   connection_nonce:string;
+  map_seed:uint;
 }
 
 table JoinRequest {

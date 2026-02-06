@@ -25,8 +25,8 @@ See also:
    - Server validates the hello and responds with `ServerHello` on **reliable**.
 
 4. **Gameplay**
-   - Client sends `InputCmd` and `Ping` on **unreliable**.
-   - Server sends `StateSnapshot` keyframes, `StateSnapshotDelta` updates, `GameEvent`, and `Pong` on **unreliable**.
+   - Client sends `InputCmd`, `FireWeaponRequest`, `SetLoadoutRequest`, and `Ping` on **unreliable**.
+   - Server sends `StateSnapshot` keyframes, `StateSnapshotDelta` updates, `GameEvent` (including pickup spawn/taken FX), and `Pong` on **unreliable**.
 
 ---
 
@@ -47,6 +47,7 @@ The server rejects non-monotonic sequences and logs abuse events.
 - Snapshot rate: `20 Hz`.
 - Client prediction uses the server tick rate after `ServerHello`.
 - Clients can read `snapshotKeyframeInterval` from `ServerHello` for diagnostics.
+- `ServerHello.mapSeed` is used to select/generate the deterministic map so collision and pickup layout match the server world.
 
 ---
 
@@ -70,11 +71,14 @@ The server rejects non-monotonic sequences and logs abuse events.
 ## Prediction & reconciliation
 
 - Client prediction uses a deterministic sim step per tick.
+- Prediction collision now uses a multi-collider world (AABBs), not a single obstacle rectangle.
+- Procedural map buildings provide per-model collider profiles with optional multi-part AABBs; profile parts are rotated per door-facing orientation before being installed into prediction.
 - When a `StateSnapshot` arrives:
   1. Reset predicted state to the snapshot position.
   2. Restore predicted velocity from the snapshot (including vertical Z velocity).
   3. Replay un-acked inputs from history.
 - History is capped (`MAX_HISTORY = 120`).
+- When map seed or map data changes, the client updates the prediction collider set to keep movement/raycast parity with the active world.
 
 ---
 

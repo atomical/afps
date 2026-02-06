@@ -1,31 +1,85 @@
+import type { AabbCollider } from '../world/collision';
+import { sanitizeColliders } from '../world/collision';
 import type { Object3DLike, SceneLike, Vector3Like } from '../types';
+import {
+  generateProceduralRetroUrbanMap,
+  PROCEDURAL_MAP_CONSTANTS,
+  type DoorSide,
+  type ProceduralRetroUrbanMap,
+  type RetroMapBuilding,
+  type RetroMapPickupSpawn,
+  type RetroMapPlacement
+} from './procedural_map';
 
-type Placement = {
-  file: string;
-  position: [number, number, number];
-  rotation?: [number, number, number];
-  scale?: number;
-  randomYaw?: boolean;
+type Placement = RetroMapPlacement;
+
+type LegacyManifest = {
+  seed: number;
+  placements: Placement[];
+  colliders: AabbCollider[];
+  pickupSpawns: RetroMapPickupSpawn[];
 };
+
+export interface LoadRetroUrbanMapOptions {
+  seed?: number;
+  procedural?: boolean;
+  arenaHalfSize?: number;
+  tickRate?: number;
+}
+
+export interface LoadedRetroUrbanMap {
+  seed: number;
+  colliders: AabbCollider[];
+  pickupSpawns: RetroMapPickupSpawn[];
+  placements: number;
+  loaded: number;
+  failed: number;
+  dispose: () => void;
+}
 
 const ASSET_ROOT = '/assets/environments/cc0/kenney_city_kit_suburban_20/glb/';
 const MANIFEST_URL = '/assets/environments/cc0/kenney_city_kit_suburban_20/map.json';
 const DEFAULT_YAW_CHOICES = [0, Math.PI / 2, Math.PI, (Math.PI * 3) / 2];
 const DEBUG_BOUNDS_FLAG = 'VITE_DEBUG_RETRO_URBAN_BOUNDS';
 const DEBUG_GRID_FLAG = 'VITE_DEBUG_RETRO_URBAN_GRID';
-const DEBUG_MAP_FLAG = 'VITE_DEBUG_MAP_STATS';
+const DEBUG_COLLIDERS_FLAG = 'VITE_DEBUG_COLLIDERS';
+const DEBUG_INTERIORS_FLAG = 'VITE_DEBUG_INTERIORS';
+const ENABLE_INTERIORS_FLAG = 'VITE_ENABLE_INTERIORS';
+const PROCEDURAL_FLAG = 'VITE_PROCEDURAL_MAP';
+const MAP_SEED_FLAG = 'VITE_MAP_SEED';
 const DEBUG_BOUNDS_COLOR = 0x22ffcc;
+const DEBUG_COLLIDER_COLOR = 0xff7755;
 const DEBUG_GRID_SIZE = 40;
 const DEBUG_GRID_DIVISIONS = 10;
 const DEBUG_GRID_COLOR_MAJOR = 0x335577;
 const DEBUG_GRID_COLOR_MINOR = 0x223344;
-const MAP_SCALE = 2.5;
+const MAP_SCALE = PROCEDURAL_MAP_CONSTANTS.mapScale;
+
+type GltfLike = {
+  scene: Object3DLike;
+};
+
+const templateCache = new Map<string, Promise<GltfLike | null>>();
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
 const toNumber = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
 const toBoolean = (value: unknown) => (typeof value === 'boolean' ? value : null);
+
+const parseSeed = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.floor(value) >>> 0;
+  }
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return Math.floor(parsed) >>> 0;
+};
 
 const toVec3 = (value: unknown): [number, number, number] | null => {
   if (!Array.isArray(value) || value.length !== 3) {
@@ -38,6 +92,13 @@ const toVec3 = (value: unknown): [number, number, number] | null => {
     return null;
   }
   return [x, y, z];
+};
+
+const parseDoorSide = (value: unknown): DoorSide | undefined => {
+  if (value === 'north' || value === 'east' || value === 'south' || value === 'west') {
+    return value;
+  }
+  return undefined;
 };
 
 const parsePlacement = (value: unknown): Placement | null => {
@@ -55,6 +116,12 @@ const parsePlacement = (value: unknown): Placement | null => {
   const rotation = toVec3(value.rotation);
   const scale = toNumber(value.scale);
   const randomYaw = toBoolean(value.randomYaw);
+  const roadMask = toNumber(value.roadMask);
+  const cellX = toNumber(value.cellX);
+  const cellY = toNumber(value.cellY);
+  const kind = value.kind === 'road' || value.kind === 'building' || value.kind === 'prop' ? value.kind : undefined;
+  const doorSide = parseDoorSide(value.doorSide);
+
   const placement: Placement = { file, position };
   if (rotation) {
     placement.rotation = rotation;
@@ -64,6 +131,21 @@ const parsePlacement = (value: unknown): Placement | null => {
   }
   if (randomYaw !== null) {
     placement.randomYaw = randomYaw;
+  }
+  if (roadMask !== null) {
+    placement.roadMask = Math.floor(roadMask) & 0b1111;
+  }
+  if (cellX !== null) {
+    placement.cellX = Math.floor(cellX);
+  }
+  if (cellY !== null) {
+    placement.cellY = Math.floor(cellY);
+  }
+  if (kind) {
+    placement.kind = kind;
+  }
+  if (doorSide) {
+    placement.doorSide = doorSide;
   }
   return placement;
 };
@@ -88,9 +170,15 @@ const normalizeYawChoices = (value: unknown): number[] | null => {
 };
 
 const createRng = (seed: number) => {
-  let state = seed >>> 0;
+  let state = (seed >>> 0) || 1;
   return () => {
-    state = (state * 1664525 + 1013904223) >>> 0;
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    state >>>= 0;
+    if (state === 0) {
+      state = 1;
+    }
     return state / 0xffffffff;
   };
 };
@@ -102,7 +190,7 @@ const applyRandomYaw = (placements: Placement[], seed: number, yawChoices: numbe
       return placement;
     }
     const index = Math.floor(rand() * yawChoices.length);
-    const yaw = yawChoices[Math.min(Math.max(index, 0), yawChoices.length - 1)];
+    const yaw = yawChoices[Math.min(Math.max(index, 0), yawChoices.length - 1)]!;
     return { ...placement, rotation: [0, yaw, 0] };
   });
 };
@@ -128,7 +216,71 @@ const applyTransform = (
   }
 };
 
-const buildPlacements = (): Placement[] => {
+const markStaticSurface = (root: Object3DLike) => {
+  type RuntimeObject = Object3DLike & {
+    userData?: Record<string, unknown>;
+    children?: RuntimeObject[];
+    parent?: RuntimeObject | null;
+    traverse?: (callback: (child: RuntimeObject) => void) => void;
+  };
+  const setFlag = (node: RuntimeObject | null | undefined) => {
+    if (!node) {
+      return;
+    }
+    if (!node.userData || typeof node.userData !== 'object') {
+      node.userData = {};
+    }
+    node.userData.afpsStaticSurface = true;
+  };
+  const runtimeRoot = root as RuntimeObject;
+  setFlag(runtimeRoot);
+  if (typeof runtimeRoot.traverse === 'function') {
+    runtimeRoot.traverse((child) => {
+      setFlag(child);
+    });
+    return;
+  }
+  if (!Array.isArray(runtimeRoot.children)) {
+    return;
+  }
+  for (const child of runtimeRoot.children) {
+    setFlag(child);
+  }
+};
+
+const cloneObject = (value: Object3DLike): Object3DLike => {
+  const clone = (value as unknown as { clone?: (recursive?: boolean) => Object3DLike }).clone;
+  if (typeof clone === 'function') {
+    return clone.call(value, true);
+  }
+  const createVector = (source?: Vector3Like): Vector3Like => {
+    const vector = {
+      x: Number.isFinite(source?.x) ? source!.x : 0,
+      y: Number.isFinite(source?.y) ? source!.y : 0,
+      z: Number.isFinite(source?.z) ? source!.z : 0,
+      set: (x: number, y: number, z: number) => {
+        vector.x = x;
+        vector.y = y;
+        vector.z = z;
+      }
+    };
+    return vector;
+  };
+  return {
+    position: createVector(value.position),
+    rotation: {
+      x: Number.isFinite(value.rotation?.x) ? value.rotation.x : 0,
+      y: Number.isFinite(value.rotation?.y) ? value.rotation.y : 0,
+      z: Number.isFinite(value.rotation?.z) ? value.rotation.z : 0
+    },
+    scale: value.scale ? createVector(value.scale) : undefined,
+    visible: value.visible,
+    name: value.name,
+    children: Array.isArray(value.children) ? [...value.children] : undefined
+  };
+};
+
+const buildLegacyFallbackPlacements = (): Placement[] => {
   const placements: Placement[] = [];
   const tile = 4;
 
@@ -163,41 +315,263 @@ const buildPlacements = (): Placement[] => {
   return placements;
 };
 
-const loadManifestPlacements = async (): Promise<Placement[]> => {
-  const fallback = buildPlacements();
+const loadLegacyManifest = async (): Promise<LegacyManifest> => {
+  const fallback = buildLegacyFallbackPlacements();
   if (typeof fetch !== 'function') {
-    return fallback;
+    return { seed: 0, placements: fallback, colliders: [], pickupSpawns: [] };
   }
   try {
     const response = await fetch(MANIFEST_URL);
     if (!response.ok) {
       console.warn(`suburban manifest fetch failed: ${response.status}`);
-      return fallback;
+      return { seed: 0, placements: fallback, colliders: [], pickupSpawns: [] };
     }
     const data = (await response.json()) as unknown;
     if (!isRecord(data)) {
       console.warn('suburban manifest invalid shape');
-      return fallback;
+      return { seed: 0, placements: fallback, colliders: [], pickupSpawns: [] };
     }
     const placements = normalizePlacements(data.placements);
     if (!placements) {
       console.warn('suburban manifest invalid placements');
-      return fallback;
+      return { seed: 0, placements: fallback, colliders: [], pickupSpawns: [] };
     }
-    const seed = toNumber(data.seed) ?? 0;
+    const seed = parseSeed(data.seed) ?? 0;
     const yawChoices = normalizeYawChoices(data.yawChoices) ?? DEFAULT_YAW_CHOICES;
-    return applyRandomYaw(placements, seed, yawChoices);
+    return {
+      seed,
+      placements: applyRandomYaw(placements, seed, yawChoices),
+      colliders: [],
+      pickupSpawns: []
+    };
   } catch (error) {
     console.warn('suburban manifest load failed', error);
-    return fallback;
+    return { seed: 0, placements: fallback, colliders: [], pickupSpawns: [] };
   }
 };
 
-export const loadRetroUrbanMap = async (scene: SceneLike) => {
+const shouldUseProcedural = (options: LoadRetroUrbanMapOptions) => {
+  if (typeof options.procedural === 'boolean') {
+    return options.procedural;
+  }
+  return (import.meta.env?.[PROCEDURAL_FLAG] ?? '') === 'true';
+};
+
+const resolveSeed = (options: LoadRetroUrbanMapOptions) => {
+  if (Number.isFinite(options.seed)) {
+    return Math.floor(options.seed!) >>> 0;
+  }
+  const envSeed = parseSeed(import.meta.env?.[MAP_SEED_FLAG]);
+  return envSeed ?? 0;
+};
+
+const isProceduralBuilding = (entry: Placement): entry is Placement & { doorSide: DoorSide; cellX: number; cellY: number } =>
+  entry.kind === 'building' && !!entry.doorSide && Number.isFinite(entry.cellX) && Number.isFinite(entry.cellY);
+
+const addInteriorMeshes = async (
+  scene: SceneLike,
+  placements: Placement[],
+  added: Object3DLike[],
+  debugInteriors: boolean
+) => {
+  const buildings: RetroMapBuilding[] = [];
+  for (const placement of placements) {
+    if (!isProceduralBuilding(placement)) {
+      continue;
+    }
+    buildings.push({
+      cellX: placement.cellX!,
+      cellY: placement.cellY!,
+      doorSide: placement.doorSide!,
+      file: placement.file,
+      rotationY: placement.rotation?.[1] ?? 0,
+      position: placement.position
+    });
+  }
+  if (buildings.length === 0) {
+    return;
+  }
+
+  try {
+    const three = await import('three');
+    const roomHalf = PROCEDURAL_MAP_CONSTANTS.roomHalf;
+    const wallThickness = PROCEDURAL_MAP_CONSTANTS.wallThickness;
+    const wallHeight = PROCEDURAL_MAP_CONSTANTS.wallHeight;
+    const doorHalfWidth = PROCEDURAL_MAP_CONSTANTS.doorHalfWidth;
+    const doorHeight = PROCEDURAL_MAP_CONSTANTS.doorHeight;
+
+    const floorColor = debugInteriors ? 0x3f6d3f : 0x4b4b47;
+    const wallColor = debugInteriors ? 0x6f8f73 : 0x6c6a60;
+    const ceilColor = debugInteriors ? 0x7a997e : 0x707070;
+    const floorMaterial = new three.MeshStandardMaterial({ color: floorColor });
+    const wallMaterial = new three.MeshStandardMaterial({ color: wallColor });
+    const ceilMaterial = new three.MeshStandardMaterial({ color: ceilColor });
+
+    const addBox = (
+      minX: number,
+      maxX: number,
+      minY: number,
+      maxY: number,
+      minZ: number,
+      maxZ: number,
+      material: unknown
+    ) => {
+      const width = maxX - minX;
+      const depth = maxY - minY;
+      const height = maxZ - minZ;
+      if (width <= 0 || depth <= 0 || height <= 0) {
+        return;
+      }
+      const mesh = new three.Mesh(new three.BoxGeometry(width, height, depth), material as never);
+      mesh.position.set((minX + maxX) * 0.5, (minZ + maxZ) * 0.5, (minY + maxY) * 0.5);
+      scene.add(mesh as unknown as Object3DLike);
+      added.push(mesh as unknown as Object3DLike);
+    };
+
+    for (const building of buildings) {
+      const cx = building.cellX * PROCEDURAL_MAP_CONSTANTS.tileSize * MAP_SCALE;
+      const cy = building.cellY * PROCEDURAL_MAP_CONSTANTS.tileSize * MAP_SCALE;
+      const minX = cx - roomHalf;
+      const maxX = cx + roomHalf;
+      const minY = cy - roomHalf;
+      const maxY = cy + roomHalf;
+
+      addBox(minX, maxX, minY, maxY, 0, 0.08, floorMaterial);
+      addBox(minX, maxX, minY, maxY, wallHeight - 0.08, wallHeight, ceilMaterial);
+
+      const addNorth = (x0: number, x1: number, z0: number, z1: number) =>
+        addBox(x0, x1, maxY - wallThickness, maxY, z0, z1, wallMaterial);
+      const addSouth = (x0: number, x1: number, z0: number, z1: number) =>
+        addBox(x0, x1, minY, minY + wallThickness, z0, z1, wallMaterial);
+      const addEast = (y0: number, y1: number, z0: number, z1: number) =>
+        addBox(maxX - wallThickness, maxX, y0, y1, z0, z1, wallMaterial);
+      const addWest = (y0: number, y1: number, z0: number, z1: number) =>
+        addBox(minX, minX + wallThickness, y0, y1, z0, z1, wallMaterial);
+
+      if (building.doorSide === 'north') {
+        addNorth(minX, cx - doorHalfWidth, 0, wallHeight);
+        addNorth(cx + doorHalfWidth, maxX, 0, wallHeight);
+        addNorth(cx - doorHalfWidth, cx + doorHalfWidth, doorHeight, wallHeight);
+      } else {
+        addNorth(minX, maxX, 0, wallHeight);
+      }
+      if (building.doorSide === 'south') {
+        addSouth(minX, cx - doorHalfWidth, 0, wallHeight);
+        addSouth(cx + doorHalfWidth, maxX, 0, wallHeight);
+        addSouth(cx - doorHalfWidth, cx + doorHalfWidth, doorHeight, wallHeight);
+      } else {
+        addSouth(minX, maxX, 0, wallHeight);
+      }
+      if (building.doorSide === 'east') {
+        addEast(minY, cy - doorHalfWidth, 0, wallHeight);
+        addEast(cy + doorHalfWidth, maxY, 0, wallHeight);
+        addEast(cy - doorHalfWidth, cy + doorHalfWidth, doorHeight, wallHeight);
+      } else {
+        addEast(minY, maxY, 0, wallHeight);
+      }
+      if (building.doorSide === 'west') {
+        addWest(minY, cy - doorHalfWidth, 0, wallHeight);
+        addWest(cy + doorHalfWidth, maxY, 0, wallHeight);
+        addWest(cy - doorHalfWidth, cy + doorHalfWidth, doorHeight, wallHeight);
+      } else {
+        addWest(minY, maxY, 0, wallHeight);
+      }
+    }
+  } catch (error) {
+    console.warn('suburban interior generation skipped', error);
+  }
+};
+
+const addColliderDebugMeshes = async (scene: SceneLike, colliders: AabbCollider[], added: Object3DLike[]) => {
+  if (colliders.length === 0) {
+    return;
+  }
+  try {
+    const three = await import('three');
+    const materialCtor =
+      (three as unknown as { MeshBasicMaterial?: new (params: { color: number; wireframe?: boolean }) => unknown })
+        .MeshBasicMaterial ?? three.MeshStandardMaterial;
+    for (const collider of colliders) {
+      const width = collider.maxX - collider.minX;
+      const depth = collider.maxY - collider.minY;
+      const height = collider.maxZ - collider.minZ;
+      if (!(width > 0 && depth > 0 && height > 0)) {
+        continue;
+      }
+      const mesh = new three.Mesh(
+        new three.BoxGeometry(width, height, depth),
+        new materialCtor({ color: DEBUG_COLLIDER_COLOR, wireframe: true }) as never
+      );
+      mesh.position.set(
+        (collider.minX + collider.maxX) * 0.5,
+        (collider.minZ + collider.maxZ) * 0.5,
+        (collider.minY + collider.maxY) * 0.5
+      );
+      scene.add(mesh as unknown as Object3DLike);
+      added.push(mesh as unknown as Object3DLike);
+    }
+  } catch (error) {
+    console.warn('suburban collider debug skipped', error);
+  }
+};
+
+const getTemplate = (
+  loader: { load: (url: string, onLoad: (gltf: GltfLike) => void, onProgress?: unknown, onError?: (error: unknown) => void) => void },
+  url: string
+) => {
+  if (templateCache.has(url)) {
+    return templateCache.get(url)!;
+  }
+  const pending = new Promise<GltfLike | null>((resolve) => {
+    try {
+      loader.load(
+        url,
+        (gltf) => resolve(gltf),
+        undefined,
+        () => resolve(null)
+      );
+    } catch {
+      resolve(null);
+    }
+  });
+  templateCache.set(url, pending);
+  return pending;
+};
+
+const maybeSetMapStats = (stats: { total: number; loaded: number; failed: number; complete: boolean; seed: number }) => {
+  (globalThis as unknown as { __afpsMapStats?: unknown }).__afpsMapStats = stats;
+};
+
+const toProceduralManifest = (data: ProceduralRetroUrbanMap): LegacyManifest => ({
+  seed: data.seed,
+  placements: data.placements,
+  colliders: data.colliders,
+  pickupSpawns: data.pickupSpawns
+});
+
+export const loadRetroUrbanMap = async (scene: SceneLike, options: LoadRetroUrbanMapOptions = {}): Promise<LoadedRetroUrbanMap> => {
+  const seed = resolveSeed(options);
+  const procedural = shouldUseProcedural(options);
+  const debugBounds = (import.meta.env?.[DEBUG_BOUNDS_FLAG] ?? '') === 'true';
+  const debugGrid = (import.meta.env?.[DEBUG_GRID_FLAG] ?? '') === 'true';
+  const debugColliders = (import.meta.env?.[DEBUG_COLLIDERS_FLAG] ?? '') === 'true';
+  const debugInteriors = (import.meta.env?.[DEBUG_INTERIORS_FLAG] ?? '') === 'true';
+  const enableInteriors = debugInteriors || (import.meta.env?.[ENABLE_INTERIORS_FLAG] ?? '') === 'true';
+  const added: Object3DLike[] = [];
+
   try {
     const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
-    const debugBounds = (import.meta.env?.[DEBUG_BOUNDS_FLAG] ?? '') === 'true';
-    const debugGrid = (import.meta.env?.[DEBUG_GRID_FLAG] ?? '') === 'true';
+    const loader = new GLTFLoader();
+    const manifest = procedural
+      ? toProceduralManifest(
+          generateProceduralRetroUrbanMap({
+            seed,
+            arenaHalfSize: options.arenaHalfSize,
+            tickRate: options.tickRate
+          })
+        )
+      : await loadLegacyManifest();
+
     let BoxHelper: null | (new (object: object, color: number) => object) = null;
     let GridHelper: null | (new (size: number, divisions: number, color1: number, color2: number) => object) = null;
     if (debugBounds || debugGrid) {
@@ -209,15 +583,6 @@ export const loadRetroUrbanMap = async (scene: SceneLike) => {
         GridHelper = three.GridHelper;
       }
     }
-    const loader = new GLTFLoader();
-    const placements = await loadManifestPlacements();
-    const debugMap = (import.meta.env?.[DEBUG_MAP_FLAG] ?? '') === 'true';
-    const mapStats = debugMap
-      ? { total: placements.length, loaded: 0, failed: 0, complete: false }
-      : null;
-    if (debugMap) {
-      (globalThis as unknown as { __afpsMapStats?: unknown }).__afpsMapStats = mapStats;
-    }
 
     if (GridHelper) {
       const grid = new GridHelper(
@@ -227,43 +592,105 @@ export const loadRetroUrbanMap = async (scene: SceneLike) => {
         DEBUG_GRID_COLOR_MINOR
       );
       scene.add(grid as unknown as Object3DLike);
+      added.push(grid as unknown as Object3DLike);
     }
 
-    for (const placement of placements) {
-      loader.load(
-        `${ASSET_ROOT}${placement.file}`,
-        (gltf) => {
-          const root = gltf.scene as unknown as {
-            position: Vector3Like;
-            rotation: { x: number; y: number; z: number };
-            scale?: Vector3Like;
-          };
-          applyTransform(root, placement);
-          scene.add(root as unknown as Object3DLike);
-          if (BoxHelper) {
-            const helper = new BoxHelper(root as unknown as object, DEBUG_BOUNDS_COLOR);
-            scene.add(helper as unknown as Object3DLike);
-          }
-          if (mapStats) {
-            mapStats.loaded += 1;
-            if (mapStats.loaded + mapStats.failed >= mapStats.total) {
-              mapStats.complete = true;
-            }
-          }
-        },
-        undefined,
-        (error) => {
-          console.warn(`suburban asset failed: ${placement.file}`, error);
-          if (mapStats) {
-            mapStats.failed += 1;
-            if (mapStats.loaded + mapStats.failed >= mapStats.total) {
-              mapStats.complete = true;
-            }
-          }
-        }
-      );
+    const placementBuckets = new Map<string, Placement[]>();
+    for (const placement of manifest.placements) {
+      if (!placementBuckets.has(placement.file)) {
+        placementBuckets.set(placement.file, []);
+      }
+      placementBuckets.get(placement.file)!.push(placement);
     }
+
+    const stats = {
+      total: manifest.placements.length,
+      loaded: 0,
+      failed: 0,
+      complete: false,
+      seed: manifest.seed
+    };
+    maybeSetMapStats(stats);
+
+    const files = Array.from(placementBuckets.keys()).sort();
+    for (const file of files) {
+      const placements = placementBuckets.get(file) ?? [];
+      const template = await getTemplate(loader, `${ASSET_ROOT}${file}`);
+      if (!template?.scene) {
+        stats.failed += placements.length;
+        continue;
+      }
+      for (const placement of placements) {
+        const root = cloneObject(template.scene);
+        const instance = root as unknown as {
+          position: Vector3Like;
+          rotation: { x: number; y: number; z: number };
+          scale?: Vector3Like;
+        };
+        applyTransform(instance, placement);
+        markStaticSurface(root);
+        scene.add(root);
+        added.push(root);
+        if (BoxHelper) {
+          const helper = new BoxHelper(root as unknown as object, DEBUG_BOUNDS_COLOR);
+          scene.add(helper as unknown as Object3DLike);
+          added.push(helper as unknown as Object3DLike);
+        }
+        stats.loaded += 1;
+      }
+    }
+
+    if (procedural && enableInteriors) {
+      await addInteriorMeshes(scene, manifest.placements, added, debugInteriors);
+    }
+
+    const colliders = sanitizeColliders(manifest.colliders);
+    if (debugColliders) {
+      await addColliderDebugMeshes(scene, colliders, added);
+    }
+
+    stats.complete = true;
+    maybeSetMapStats(stats);
+
+    const dispose = () => {
+      if (!scene.remove) {
+        return;
+      }
+      for (let i = added.length - 1; i >= 0; i -= 1) {
+        scene.remove(added[i]!);
+      }
+      added.length = 0;
+    };
+
+    return {
+      seed: manifest.seed >>> 0,
+      colliders,
+      pickupSpawns: manifest.pickupSpawns,
+      placements: manifest.placements.length,
+      loaded: stats.loaded,
+      failed: stats.failed,
+      dispose
+    };
   } catch (error) {
     console.warn('suburban map load skipped', error);
+    const stats = { total: 0, loaded: 0, failed: 0, complete: true, seed: seed >>> 0 };
+    maybeSetMapStats(stats);
+    return {
+      seed: seed >>> 0,
+      colliders: [],
+      pickupSpawns: [],
+      placements: 0,
+      loaded: 0,
+      failed: 0,
+      dispose: () => {}
+    };
+  }
+};
+
+export { generateProceduralRetroUrbanMap };
+export type { RetroMapPickupSpawn };
+export const __test = {
+  clearCache: () => {
+    templateCache.clear();
   }
 };

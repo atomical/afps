@@ -1,6 +1,7 @@
 import type { InputCmd } from './input_cmd';
 import type { StateSnapshot } from './protocol';
 import { SIM_CONFIG, type SimConfig, resolveEyeHeight } from '../sim/config';
+import { sanitizeColliders, type AabbCollider } from '../world/collision';
 
 export type PredictionInput = Pick<
   InputCmd,
@@ -26,6 +27,7 @@ export interface PredictionSim {
   setState: (x: number, y: number, z: number, velX: number, velY: number, velZ: number, dashCooldown: number) => void;
   reset: () => void;
   setConfig: (config: SimConfig) => void;
+  setColliders?: (colliders: readonly AabbCollider[]) => void;
   __setShieldCooldown?: (value: number) => void;
   __setGrappleCooldown?: (value: number) => void;
 }
@@ -56,6 +58,17 @@ const toNumber = (value: number) => (Number.isFinite(value) ? value : 0);
 const WRAP_PI = Math.PI;
 const MAX_PITCH = Math.PI / 2 - 0.01;
 const RAY_EPSILON = 1e-8;
+const DEFAULT_PLAYER_HEIGHT = 1.7;
+
+type CollisionRaycastHit = {
+  hit: boolean;
+  t: number;
+  nx: number;
+  ny: number;
+  nz: number;
+  colliderId?: number;
+  surfaceType?: number;
+};
 
 const wrapAngle = (angle: number) => {
   const safeAngle = Number.isFinite(angle) ? angle : 0;
@@ -94,7 +107,7 @@ const raycastAabb2D = (
   maxX: number,
   minY: number,
   maxY: number,
-  best: { hit: boolean; t: number; nx: number; ny: number; nz: number }
+  best: CollisionRaycastHit
 ) => {
   if (!Number.isFinite(dirX) || !Number.isFinite(dirY)) {
     return;
@@ -144,14 +157,116 @@ const raycastAabb2D = (
   testPlaneY(maxY, 1);
 };
 
-const raycastWorld = (origin: { x: number; y: number; z: number }, dir: { x: number; y: number; z: number }, config: SimConfig) => {
-  const best = { hit: false, t: Number.POSITIVE_INFINITY, nx: 0, ny: 0, nz: 0 };
+const raycastAabb3D = (
+  origin: { x: number; y: number; z: number },
+  dir: { x: number; y: number; z: number },
+  min: { x: number; y: number; z: number },
+  max: { x: number; y: number; z: number }
+) => {
+  let tMin = Number.NEGATIVE_INFINITY;
+  let tMax = Number.POSITIVE_INFINITY;
+  let nearNx = 0;
+  let nearNy = 0;
+  let nearNz = 0;
+  let farNx = 0;
+  let farNy = 0;
+  let farNz = 0;
+  let nx = 0;
+  let ny = 0;
+  let nz = 0;
+
+  const updateAxis = (
+    originAxis: number,
+    dirAxis: number,
+    minAxis: number,
+    maxAxis: number,
+    axisX: number,
+    axisY: number,
+    axisZ: number
+  ) => {
+    if (Math.abs(dirAxis) < RAY_EPSILON) {
+      return originAxis >= minAxis && originAxis <= maxAxis;
+    }
+    const inv = 1 / dirAxis;
+    let t1 = (minAxis - originAxis) * inv;
+    let t2 = (maxAxis - originAxis) * inv;
+    let axisNearNx = -axisX;
+    let axisNearNy = -axisY;
+    let axisNearNz = -axisZ;
+    let axisFarNx = axisX;
+    let axisFarNy = axisY;
+    let axisFarNz = axisZ;
+    if (t1 > t2) {
+      [t1, t2] = [t2, t1];
+      axisNearNx = axisX;
+      axisNearNy = axisY;
+      axisNearNz = axisZ;
+      axisFarNx = -axisX;
+      axisFarNy = -axisY;
+      axisFarNz = -axisZ;
+    }
+    if (t1 > tMin) {
+      tMin = t1;
+      nearNx = axisNearNx;
+      nearNy = axisNearNy;
+      nearNz = axisNearNz;
+    }
+    if (t2 < tMax) {
+      tMax = t2;
+      farNx = axisFarNx;
+      farNy = axisFarNy;
+      farNz = axisFarNz;
+    }
+    return tMin <= tMax;
+  };
+
+  if (!updateAxis(origin.x, dir.x, min.x, max.x, 1, 0, 0)) {
+    return null;
+  }
+  if (!updateAxis(origin.y, dir.y, min.y, max.y, 0, 1, 0)) {
+    return null;
+  }
+  if (!updateAxis(origin.z, dir.z, min.z, max.z, 0, 0, 1)) {
+    return null;
+  }
+  if (tMax < 0) {
+    return null;
+  }
+  const entering = tMin >= 0;
+  const t = entering ? tMin : tMax;
+  if (!Number.isFinite(t) || t < 0) {
+    return null;
+  }
+  if (entering) {
+    nx = nearNx;
+    ny = nearNy;
+    nz = nearNz;
+  } else {
+    nx = farNx;
+    ny = farNy;
+    nz = farNz;
+  }
+  return { t, nx, ny, nz };
+};
+
+const raycastWorld = (
+  origin: { x: number; y: number; z: number },
+  dir: { x: number; y: number; z: number },
+  config: SimConfig,
+  colliders: readonly AabbCollider[]
+) => {
+  const best: CollisionRaycastHit = { hit: false, t: Number.POSITIVE_INFINITY, nx: 0, ny: 0, nz: 0 };
   if (Math.abs(dir.x) < RAY_EPSILON && Math.abs(dir.y) < RAY_EPSILON && Math.abs(dir.z) < RAY_EPSILON) {
     return best;
   }
   if (Number.isFinite(config.arenaHalfSize) && config.arenaHalfSize > 0) {
     const half = Math.max(0, config.arenaHalfSize);
+    const beforeT = best.t;
     raycastAabb2D(origin.x, origin.y, dir.x, dir.y, -half, half, -half, half, best);
+    if (best.hit && best.t < beforeT) {
+      best.colliderId = -1;
+      best.surfaceType = 0;
+    }
 
     const testPlaneZ = (planeZ: number, normalZ: number) => {
       if (Math.abs(dir.z) < RAY_EPSILON) {
@@ -171,6 +286,8 @@ const raycastWorld = (origin: { x: number; y: number; z: number }, dir: { x: num
       best.nx = 0;
       best.ny = 0;
       best.nz = normalZ;
+      best.colliderId = -1;
+      best.surfaceType = normalZ > 0 ? 2 : 0;
     };
 
     const playerHeight = Math.max(0, config.playerHeight);
@@ -186,6 +303,7 @@ const raycastWorld = (origin: { x: number; y: number; z: number }, dir: { x: num
     config.obstacleMinX < config.obstacleMaxX &&
     config.obstacleMinY < config.obstacleMaxY
   ) {
+    const beforeT = best.t;
     raycastAabb2D(
       origin.x,
       origin.y,
@@ -197,6 +315,28 @@ const raycastWorld = (origin: { x: number; y: number; z: number }, dir: { x: num
       config.obstacleMaxY,
       best
     );
+    if (best.hit && best.t < beforeT) {
+      best.colliderId = -2;
+      best.surfaceType = 1;
+    }
+  }
+  for (const collider of colliders) {
+    const hit = raycastAabb3D(
+      origin,
+      dir,
+      { x: collider.minX, y: collider.minY, z: collider.minZ },
+      { x: collider.maxX, y: collider.maxY, z: collider.maxZ }
+    );
+    if (!hit || hit.t >= best.t) {
+      continue;
+    }
+    best.hit = true;
+    best.t = hit.t;
+    best.nx = hit.nx;
+    best.ny = hit.ny;
+    best.nz = hit.nz;
+    best.colliderId = collider.id;
+    best.surfaceType = Number(collider.surfaceType) | 0;
   }
   return best;
 };
@@ -229,6 +369,7 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
     shockwaveInput: false
   };
   const currentConfig = { ...SIM_CONFIG };
+  let worldColliders: AabbCollider[] = [];
   const WALKABLE_NORMAL_Z = 0.7;
 
   const setConfig = (next: SimConfig) => {
@@ -310,7 +451,11 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
     currentConfig.obstacleMaxY = next.obstacleMaxY;
   };
 
-  const resolveObstaclePenetration = (minX: number, maxX: number, minY: number, maxY: number) => {
+  const setColliders = (colliders: readonly AabbCollider[]) => {
+    worldColliders = sanitizeColliders(colliders);
+  };
+
+  const resolveAabbPenetration = (minX: number, maxX: number, minY: number, maxY: number) => {
     const left = state.x - minX;
     const right = maxX - state.x;
     const down = state.y - minY;
@@ -349,6 +494,54 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
         state.velY = 0;
       }
     }
+  };
+
+  type ExpandedAabb2D = {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  };
+
+  const resolvePlayerHeightForCollision = () => {
+    if (!Number.isFinite(currentConfig.playerHeight) || currentConfig.playerHeight <= 0) {
+      return DEFAULT_PLAYER_HEIGHT;
+    }
+    return currentConfig.playerHeight;
+  };
+
+  const getExpandedColliders = (): ExpandedAabb2D[] => {
+    const expanded: ExpandedAabb2D[] = [];
+    const radius = Math.max(0, toNumber(currentConfig.playerRadius));
+    const playerMinZ = state.z;
+    const playerMaxZ = state.z + resolvePlayerHeightForCollision();
+    for (const collider of worldColliders) {
+      if (playerMaxZ <= collider.minZ || playerMinZ >= collider.maxZ) {
+        continue;
+      }
+      expanded.push({
+        minX: collider.minX - radius,
+        maxX: collider.maxX + radius,
+        minY: collider.minY - radius,
+        maxY: collider.maxY + radius
+      });
+    }
+    if (
+      Number.isFinite(currentConfig.obstacleMinX) &&
+      Number.isFinite(currentConfig.obstacleMaxX) &&
+      Number.isFinite(currentConfig.obstacleMinY) &&
+      Number.isFinite(currentConfig.obstacleMaxY) &&
+      currentConfig.obstacleMinX < currentConfig.obstacleMaxX &&
+      currentConfig.obstacleMinY < currentConfig.obstacleMaxY
+    ) {
+      expanded.push({
+        minX: currentConfig.obstacleMinX - radius,
+        maxX: currentConfig.obstacleMaxX + radius,
+        minY: currentConfig.obstacleMinY - radius,
+        maxY: currentConfig.obstacleMaxY + radius
+      });
+    }
+    return expanded;
   };
 
   const sweepSegmentAabb = (
@@ -434,25 +627,6 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
     }
   };
 
-  const getObstacleBounds = () => {
-    if (!Number.isFinite(currentConfig.obstacleMinX) || !Number.isFinite(currentConfig.obstacleMaxX)) {
-      return null;
-    }
-    if (!Number.isFinite(currentConfig.obstacleMinY) || !Number.isFinite(currentConfig.obstacleMaxY)) {
-      return null;
-    }
-    if (currentConfig.obstacleMinX >= currentConfig.obstacleMaxX || currentConfig.obstacleMinY >= currentConfig.obstacleMaxY) {
-      return null;
-    }
-    const radius = Math.max(0, toNumber(currentConfig.playerRadius));
-    return {
-      minX: currentConfig.obstacleMinX - radius,
-      maxX: currentConfig.obstacleMaxX + radius,
-      minY: currentConfig.obstacleMinY - radius,
-      maxY: currentConfig.obstacleMaxY + radius
-    };
-  };
-
   type SweepHit = {
     hit: boolean;
     t: number;
@@ -512,7 +686,7 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
     }
   };
 
-  const sweepObstacleBounds = (
+  const sweepAabb = (
     prevX: number,
     prevY: number,
     deltaX: number,
@@ -550,21 +724,21 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
 
   const advanceWithCollisions = (dt: number) => {
     const arena = getArenaBounds();
-    const obstacle = getObstacleBounds();
     let remaining = dt;
 
     for (let iteration = 0; iteration < 3 && remaining > 0; iteration += 1) {
+      const expandedColliders = getExpandedColliders();
       if (arena) {
         if (state.x < arena.min || state.x > arena.max || state.y < arena.min || state.y > arena.max) {
           resolveArenaPenetration(arena.min, arena.max);
         }
       }
 
-    if (obstacle) {
-      if (state.x >= obstacle.minX && state.x <= obstacle.maxX && state.y >= obstacle.minY && state.y <= obstacle.maxY) {
-        resolveObstaclePenetration(obstacle.minX, obstacle.maxX, obstacle.minY, obstacle.maxY);
+      for (const collider of expandedColliders) {
+        if (state.x >= collider.minX && state.x <= collider.maxX && state.y >= collider.minY && state.y <= collider.maxY) {
+          resolveAabbPenetration(collider.minX, collider.maxX, collider.minY, collider.maxY);
+        }
       }
-    }
 
       const prevX = state.x;
       const prevY = state.y;
@@ -588,11 +762,11 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
       if (arena) {
         sweepArenaBounds(prevX, prevY, deltaX, deltaY, arena.min, arena.max, best);
       }
-      if (obstacle) {
+      for (const collider of expandedColliders) {
         const prevInside =
-          prevX >= obstacle.minX && prevX <= obstacle.maxX && prevY >= obstacle.minY && prevY <= obstacle.maxY;
+          prevX >= collider.minX && prevX <= collider.maxX && prevY >= collider.minY && prevY <= collider.maxY;
         if (!prevInside) {
-          sweepObstacleBounds(prevX, prevY, deltaX, deltaY, obstacle.minX, obstacle.maxX, obstacle.minY, obstacle.maxY, best);
+          sweepAabb(prevX, prevY, deltaX, deltaY, collider.minX, collider.maxX, collider.minY, collider.maxY, best);
         }
       }
 
@@ -621,9 +795,9 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
       remaining *= 1 - best.t;
     }
 
-    if (obstacle) {
-      if (state.x >= obstacle.minX && state.x <= obstacle.maxX && state.y >= obstacle.minY && state.y <= obstacle.maxY) {
-        resolveObstaclePenetration(obstacle.minX, obstacle.maxX, obstacle.minY, obstacle.maxY);
+    for (const collider of getExpandedColliders()) {
+      if (state.x >= collider.minX && state.x <= collider.maxX && state.y >= collider.minY && state.y <= collider.maxY) {
+        resolveAabbPenetration(collider.minX, collider.maxX, collider.minY, collider.maxY);
       }
     }
     if (arena) {
@@ -731,7 +905,7 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
         const dir = viewDirection(input.viewYaw ?? 0, input.viewPitch ?? 0);
         const eyeHeight = resolveEyeHeight(currentConfig);
         const origin = { x: state.x, y: state.y, z: state.z + eyeHeight };
-        const hit = raycastWorld(origin, dir, currentConfig);
+        const hit = raycastWorld(origin, dir, currentConfig, worldColliders);
         if (hit.hit && hit.t >= 0 && hit.t <= maxDistance) {
           let anchorX = origin.x + dir.x * hit.t;
           let anchorY = origin.y + dir.y * hit.t;
@@ -836,7 +1010,7 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
             releaseGrapple();
           } else {
             const dir = { x: dx / dist, y: dy / dist, z: dz / dist };
-            const losHit = raycastWorld(origin, dir, currentConfig);
+            const losHit = raycastWorld(origin, dir, currentConfig, worldColliders);
             if (!losHit.hit || losHit.t + 1e-4 < dist) {
               releaseGrapple();
             } else if (dist > state.grappleLength + ropeSlack) {
@@ -983,7 +1157,7 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
     state.grappleCooldown = value;
   };
 
-  return { step, getState, setState, reset, setConfig, __setShieldCooldown, __setGrappleCooldown };
+  return { step, getState, setState, reset, setConfig, setColliders, __setShieldCooldown, __setGrappleCooldown };
 };
 
 export class ClientPrediction {
@@ -1003,10 +1177,12 @@ export class ClientPrediction {
   private active = false;
   private sim: PredictionSim;
   private simConfig: SimConfig = SIM_CONFIG;
+  private colliders: AabbCollider[] = [];
 
   constructor(sim?: PredictionSim) {
     this.sim = sim ?? createJsPredictionSim(this.simConfig);
     this.sim.setConfig(this.simConfig);
+    this.sim.setColliders?.(this.colliders);
   }
 
   setTickRate(tickRate: number) {
@@ -1039,6 +1215,7 @@ export class ClientPrediction {
   setSim(sim: PredictionSim) {
     this.sim = sim;
     this.sim.setConfig(this.simConfig);
+    this.sim.setColliders?.(this.colliders);
     this.sim.setState(
       this.state.x,
       this.state.y,
@@ -1048,6 +1225,11 @@ export class ClientPrediction {
       this.state.velZ,
       this.state.dashCooldown
     );
+  }
+
+  setColliders(colliders: readonly AabbCollider[]) {
+    this.colliders = sanitizeColliders(colliders);
+    this.sim.setColliders?.(this.colliders);
   }
 
   recordInput(cmd: InputCmd) {

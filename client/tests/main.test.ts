@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import * as flatbuffers from 'flatbuffers';
 import { LOADOUT_BITS } from '../src/weapons/loadout';
+import { decodeEnvelope, MessageType } from '../src/net/protocol';
+import { FireWeaponRequest } from '../src/net/fbs/afps/protocol/fire-weapon-request';
 
 const startAppMock = vi.fn();
 const connectMock = vi.fn();
@@ -43,6 +46,7 @@ const appInstance = {
   }),
   getRenderTick: vi.fn().mockReturnValue(0),
   setWeaponViewmodel: vi.fn(),
+  setMapSeed: vi.fn(),
   setTickRate: vi.fn(),
   setPredictionSim: vi.fn(),
   applyLookDelta: vi.fn(),
@@ -298,6 +302,7 @@ describe('main entry', () => {
     appInstance.setSnapshotRate.mockReset();
     appInstance.recordInput.mockReset();
     appInstance.recordWeaponFired.mockReset();
+    appInstance.setMapSeed.mockReset();
     appInstance.setTickRate.mockReset();
     appInstance.setPredictionSim.mockReset();
     appInstance.applyLookDelta.mockReset();
@@ -562,6 +567,32 @@ describe('main entry', () => {
     expect(appInstance.setOutlineTeam).toHaveBeenCalledWith(0);
   });
 
+  it('sends loadout requests on the unreliable channel', async () => {
+    const sendReliable = vi.fn();
+    const sendUnreliable = vi.fn();
+    connectMock.mockResolvedValue({
+      connectionId: 'conn',
+      serverHello: { serverTickRate: 60, snapshotRate: 20 },
+      reliableChannel: { label: 'afps_reliable', readyState: 'open', send: sendReliable },
+      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: sendUnreliable },
+      nextClientMessageSeq: () => 1,
+      getServerSeqAck: () => 0
+    });
+    envMock.getSignalingUrl.mockReturnValue('https://example.test');
+    envMock.getSignalingAuthToken.mockReturnValue('token');
+
+    await import('../src/main');
+    await flushPromises();
+
+    const sentLoadout = sendUnreliable.mock.calls.some((call) => {
+      const payload = call[0] as ArrayBuffer | Uint8Array;
+      const envelope = decodeEnvelope(payload);
+      return envelope?.header.msgType === MessageType.SetLoadoutRequest;
+    });
+    expect(sentLoadout).toBe(true);
+    expect(sendReliable).not.toHaveBeenCalled();
+  });
+
   it('handles non-error rejections', async () => {
     envMock.getSignalingUrl.mockReturnValue('https://example.test');
     envMock.getSignalingAuthToken.mockReturnValue('token');
@@ -757,6 +788,52 @@ describe('main entry', () => {
     expect(samplerInstance.dispose).toHaveBeenCalled();
   });
 
+  it('sends fire direction with downward z when look pitch is positive', async () => {
+    const sendUnreliable = vi.fn();
+    connectMock.mockResolvedValue({
+      connectionId: 'conn',
+      serverHello: { serverTickRate: 60, snapshotRate: 20 },
+      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: sendUnreliable },
+      nextClientMessageSeq: () => 1,
+      getServerSeqAck: () => 0
+    });
+    envMock.getSignalingUrl.mockReturnValue('https://example.test');
+    envMock.getSignalingAuthToken.mockReturnValue('token');
+
+    await import('../src/main');
+    await flushPromises();
+
+    appInstance.getLookAngles.mockReturnValue({ yaw: 0, pitch: 0.25 });
+    const senderArgs = createInputSenderMock.mock.calls[0]?.[0] as { onSend?: (cmd: Record<string, unknown>) => void };
+    senderArgs.onSend?.({
+      type: 'InputCmd',
+      inputSeq: 1,
+      moveX: 0,
+      moveY: 0,
+      lookDeltaX: 0,
+      lookDeltaY: 0,
+      viewYaw: 0,
+      viewPitch: 0,
+      weaponSlot: 0,
+      jump: false,
+      fire: true,
+      ads: false,
+      sprint: false,
+      dash: false,
+      grapple: false,
+      shield: false,
+      shockwave: false
+    });
+
+    const firePayload = sendUnreliable.mock.calls
+      .map((call) => call[0] as ArrayBuffer | Uint8Array)
+      .map((payload) => decodeEnvelope(payload))
+      .find((envelope) => envelope?.header.msgType === MessageType.FireWeaponRequest);
+    expect(firePayload).toBeTruthy();
+    const fire = FireWeaponRequest.getRootAsFireWeaponRequest(new flatbuffers.ByteBuffer(firePayload!.payload));
+    expect(fire.dirZ()).toBeLessThan(0);
+  });
+
   it('shows keyframe interval in metrics before snapshots arrive', async () => {
     connectMock.mockResolvedValue({
       connectionId: 'conn',
@@ -851,6 +928,15 @@ describe('main entry', () => {
   it('toggles debug overlays on tilde key', async () => {
     envMock.getSignalingUrl.mockReturnValue(undefined);
     envMock.getSignalingAuthToken.mockReturnValue(undefined);
+    appInstance.getPlayerPose.mockReturnValueOnce({
+      posX: 12.3456,
+      posY: -7.8912,
+      posZ: 0.1234,
+      velX: 0,
+      velY: 0,
+      velZ: 0
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
     await import('../src/main');
 
@@ -860,6 +946,12 @@ describe('main entry', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Backquote' }));
     expect(statusMock.setVisible).toHaveBeenCalledWith(true);
     expect(settingsMock.setVisible).not.toHaveBeenCalled();
+    expect(logSpy).toHaveBeenCalledWith('[afps] player coords', {
+      x: 12.346,
+      y: -7.891,
+      z: 0.123
+    });
+    logSpy.mockRestore();
   });
 
   it('toggles the settings window on escape', async () => {

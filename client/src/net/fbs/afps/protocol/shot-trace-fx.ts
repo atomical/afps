@@ -83,8 +83,23 @@ showTracer():boolean {
   return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
 }
 
+hitPosXQ():number {
+  const offset = this.bb!.__offset(this.bb_pos, 26);
+  return offset ? this.bb!.readInt16(this.bb_pos + offset) : 0;
+}
+
+hitPosYQ():number {
+  const offset = this.bb!.__offset(this.bb_pos, 28);
+  return offset ? this.bb!.readInt16(this.bb_pos + offset) : 0;
+}
+
+hitPosZQ():number {
+  const offset = this.bb!.__offset(this.bb_pos, 30);
+  return offset ? this.bb!.readInt16(this.bb_pos + offset) : 0;
+}
+
 static startShotTraceFx(builder:flatbuffers.Builder) {
-  builder.startObject(11);
+  builder.startObject(14);
 }
 
 static addShooterId(builder:flatbuffers.Builder, shooterIdOffset:flatbuffers.Offset) {
@@ -131,12 +146,24 @@ static addShowTracer(builder:flatbuffers.Builder, showTracer:boolean) {
   builder.addFieldInt8(10, +showTracer, +false);
 }
 
+static addHitPosXQ(builder:flatbuffers.Builder, hitPosXQ:number) {
+  builder.addFieldInt16(11, hitPosXQ, 0);
+}
+
+static addHitPosYQ(builder:flatbuffers.Builder, hitPosYQ:number) {
+  builder.addFieldInt16(12, hitPosYQ, 0);
+}
+
+static addHitPosZQ(builder:flatbuffers.Builder, hitPosZQ:number) {
+  builder.addFieldInt16(13, hitPosZQ, 0);
+}
+
 static endShotTraceFx(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createShotTraceFx(builder:flatbuffers.Builder, shooterIdOffset:flatbuffers.Offset, weaponSlot:number, shotSeq:number, dirOctX:number, dirOctY:number, hitDistQ:number, hitKind:HitKind, surfaceType:SurfaceType, normalOctX:number, normalOctY:number, showTracer:boolean):flatbuffers.Offset {
+static createShotTraceFx(builder:flatbuffers.Builder, shooterIdOffset:flatbuffers.Offset, weaponSlot:number, shotSeq:number, dirOctX:number, dirOctY:number, hitDistQ:number, hitKind:HitKind, surfaceType:SurfaceType, normalOctX:number, normalOctY:number, showTracer:boolean, hitPosXQ:number, hitPosYQ:number, hitPosZQ:number):flatbuffers.Offset {
   ShotTraceFx.startShotTraceFx(builder);
   ShotTraceFx.addShooterId(builder, shooterIdOffset);
   ShotTraceFx.addWeaponSlot(builder, weaponSlot);
@@ -149,6 +176,9 @@ static createShotTraceFx(builder:flatbuffers.Builder, shooterIdOffset:flatbuffer
   ShotTraceFx.addNormalOctX(builder, normalOctX);
   ShotTraceFx.addNormalOctY(builder, normalOctY);
   ShotTraceFx.addShowTracer(builder, showTracer);
+  ShotTraceFx.addHitPosXQ(builder, hitPosXQ);
+  ShotTraceFx.addHitPosYQ(builder, hitPosYQ);
+  ShotTraceFx.addHitPosZQ(builder, hitPosZQ);
   return ShotTraceFx.endShotTraceFx(builder);
 }
 
@@ -164,7 +194,10 @@ unpack(): ShotTraceFxT {
     this.surfaceType(),
     this.normalOctX(),
     this.normalOctY(),
-    this.showTracer()
+    this.showTracer(),
+    this.hitPosXQ(),
+    this.hitPosYQ(),
+    this.hitPosZQ()
   );
 }
 
@@ -181,6 +214,9 @@ unpackTo(_o: ShotTraceFxT): void {
   _o.normalOctX = this.normalOctX();
   _o.normalOctY = this.normalOctY();
   _o.showTracer = this.showTracer();
+  _o.hitPosXQ = this.hitPosXQ();
+  _o.hitPosYQ = this.hitPosYQ();
+  _o.hitPosZQ = this.hitPosZQ();
 }
 }
 
@@ -196,7 +232,10 @@ constructor(
   public surfaceType: SurfaceType = SurfaceType.Stone,
   public normalOctX: number = 0,
   public normalOctY: number = 0,
-  public showTracer: boolean = false
+  public showTracer: boolean = false,
+  public hitPosXQ: number = 0,
+  public hitPosYQ: number = 0,
+  public hitPosZQ: number = 0
 ){}
 
 
@@ -214,7 +253,10 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
     this.surfaceType,
     this.normalOctX,
     this.normalOctY,
-    this.showTracer
+    this.showTracer,
+    this.hitPosXQ,
+    this.hitPosYQ,
+    this.hitPosZQ
   );
 }
 }

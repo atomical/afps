@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
+#include <vector>
 
 namespace afps::sim {
 
@@ -49,6 +51,52 @@ struct SimInput {
   double view_yaw = 0.0;
   double view_pitch = 0.0;
 };
+
+struct AabbCollider {
+  int id = 0;
+  double min_x = 0.0;
+  double min_y = 0.0;
+  double min_z = 0.0;
+  double max_x = 0.0;
+  double max_y = 0.0;
+  double max_z = 0.0;
+  uint8_t surface_type = 0;
+  uint32_t tags = 0;
+};
+
+struct CollisionWorld {
+  std::vector<AabbCollider> colliders;
+};
+
+inline bool IsValidAabbCollider(const AabbCollider &collider) {
+  if (!std::isfinite(collider.min_x) || !std::isfinite(collider.min_y) || !std::isfinite(collider.min_z) ||
+      !std::isfinite(collider.max_x) || !std::isfinite(collider.max_y) || !std::isfinite(collider.max_z)) {
+    return false;
+  }
+  if (collider.min_x >= collider.max_x || collider.min_y >= collider.max_y || collider.min_z >= collider.max_z) {
+    return false;
+  }
+  return true;
+}
+
+inline void ClearColliders(CollisionWorld &world) {
+  world.colliders.clear();
+}
+
+inline void AddAabbCollider(CollisionWorld &world, const AabbCollider &collider) {
+  if (!IsValidAabbCollider(collider)) {
+    return;
+  }
+  world.colliders.push_back(collider);
+}
+
+inline void SetAabbColliders(CollisionWorld &world, const std::vector<AabbCollider> &colliders) {
+  world.colliders.clear();
+  world.colliders.reserve(colliders.size());
+  for (const auto &collider : colliders) {
+    AddAabbCollider(world, collider);
+  }
+}
 
 struct PlayerState {
   double x = 0.0;
@@ -208,6 +256,8 @@ struct RaycastHit {
   double normal_x = 0.0;
   double normal_y = 0.0;
   double normal_z = 0.0;
+  int collider_id = -1;
+  uint8_t surface_type = 0;
 };
 
 inline double WrapAngle(double angle) {
@@ -303,6 +353,104 @@ inline void RaycastAabb2D(double origin_x,
   test_plane_y(max_y, 1.0);
 }
 
+inline bool RaycastAabb3D(double origin_x,
+                          double origin_y,
+                          double origin_z,
+                          double dir_x,
+                          double dir_y,
+                          double dir_z,
+                          double min_x,
+                          double max_x,
+                          double min_y,
+                          double max_y,
+                          double min_z,
+                          double max_z,
+                          double &hit_t,
+                          double &normal_x,
+                          double &normal_y,
+                          double &normal_z) {
+  const double epsilon = 1e-8;
+  double t_min = -std::numeric_limits<double>::infinity();
+  double t_max = std::numeric_limits<double>::infinity();
+  double near_normal_x = 0.0;
+  double near_normal_y = 0.0;
+  double near_normal_z = 0.0;
+  double far_normal_x = 0.0;
+  double far_normal_y = 0.0;
+  double far_normal_z = 0.0;
+  normal_x = 0.0;
+  normal_y = 0.0;
+  normal_z = 0.0;
+
+  auto update_axis = [&](double origin,
+                         double dir,
+                         double min_bound,
+                         double max_bound,
+                         double axis_normal_x,
+                         double axis_normal_y,
+                         double axis_normal_z) -> bool {
+    if (std::abs(dir) < epsilon) {
+      return origin >= min_bound && origin <= max_bound;
+    }
+    const double inv = 1.0 / dir;
+    double t1 = (min_bound - origin) * inv;
+    double t2 = (max_bound - origin) * inv;
+    double near_nx = -axis_normal_x;
+    double near_ny = -axis_normal_y;
+    double near_nz = -axis_normal_z;
+    double far_nx = axis_normal_x;
+    double far_ny = axis_normal_y;
+    double far_nz = axis_normal_z;
+    if (t1 > t2) {
+      std::swap(t1, t2);
+      near_nx = axis_normal_x;
+      near_ny = axis_normal_y;
+      near_nz = axis_normal_z;
+      far_nx = -axis_normal_x;
+      far_ny = -axis_normal_y;
+      far_nz = -axis_normal_z;
+    }
+    if (t1 > t_min) {
+      t_min = t1;
+      near_normal_x = near_nx;
+      near_normal_y = near_ny;
+      near_normal_z = near_nz;
+    }
+    if (t2 < t_max) {
+      t_max = t2;
+      far_normal_x = far_nx;
+      far_normal_y = far_ny;
+      far_normal_z = far_nz;
+    }
+    return t_min <= t_max;
+  };
+
+  if (!update_axis(origin_x, dir_x, min_x, max_x, 1.0, 0.0, 0.0)) {
+    return false;
+  }
+  if (!update_axis(origin_y, dir_y, min_y, max_y, 0.0, 1.0, 0.0)) {
+    return false;
+  }
+  if (!update_axis(origin_z, dir_z, min_z, max_z, 0.0, 0.0, 1.0)) {
+    return false;
+  }
+  if (t_max < 0.0) {
+    return false;
+  }
+  if (t_min >= 0.0) {
+    hit_t = t_min;
+    normal_x = near_normal_x;
+    normal_y = near_normal_y;
+    normal_z = near_normal_z;
+  } else {
+    hit_t = t_max;
+    normal_x = far_normal_x;
+    normal_y = far_normal_y;
+    normal_z = far_normal_z;
+  }
+  return std::isfinite(hit_t) && hit_t >= 0.0;
+}
+
 inline bool GetArenaAabb(const SimConfig &config, double &min_bound, double &max_bound) {
   if (!std::isfinite(config.arena_half_size) || config.arena_half_size <= 0.0) {
     return false;
@@ -332,7 +480,10 @@ inline bool GetObstacleAabb(const SimConfig &config,
   return true;
 }
 
-inline RaycastHit RaycastWorld(const Vec3 &origin, const Vec3 &dir, const SimConfig &config) {
+inline RaycastHit RaycastWorld(const Vec3 &origin,
+                               const Vec3 &dir,
+                               const SimConfig &config,
+                               const CollisionWorld *world = nullptr) {
   RaycastHit best;
   const double epsilon = 1e-8;
   if (std::abs(dir.x) < epsilon && std::abs(dir.y) < epsilon && std::abs(dir.z) < epsilon) {
@@ -341,7 +492,12 @@ inline RaycastHit RaycastWorld(const Vec3 &origin, const Vec3 &dir, const SimCon
   double arena_min = 0.0;
   double arena_max = 0.0;
   if (GetArenaAabb(config, arena_min, arena_max)) {
+    const double before_t = best.t;
     RaycastAabb2D(origin.x, origin.y, dir.x, dir.y, arena_min, arena_max, arena_min, arena_max, best);
+    if (best.hit && best.t < before_t) {
+      best.collider_id = -1;
+      best.surface_type = 0;
+    }
     auto test_plane_z = [&](double plane_z, double normal_z) {
       if (std::abs(dir.z) < epsilon) {
         return;
@@ -360,6 +516,8 @@ inline RaycastHit RaycastWorld(const Vec3 &origin, const Vec3 &dir, const SimCon
       best.normal_x = 0.0;
       best.normal_y = 0.0;
       best.normal_z = normal_z;
+      best.collider_id = -1;
+      best.surface_type = normal_z > 0.0 ? 2 : 0;
     };
 
     double ceiling_z = 0.0;
@@ -377,7 +535,38 @@ inline RaycastHit RaycastWorld(const Vec3 &origin, const Vec3 &dir, const SimCon
   double obs_min_y = 0.0;
   double obs_max_y = 0.0;
   if (GetObstacleAabb(config, obs_min_x, obs_max_x, obs_min_y, obs_max_y)) {
+    const double before_t = best.t;
     RaycastAabb2D(origin.x, origin.y, dir.x, dir.y, obs_min_x, obs_max_x, obs_min_y, obs_max_y, best);
+    if (best.hit && best.t < before_t) {
+      best.collider_id = -2;
+      best.surface_type = 1;
+    }
+  }
+  if (world) {
+    for (const auto &collider : world->colliders) {
+      if (!IsValidAabbCollider(collider)) {
+        continue;
+      }
+      double t = 0.0;
+      double normal_x = 0.0;
+      double normal_y = 0.0;
+      double normal_z = 0.0;
+      if (!RaycastAabb3D(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, collider.min_x, collider.max_x,
+                         collider.min_y, collider.max_y, collider.min_z, collider.max_z, t, normal_x, normal_y,
+                         normal_z)) {
+        continue;
+      }
+      if (!std::isfinite(t) || t < 0.0 || t >= best.t) {
+        continue;
+      }
+      best.hit = true;
+      best.t = t;
+      best.normal_x = normal_x;
+      best.normal_y = normal_y;
+      best.normal_z = normal_z;
+      best.collider_id = collider.id;
+      best.surface_type = collider.surface_type;
+    }
   }
   return best;
 }
@@ -390,7 +579,7 @@ inline double ResolveEyeHeight(const SimConfig &config) {
   return std::min(config.player_height, kDefaultEyeHeight);
 }
 
-inline void ResolveObstaclePenetration(PlayerState &state, double min_x, double max_x, double min_y, double max_y) {
+inline void ResolveAabbPenetration(PlayerState &state, double min_x, double max_x, double min_y, double max_y) {
   const double left = state.x - min_x;
   const double right = max_x - state.x;
   const double down = state.y - min_y;
@@ -532,8 +721,8 @@ inline void SweepArenaBounds(double prev_x, double prev_y, double delta_x, doubl
   }
 }
 
-inline void SweepObstacleAabb(double prev_x, double prev_y, double delta_x, double delta_y, double min_x, double max_x,
-                              double min_y, double max_y, SweepHit &best) {
+inline void SweepAabb(double prev_x, double prev_y, double delta_x, double delta_y, double min_x, double max_x,
+                      double min_y, double max_y, SweepHit &best) {
   double hit_t = 0.0;
   double normal_x = 0.0;
   double normal_y = 0.0;
@@ -561,30 +750,89 @@ inline void SweepObstacleAabb(double prev_x, double prev_y, double delta_x, doub
   ConsiderSweepHit(best, hit_t, normal_x, normal_y, clamp_x, clamp_x_valid, clamp_y, clamp_y_valid);
 }
 
-inline void AdvanceWithCollisions(PlayerState &state, const SimConfig &config, double dt) {
+struct ExpandedAabb2D {
+  double min_x = 0.0;
+  double max_x = 0.0;
+  double min_y = 0.0;
+  double max_y = 0.0;
+};
+
+inline double ResolveCollisionPlayerHeight(const SimConfig &config) {
+  return (std::isfinite(config.player_height) && config.player_height > 0.0) ? config.player_height : 1.7;
+}
+
+inline bool BuildExpandedAabbFromCollider(const AabbCollider &collider,
+                                          const PlayerState &state,
+                                          const SimConfig &config,
+                                          ExpandedAabb2D &out) {
+  if (!IsValidAabbCollider(collider)) {
+    return false;
+  }
+  const double player_min_z = state.z;
+  const double player_max_z = state.z + ResolveCollisionPlayerHeight(config);
+  if (player_max_z <= collider.min_z || player_min_z >= collider.max_z) {
+    return false;
+  }
+  const double radius = (std::isfinite(config.player_radius) && config.player_radius > 0.0) ? config.player_radius : 0.0;
+  out.min_x = collider.min_x - radius;
+  out.max_x = collider.max_x + radius;
+  out.min_y = collider.min_y - radius;
+  out.max_y = collider.max_y + radius;
+  return true;
+}
+
+inline void ResolveOverlaps(PlayerState &state, const std::vector<ExpandedAabb2D> &expanded_aabbs) {
+  constexpr int kMaxOverlapPasses = 4;
+  for (int pass = 0; pass < kMaxOverlapPasses; ++pass) {
+    bool any_overlap = false;
+    for (const auto &aabb : expanded_aabbs) {
+      if (state.x >= aabb.min_x && state.x <= aabb.max_x && state.y >= aabb.min_y && state.y <= aabb.max_y) {
+        ResolveAabbPenetration(state, aabb.min_x, aabb.max_x, aabb.min_y, aabb.max_y);
+        any_overlap = true;
+      }
+    }
+    if (!any_overlap) {
+      break;
+    }
+  }
+}
+
+inline void AdvanceWithCollisions(PlayerState &state,
+                                  const SimConfig &config,
+                                  double dt,
+                                  const CollisionWorld *world = nullptr) {
   double arena_min = 0.0;
   double arena_max = 0.0;
   const bool has_arena = GetArenaBounds(config, arena_min, arena_max);
 
-  double obs_min_x = 0.0;
-  double obs_max_x = 0.0;
-  double obs_min_y = 0.0;
-  double obs_max_y = 0.0;
-  const bool has_obstacle = GetExpandedObstacleAabb(config, obs_min_x, obs_max_x, obs_min_y, obs_max_y);
-
   double remaining = dt;
   for (int iteration = 0; iteration < 3 && remaining > 0.0; ++iteration) {
+    std::vector<ExpandedAabb2D> expanded_aabbs;
+    if (world && !world->colliders.empty()) {
+      expanded_aabbs.reserve(world->colliders.size() + 1);
+      for (const auto &collider : world->colliders) {
+        ExpandedAabb2D expanded;
+        if (BuildExpandedAabbFromCollider(collider, state, config, expanded)) {
+          expanded_aabbs.push_back(expanded);
+        }
+      }
+    }
+    double obs_min_x = 0.0;
+    double obs_max_x = 0.0;
+    double obs_min_y = 0.0;
+    double obs_max_y = 0.0;
+    const bool has_obstacle = GetExpandedObstacleAabb(config, obs_min_x, obs_max_x, obs_min_y, obs_max_y);
+    if (has_obstacle) {
+      expanded_aabbs.push_back({obs_min_x, obs_max_x, obs_min_y, obs_max_y});
+    }
+
     if (has_arena) {
       if (state.x < arena_min || state.x > arena_max || state.y < arena_min || state.y > arena_max) {
         ResolveArenaPenetration(state, arena_min, arena_max);
       }
     }
 
-    if (has_obstacle) {
-      if (state.x >= obs_min_x && state.x <= obs_max_x && state.y >= obs_min_y && state.y <= obs_max_y) {
-        ResolveObstaclePenetration(state, obs_min_x, obs_max_x, obs_min_y, obs_max_y);
-      }
-    }
+    ResolveOverlaps(state, expanded_aabbs);
 
     const double prev_x = state.x;
     const double prev_y = state.y;
@@ -598,11 +846,10 @@ inline void AdvanceWithCollisions(PlayerState &state, const SimConfig &config, d
     if (has_arena) {
       SweepArenaBounds(prev_x, prev_y, delta_x, delta_y, arena_min, arena_max, best);
     }
-    if (has_obstacle) {
-      const bool prev_inside =
-          prev_x >= obs_min_x && prev_x <= obs_max_x && prev_y >= obs_min_y && prev_y <= obs_max_y;
+    for (const auto &aabb : expanded_aabbs) {
+      const bool prev_inside = prev_x >= aabb.min_x && prev_x <= aabb.max_x && prev_y >= aabb.min_y && prev_y <= aabb.max_y;
       if (!prev_inside) {
-        SweepObstacleAabb(prev_x, prev_y, delta_x, delta_y, obs_min_x, obs_max_x, obs_min_y, obs_max_y, best);
+        SweepAabb(prev_x, prev_y, delta_x, delta_y, aabb.min_x, aabb.max_x, aabb.min_y, aabb.max_y, best);
       }
     }
 
@@ -631,17 +878,36 @@ inline void AdvanceWithCollisions(PlayerState &state, const SimConfig &config, d
     remaining *= (1.0 - best.t);
   }
 
-  if (has_obstacle) {
-    if (state.x >= obs_min_x && state.x <= obs_max_x && state.y >= obs_min_y && state.y <= obs_max_y) {
-      ResolveObstaclePenetration(state, obs_min_x, obs_max_x, obs_min_y, obs_max_y);
+  std::vector<ExpandedAabb2D> final_aabbs;
+  if (world && !world->colliders.empty()) {
+    final_aabbs.reserve(world->colliders.size() + 1);
+    for (const auto &collider : world->colliders) {
+      ExpandedAabb2D expanded;
+      if (BuildExpandedAabbFromCollider(collider, state, config, expanded)) {
+        final_aabbs.push_back(expanded);
+      }
     }
+  }
+  double obs_min_x = 0.0;
+  double obs_max_x = 0.0;
+  double obs_min_y = 0.0;
+  double obs_max_y = 0.0;
+  if (GetExpandedObstacleAabb(config, obs_min_x, obs_max_x, obs_min_y, obs_max_y)) {
+    final_aabbs.push_back({obs_min_x, obs_max_x, obs_min_y, obs_max_y});
+  }
+  if (!final_aabbs.empty()) {
+    ResolveOverlaps(state, final_aabbs);
   }
   if (has_arena) {
     ResolveArenaPenetration(state, arena_min, arena_max);
   }
 }
 
-inline void StepPlayer(PlayerState &state, const SimInput &input, const SimConfig &config, double dt) {
+inline void StepPlayer(PlayerState &state,
+                       const SimInput &input,
+                       const SimConfig &config,
+                       double dt,
+                       const CollisionWorld *world = nullptr) {
   if (!std::isfinite(dt) || dt <= 0.0) {
     return;
   }
@@ -748,7 +1014,7 @@ inline void StepPlayer(PlayerState &state, const SimInput &input, const SimConfi
       const Vec3 dir = ViewDirection(view);
       const double eye_height = ResolveEyeHeight(config);
       Vec3 origin{state.x, state.y, state.z + eye_height};
-      const RaycastHit hit = RaycastWorld(origin, dir, config);
+      const RaycastHit hit = RaycastWorld(origin, dir, config, world);
       if (hit.hit && hit.t >= 0.0 && hit.t <= max_distance) {
         double anchor_x = origin.x + dir.x * hit.t;
         double anchor_y = origin.y + dir.y * hit.t;
@@ -862,7 +1128,7 @@ inline void StepPlayer(PlayerState &state, const SimInput &input, const SimConfi
           release_grapple(true);
         } else {
           const Vec3 dir{dx / dist, dy / dist, dz / dist};
-          const RaycastHit los_hit = RaycastWorld(origin, dir, config);
+          const RaycastHit los_hit = RaycastWorld(origin, dir, config, world);
           if (!los_hit.hit || los_hit.t + 1e-4 < dist) {
             release_grapple(true);
           } else if (dist > state.grapple_length + rope_slack) {
@@ -897,7 +1163,7 @@ inline void StepPlayer(PlayerState &state, const SimInput &input, const SimConfi
     state.vel_z -= gravity * dt;
   }
 
-  AdvanceWithCollisions(state, config, dt);
+  AdvanceWithCollisions(state, config, dt, world);
 
   const double player_height =
       (std::isfinite(config.player_height) && config.player_height >= 0.0) ? config.player_height : 0.0;

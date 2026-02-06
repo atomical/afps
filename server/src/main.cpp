@@ -177,6 +177,7 @@ int main(int argc, char **argv) {
   signaling_config.turn_user = parse.config.turn_user;
   signaling_config.turn_ttl_seconds = parse.config.turn_ttl_seconds;
   signaling_config.snapshot_keyframe_interval = parse.config.snapshot_keyframe_interval;
+  signaling_config.map_seed = parse.config.map_seed;
   std::filesystem::path manifest_path;
   if (!parse.config.character_manifest_path.empty()) {
     manifest_path = parse.config.character_manifest_path;
@@ -198,7 +199,7 @@ int main(int argc, char **argv) {
   }
   SignalingStore signaling_store(signaling_config);
   TickLoop tick_loop(signaling_store, kServerTickRate,
-                     parse.config.snapshot_keyframe_interval);
+                     parse.config.snapshot_keyframe_interval, parse.config.map_seed);
   tick_loop.Start();
 #endif
 

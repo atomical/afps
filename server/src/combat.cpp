@@ -353,7 +353,8 @@ HitResult ResolveHitscan(const std::string &shooter_id,
                          int rewind_tick,
                          const ViewAngles &view,
                          const afps::sim::SimConfig &config,
-                         double range) {
+                         double range,
+                         const afps::sim::CollisionWorld *world) {
   HitResult result;
   const auto shooter_iter = histories.find(shooter_id);
   if (shooter_iter == histories.end()) {
@@ -374,7 +375,14 @@ HitResult ResolveHitscan(const std::string &shooter_id,
   const double max_range = (std::isfinite(range) && range > 0.0)
                                ? range
                                : std::numeric_limits<double>::infinity();
-  double world_distance = std::min(RaycastArena(origin, dir, config), RaycastObstacle(origin, dir, config));
+  const afps::sim::RaycastHit world_hit = afps::sim::RaycastWorld({origin.x, origin.y, origin.z},
+                                                                   {dir.x, dir.y, dir.z},
+                                                                   config,
+                                                                   world);
+  double world_distance = std::numeric_limits<double>::infinity();
+  if (world_hit.hit && std::isfinite(world_hit.t) && world_hit.t >= 0.0) {
+    world_distance = world_hit.t;
+  }
 
   const double radius = ResolveRadius(config);
   const double height = ResolveHeight(config);
@@ -421,7 +429,8 @@ ProjectileImpact ResolveProjectileImpact(
     const Vec3 &delta,
     const afps::sim::SimConfig &config,
     const std::unordered_map<std::string, afps::sim::PlayerState> &players,
-    const std::string &ignore_id) {
+    const std::string &ignore_id,
+    const afps::sim::CollisionWorld *world) {
   ProjectileImpact impact;
   if (!std::isfinite(delta.x) || !std::isfinite(delta.y) || !std::isfinite(delta.z)) {
     return impact;
@@ -455,21 +464,28 @@ ProjectileImpact ResolveProjectileImpact(
   }
 
   double world_t = std::numeric_limits<double>::infinity();
-  double arena_t = RaycastArena(origin, delta, config);
-  if (std::isfinite(arena_t) && arena_t >= 0.0 && arena_t <= 1.0) {
-    world_t = std::min(world_t, arena_t);
+  Vec3 world_normal{0.0, 0.0, 1.0};
+  uint8_t world_surface_type = 0;
+  const afps::sim::RaycastHit world_hit = afps::sim::RaycastWorld({origin.x, origin.y, origin.z},
+                                                                   {delta.x, delta.y, delta.z},
+                                                                   config,
+                                                                   world);
+  if (world_hit.hit && std::isfinite(world_hit.t) && world_hit.t >= 0.0 && world_hit.t <= 1.0) {
+    world_t = world_hit.t;
+    world_normal = {world_hit.normal_x, world_hit.normal_y, world_hit.normal_z};
+    world_surface_type = world_hit.surface_type;
   }
-  double obstacle_t = RaycastObstacle(origin, delta, config);
-  if (std::isfinite(obstacle_t) && obstacle_t >= 0.0 && obstacle_t <= 1.0) {
-    world_t = std::min(world_t, obstacle_t);
-  }
-  if (std::isfinite(delta.z) && delta.z < 0.0) {
+  if (!std::isfinite(world_t) && std::isfinite(delta.z) && delta.z < 0.0) {
     if (origin.z <= 0.0) {
       world_t = 0.0;
+      world_normal = {0.0, 0.0, 1.0};
+      world_surface_type = 2;
     } else {
       const double t_ground = (0.0 - origin.z) / delta.z;
       if (t_ground >= 0.0 && t_ground <= 1.0) {
-        world_t = std::min(world_t, t_ground);
+        world_t = t_ground;
+        world_normal = {0.0, 0.0, 1.0};
+        world_surface_type = 2;
       }
     }
   }
@@ -495,6 +511,10 @@ ProjectileImpact ResolveProjectileImpact(
   impact.target_id = best_target;
   impact.t = best_t;
   impact.position = {origin.x + delta.x * best_t, origin.y + delta.y * best_t, origin.z + delta.z * best_t};
+  if (hit_world) {
+    impact.normal = world_normal;
+    impact.surface_type = world_surface_type;
+  }
   return impact;
 }
 
@@ -543,7 +563,8 @@ std::vector<ShockwaveHit> ComputeShockwaveHits(
     double max_damage,
     const afps::sim::SimConfig &config,
     const std::unordered_map<std::string, afps::sim::PlayerState> &players,
-    const std::string &ignore_id) {
+    const std::string &ignore_id,
+    const afps::sim::CollisionWorld *world) {
   std::vector<ShockwaveHit> hits;
   if (!std::isfinite(radius) || radius <= 0.0) {
     return hits;
@@ -575,7 +596,7 @@ std::vector<ShockwaveHit> ComputeShockwaveHits(
     if (dist > 1e-6 && std::isfinite(dist)) {
       const afps::sim::Vec3 origin{center.x, center.y, center.z};
       const afps::sim::Vec3 dir{dx / dist, dy / dist, dz / dist};
-      const afps::sim::RaycastHit los_hit = afps::sim::RaycastWorld(origin, dir, config);
+      const afps::sim::RaycastHit los_hit = afps::sim::RaycastWorld(origin, dir, config, world);
       if (los_hit.hit && los_hit.t + 1e-4 < dist) {
         continue;
       }

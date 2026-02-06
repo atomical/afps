@@ -2,11 +2,12 @@ import type { App, AppDimensions, AppState, NetworkSnapshot, Object3DLike, Three
 import type { InputCmd } from './net/input_cmd';
 import { ClientPrediction, type PredictionSim } from './net/prediction';
 import { SnapshotBuffer } from './net/snapshot_buffer';
-import { loadRetroUrbanMap } from './environment/retro_urban_map';
+import { loadRetroUrbanMap, type LoadedRetroUrbanMap } from './environment/retro_urban_map';
 import { attachWeaponViewmodel, loadWeaponViewmodel } from './environment/weapon_viewmodel';
 import { SIM_CONFIG, resolveEyeHeight } from './sim/config';
 import { WEAPON_DEFS } from './weapons/config';
 import { generateDecalTexture, generateImpactTexture, generateMuzzleFlashTexture, hashString } from './rendering/procedural_textures';
+import type { AabbCollider } from './world/collision';
 
 export interface CreateAppOptions {
   three: ThreeLike;
@@ -19,12 +20,21 @@ export interface CreateAppOptions {
 }
 
 const CAMERA_HEIGHT = resolveEyeHeight(SIM_CONFIG);
+const MAP_SEED_FLAG = 'VITE_MAP_SEED';
+
+const parseMapSeed = (value: unknown) => {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+  return Math.floor(parsed) >>> 0;
+};
 
 const DEFAULTS = {
   fov: 70,
   near: 0.1,
   far: 100,
-  cubeSize: 1,
+  cubeSize: 0.72,
   rotationSpeed: 1.25,
   lookSensitivity: 0.002,
   maxPitch: Math.PI / 2 - 0.01,
@@ -441,10 +451,6 @@ export const createApp = ({
   const impactGeometry = new three.PlaneGeometry(1, 1);
   const decalGeometry = new three.PlaneGeometry(1, 1);
 
-  if (loadEnvironment) {
-    void loadRetroUrbanMap(scene);
-  }
-
   let weaponViewmodelRoot: Object3DLike | null = null;
   let weaponViewmodelParent: Object3DLike | null = null;
   let weaponViewmodelToken = 0;
@@ -501,6 +507,55 @@ export const createApp = ({
   const snapshotBuffer = new SnapshotBuffer(DEFAULTS.snapshotRate);
   const prediction = new ClientPrediction();
   prediction.setTickRate(DEFAULTS.tickRate);
+  let worldColliders: AabbCollider[] = [];
+  let mapHandle: LoadedRetroUrbanMap | null = null;
+  let mapLoadToken = 0;
+  let activeMapSeed = parseMapSeed(import.meta.env?.[MAP_SEED_FLAG]);
+
+  const setWorldColliders = (colliders: readonly AabbCollider[]) => {
+    worldColliders = Array.isArray(colliders) ? [...colliders] : [];
+    prediction.setColliders(worldColliders);
+  };
+
+  const loadMap = async (seed: number, procedural: boolean) => {
+    if (!loadEnvironment) {
+      return;
+    }
+    const token = ++mapLoadToken;
+    const next = await loadRetroUrbanMap(scene, {
+      seed,
+      procedural,
+      arenaHalfSize: SIM_CONFIG.arenaHalfSize,
+      tickRate: DEFAULTS.tickRate
+    });
+    if (!next) {
+      setWorldColliders([]);
+      return;
+    }
+    if (token !== mapLoadToken) {
+      next.dispose();
+      return;
+    }
+    mapHandle?.dispose();
+    mapHandle = next;
+    setWorldColliders(next.colliders);
+  };
+
+  const setMapSeed = (seed: number) => {
+    const safeSeed = Number.isFinite(seed) ? Math.floor(seed) >>> 0 : 0;
+    if (mapHandle && safeSeed === activeMapSeed) {
+      return;
+    }
+    activeMapSeed = safeSeed;
+    void loadMap(safeSeed, true);
+  };
+
+  if (loadEnvironment) {
+    const proceduralFlag = import.meta.env?.VITE_PROCEDURAL_MAP;
+    const proceduralOnBoot = proceduralFlag === undefined || proceduralFlag === '' || proceduralFlag === 'true';
+    void loadMap(activeMapSeed, proceduralOnBoot);
+  }
+
   let lastRenderTick: number | null = null;
   let lastPlayerPose = {
     posX: cube.position.x,
@@ -766,7 +821,7 @@ export const createApp = ({
     mesh.rotation.y = angles.yaw;
     mesh.rotation.x = angles.pitch;
     mesh.rotation.z = rand() * Math.PI * 2;
-    const offset = 0.02;
+    const offset = 0.006;
     mesh.position.set(
       position.x + safeNormal.x * offset,
       position.y + safeNormal.y * offset,
@@ -819,7 +874,7 @@ export const createApp = ({
     mesh.rotation.y = angles.yaw;
     mesh.rotation.x = angles.pitch;
     mesh.rotation.z = rand() * Math.PI * 2;
-    const offset = 0.01;
+    const offset = 0.004;
     mesh.position.set(
       position.x + safeNormal.x * offset,
       position.y + safeNormal.y * offset,
@@ -919,6 +974,9 @@ export const createApp = ({
 
   const setPredictionSim = (sim: PredictionSim) => {
     prediction.setSim(sim);
+    if (worldColliders.length > 0) {
+      prediction.setColliders(worldColliders);
+    }
   };
 
   const wrapAngle = (value: number) => {
@@ -1058,6 +1116,9 @@ export const createApp = ({
   };
 
   const dispose = () => {
+    mapLoadToken += 1;
+    mapHandle?.dispose();
+    mapHandle = null;
     if (weaponViewmodelRoot && weaponViewmodelParent?.remove) {
       weaponViewmodelParent.remove(weaponViewmodelRoot);
     }
@@ -1085,6 +1146,7 @@ export const createApp = ({
     getAbilityCooldowns,
     getRenderTick,
     setWeaponViewmodel,
+    setMapSeed,
     setTickRate,
     setPredictionSim,
     applyLookDelta,

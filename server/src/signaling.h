@@ -74,6 +74,7 @@ struct SignalingConfig {
   int max_invalid_inputs = 5;
   int max_rate_limit_drops = 20;
   int snapshot_keyframe_interval = kSnapshotKeyframeInterval;
+  uint32_t map_seed = 0;
   std::vector<std::string> allowed_character_ids;
 };
 
@@ -103,6 +104,7 @@ public:
   std::vector<FireRequestBatch> DrainAllFireRequests();
   std::vector<LoadoutRequestBatch> DrainAllLoadoutRequests();
   std::vector<std::string> ReadyConnectionIds();
+  bool SendReliable(const std::string &connection_id, const std::vector<uint8_t> &message);
   bool SendUnreliable(const std::string &connection_id, const std::vector<uint8_t> &message);
   uint32_t NextServerMessageSeq(const std::string &connection_id);
   uint32_t LastClientMessageSeq(const std::string &connection_id);

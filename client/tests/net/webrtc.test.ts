@@ -69,6 +69,7 @@ const buildServerHello = (
     overrides.snapshotRate ?? 20,
     overrides.snapshotKeyframeInterval ?? 5,
     0,
+    0,
     0
   );
   builder.finish(offset);
@@ -1203,6 +1204,43 @@ describe('webrtc connector', () => {
 
     expect(signaling.sendCandidateCalls).toHaveLength(1);
     expect(pc?.iceCandidates).toHaveLength(1);
+    vi.useRealTimers();
+  });
+
+  it('swallows invalid candidate send rejections', async () => {
+    vi.useFakeTimers();
+    const signaling = new FakeSignalingClient();
+    signaling.sendCandidate = vi.fn().mockRejectedValue(new Error('Request failed: 400 {"error":"invalid_request"}'));
+    const rtcFactory = new FakePeerConnectionFactory();
+    const warn = vi.fn();
+    const connector = createWebRtcConnector({
+      signaling,
+      rtcFactory,
+      logger: { ...silentLogger, warn },
+      pollIntervalMs: 50,
+      connectTimeoutMs: 1000,
+      timers: createTimers()
+    });
+
+    const connectPromise = connector.connect();
+    const pc = await waitForPeer(rtcFactory);
+
+    const reliable = new FakeDataChannel('afps_reliable');
+    const unreliable = new FakeDataChannel('afps_unreliable');
+    pc.emitDataChannel(reliable);
+    pc.emitDataChannel(unreliable);
+    reliable.open();
+    unreliable.open();
+    await Promise.resolve();
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
+    await connectPromise;
+
+    pc.emitIceCandidate({ candidate: 'local', sdpMid: '0' });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(signaling.sendCandidate).toHaveBeenCalledTimes(1);
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('candidate send failed'));
     vi.useRealTimers();
   });
 

@@ -10,6 +10,9 @@ import { InputCmdT } from './fbs/afps/protocol/input-cmd';
 import { NearMissFx } from './fbs/afps/protocol/near-miss-fx';
 import { OverheatFx } from './fbs/afps/protocol/overheat-fx';
 import { Ping } from './fbs/afps/protocol/ping';
+import { PickupKind } from './fbs/afps/protocol/pickup-kind';
+import { PickupSpawnedFx } from './fbs/afps/protocol/pickup-spawned-fx';
+import { PickupTakenFx } from './fbs/afps/protocol/pickup-taken-fx';
 import { PlayerProfile as PlayerProfileFbs } from './fbs/afps/protocol/player-profile';
 import { Pong } from './fbs/afps/protocol/pong';
 import { ProjectileImpactFx } from './fbs/afps/protocol/projectile-impact-fx';
@@ -27,7 +30,7 @@ import { VentFx } from './fbs/afps/protocol/vent-fx';
 import { MessageType } from './fbs/afps/protocol/message-type';
 import type { InputCmd } from './input_cmd';
 
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 export const SNAPSHOT_MASK_POS_X = 1 << 0;
 export const SNAPSHOT_MASK_POS_Y = 1 << 1;
 export const SNAPSHOT_MASK_POS_Z = 1 << 2;
@@ -100,6 +103,7 @@ export interface ServerHello {
   motd?: string;
   clientId?: string;
   connectionNonce?: string;
+  mapSeed?: number;
 }
 
 export interface StateSnapshot {
@@ -209,6 +213,9 @@ export type FxEvent =
       normalOctX: number;
       normalOctY: number;
       showTracer: boolean;
+      hitPosXQ: number;
+      hitPosYQ: number;
+      hitPosZQ: number;
     }
   | {
       type: 'ReloadFx';
@@ -267,6 +274,22 @@ export type FxEvent =
   | {
       type: 'ProjectileRemoveFx';
       projectileId: number;
+    }
+  | {
+      type: 'PickupSpawnedFx';
+      pickupId: number;
+      kind: PickupKind;
+      posXQ: number;
+      posYQ: number;
+      posZQ: number;
+      weaponSlot: number;
+      amount: number;
+    }
+  | {
+      type: 'PickupTakenFx';
+      pickupId: number;
+      takerId?: string;
+      serverTick: number;
     };
 
 export interface GameEventBatch {
@@ -441,6 +464,7 @@ export const parseServerHelloPayload = (payload: Uint8Array): ServerHello | null
   const motd = message.motd();
   const clientId = message.clientId();
   const connectionNonce = message.connectionNonce();
+  const mapSeed = message.mapSeed() >>> 0;
   return {
     type: 'ServerHello',
     protocolVersion,
@@ -450,7 +474,8 @@ export const parseServerHelloPayload = (payload: Uint8Array): ServerHello | null
     snapshotKeyframeInterval,
     motd: motd ?? undefined,
     clientId: clientId ?? undefined,
-    connectionNonce: connectionNonce ?? undefined
+    connectionNonce: connectionNonce ?? undefined,
+    mapSeed
   };
 };
 
@@ -646,7 +671,10 @@ export const parseGameEventPayload = (payload: Uint8Array): GameEventBatch | nul
           surfaceType: typed.surfaceType(),
           normalOctX: typed.normalOctX(),
           normalOctY: typed.normalOctY(),
-          showTracer: typed.showTracer()
+          showTracer: typed.showTracer(),
+          hitPosXQ: typed.hitPosXQ(),
+          hitPosYQ: typed.hitPosYQ(),
+          hitPosZQ: typed.hitPosZQ()
         });
         break;
       }
@@ -766,6 +794,31 @@ export const parseGameEventPayload = (payload: Uint8Array): GameEventBatch | nul
         });
         break;
       }
+      case FxEventType.PickupSpawnedFx: {
+        const typed = event as PickupSpawnedFx;
+        events.push({
+          type: 'PickupSpawnedFx',
+          pickupId: typed.pickupId() >>> 0,
+          kind: typed.kind(),
+          posXQ: typed.posXQ(),
+          posYQ: typed.posYQ(),
+          posZQ: typed.posZQ(),
+          weaponSlot: typed.weaponSlot(),
+          amount: typed.amount()
+        });
+        break;
+      }
+      case FxEventType.PickupTakenFx: {
+        const typed = event as PickupTakenFx;
+        const takerId = typed.takerId() ?? undefined;
+        events.push({
+          type: 'PickupTakenFx',
+          pickupId: typed.pickupId() >>> 0,
+          takerId: takerId && takerId.length > 0 ? takerId : undefined,
+          serverTick: typed.serverTick()
+        });
+        break;
+      }
     }
   }
   return { type: 'GameEventBatch', serverTick, events };
@@ -858,4 +911,4 @@ export const __test = {
   MAGIC
 };
 
-export { MessageType, FxEventType, HitKind, SurfaceType };
+export { MessageType, FxEventType, HitKind, SurfaceType, PickupKind };

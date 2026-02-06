@@ -43,6 +43,8 @@ The WASM module exports the following C functions:
 - `sim_reset(handle)`
 - `sim_set_config(handle, moveSpeed, sprintMultiplier, accel, friction, gravity, jumpVelocity, dashImpulse, dashCooldown, grappleMaxDistance, grapplePullStrength, grappleDamping, grappleCooldown, grappleMinAttachNormalY, grappleRopeSlack, shieldDuration, shieldCooldown, shieldDamageMultiplier, shockwaveRadius, shockwaveImpulse, shockwaveCooldown, shockwaveDamage, arenaHalfSize, playerRadius, playerHeight, obstacleMinX, obstacleMaxX, obstacleMinY, obstacleMaxY)`
 - `sim_set_state(handle, x, y, z, velX, velY, velZ, dashCooldown)`
+- `sim_clear_colliders(handle)`
+- `sim_add_aabb_collider(handle, id, minX, minY, minZ, maxX, maxY, maxZ, surfaceType)`
 - `sim_step(handle, dt, moveX, moveY, sprint, jump, dash, grapple, shield, shockwave, viewYaw, viewPitch)`
 - `sim_get_x(handle)`
 - `sim_get_y(handle)`
@@ -125,6 +127,7 @@ It converts JS inputs to numeric types, manages the native handle, and exposes:
 - `getState()`
 - `reset()`
 - `setConfig()`
+- `setColliders(colliders)`
 - `dispose()`
 
 ---
@@ -135,12 +138,12 @@ It converts JS inputs to numeric types, manages the native handle, and exposes:
 
 - The client prediction path can swap to the WASM sim via `VITE_WASM_SIM_URL`.
 - JS prediction remains the default fallback if the module is unset or fails to load.
+- Collider data from the active map is forwarded to WASM so prediction movement/raycast behavior matches the JS sim.
 
 ### Next steps
 
-1. **Expand ABI** as movement features grow (dash, grapple, combat).
-2. **Add multi-entity support** once server snapshots move beyond single-player state.
-3. **Add perf budgets** for WASM step time and memory.
+1. **Add multi-entity support** once server snapshots move beyond single-player state.
+2. **Add perf budgets** for WASM step time and memory.
 
 ### Done
 

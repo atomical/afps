@@ -384,6 +384,83 @@ TEST_CASE("Shared sim grapple respects min attach normal on floor hits") {
   CHECK(blocked.vel_z == doctest::Approx(0.0));
 }
 
+TEST_CASE("Shared sim raycast returns stable normals from inside colliders") {
+  afps::sim::SimConfig config = afps::sim::kDefaultSimConfig;
+  config.arena_half_size = 0.0;
+  config.obstacle_min_x = 0.0;
+  config.obstacle_max_x = 0.0;
+  config.obstacle_min_y = 0.0;
+  config.obstacle_max_y = 0.0;
+
+  afps::sim::CollisionWorld world;
+  afps::sim::ClearColliders(world);
+  afps::sim::AabbCollider collider;
+  collider.id = 1;
+  collider.min_x = -1.0;
+  collider.max_x = 1.0;
+  collider.min_y = -1.0;
+  collider.max_y = 1.0;
+  collider.min_z = 0.0;
+  collider.max_z = 3.0;
+  collider.surface_type = 1;
+  afps::sim::AddAabbCollider(world, collider);
+
+  const afps::sim::RaycastHit horizontal = afps::sim::RaycastWorld(
+      {0.0, 0.0, 1.6},
+      {0.0, 1.0, 0.0},
+      config,
+      &world);
+  REQUIRE(horizontal.hit);
+  CHECK(horizontal.t == doctest::Approx(1.0));
+  CHECK(horizontal.normal_x == doctest::Approx(0.0));
+  CHECK(horizontal.normal_y == doctest::Approx(1.0));
+  CHECK(horizontal.normal_z == doctest::Approx(0.0));
+
+  const afps::sim::RaycastHit downward = afps::sim::RaycastWorld(
+      {0.0, 0.0, 1.6},
+      {0.0, 0.0, -1.0},
+      config,
+      &world);
+  REQUIRE(downward.hit);
+  CHECK(downward.t == doctest::Approx(1.6));
+  CHECK(downward.normal_x == doctest::Approx(0.0));
+  CHECK(downward.normal_y == doctest::Approx(0.0));
+  CHECK(downward.normal_z == doctest::Approx(-1.0));
+}
+
+TEST_CASE("Shared sim raycast returns boundary normal at t=0") {
+  afps::sim::SimConfig config = afps::sim::kDefaultSimConfig;
+  config.arena_half_size = 0.0;
+  config.obstacle_min_x = 0.0;
+  config.obstacle_max_x = 0.0;
+  config.obstacle_min_y = 0.0;
+  config.obstacle_max_y = 0.0;
+
+  afps::sim::CollisionWorld world;
+  afps::sim::ClearColliders(world);
+  afps::sim::AabbCollider collider;
+  collider.id = 1;
+  collider.min_x = -1.0;
+  collider.max_x = 1.0;
+  collider.min_y = -1.0;
+  collider.max_y = 1.0;
+  collider.min_z = 0.0;
+  collider.max_z = 3.0;
+  collider.surface_type = 1;
+  afps::sim::AddAabbCollider(world, collider);
+
+  const afps::sim::RaycastHit outward = afps::sim::RaycastWorld(
+      {0.0, -1.0, 1.6},
+      {0.0, -1.0, 0.0},
+      config,
+      &world);
+  REQUIRE(outward.hit);
+  CHECK(outward.t == doctest::Approx(0.0));
+  CHECK(outward.normal_x == doctest::Approx(0.0));
+  CHECK(outward.normal_y == doctest::Approx(-1.0));
+  CHECK(outward.normal_z == doctest::Approx(0.0));
+}
+
 TEST_CASE("Shared sim shield activates and triggers cooldown") {
   afps::sim::SimConfig config = afps::sim::kDefaultSimConfig;
   config.move_speed = 0.0;

@@ -17,6 +17,7 @@ std::string UsageText(const char *argv0) {
   out << "  --turn-user <user> TURN REST username suffix (default afps)\n";
   out << "  --turn-ttl <seconds> TURN REST credential TTL (default 3600)\n";
   out << "  --snapshot-keyframe-interval <n> Keyframe interval in snapshots (default 5, 0=all)\n";
+  out << "  --map-seed <n> Deterministic procedural map seed (default 0)\n";
   out << "  --character-manifest <path> Character manifest JSON for allowlisting character ids\n";
   out << "  --http          Disable TLS (local development only)\n";
   out << "  -h, --help      Show this help text\n";

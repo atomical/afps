@@ -72,8 +72,13 @@ connectionNonce(optionalEncoding?:any):string|Uint8Array|null {
   return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
 }
 
+mapSeed():number {
+  const offset = this.bb!.__offset(this.bb_pos, 20);
+  return offset ? this.bb!.readUint32(this.bb_pos + offset) : 0;
+}
+
 static startServerHello(builder:flatbuffers.Builder) {
-  builder.startObject(8);
+  builder.startObject(9);
 }
 
 static addProtocolVersion(builder:flatbuffers.Builder, protocolVersion:number) {
@@ -108,12 +113,16 @@ static addConnectionNonce(builder:flatbuffers.Builder, connectionNonceOffset:fla
   builder.addFieldOffset(7, connectionNonceOffset, 0);
 }
 
+static addMapSeed(builder:flatbuffers.Builder, mapSeed:number) {
+  builder.addFieldInt32(8, mapSeed, 0);
+}
+
 static endServerHello(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createServerHello(builder:flatbuffers.Builder, protocolVersion:number, connectionIdOffset:flatbuffers.Offset, clientIdOffset:flatbuffers.Offset, serverTickRate:number, snapshotRate:number, snapshotKeyframeInterval:number, motdOffset:flatbuffers.Offset, connectionNonceOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createServerHello(builder:flatbuffers.Builder, protocolVersion:number, connectionIdOffset:flatbuffers.Offset, clientIdOffset:flatbuffers.Offset, serverTickRate:number, snapshotRate:number, snapshotKeyframeInterval:number, motdOffset:flatbuffers.Offset, connectionNonceOffset:flatbuffers.Offset, mapSeed:number):flatbuffers.Offset {
   ServerHello.startServerHello(builder);
   ServerHello.addProtocolVersion(builder, protocolVersion);
   ServerHello.addConnectionId(builder, connectionIdOffset);
@@ -123,6 +132,7 @@ static createServerHello(builder:flatbuffers.Builder, protocolVersion:number, co
   ServerHello.addSnapshotKeyframeInterval(builder, snapshotKeyframeInterval);
   ServerHello.addMotd(builder, motdOffset);
   ServerHello.addConnectionNonce(builder, connectionNonceOffset);
+  ServerHello.addMapSeed(builder, mapSeed);
   return ServerHello.endServerHello(builder);
 }
 
@@ -135,7 +145,8 @@ unpack(): ServerHelloT {
     this.snapshotRate(),
     this.snapshotKeyframeInterval(),
     this.motd(),
-    this.connectionNonce()
+    this.connectionNonce(),
+    this.mapSeed()
   );
 }
 
@@ -149,6 +160,7 @@ unpackTo(_o: ServerHelloT): void {
   _o.snapshotKeyframeInterval = this.snapshotKeyframeInterval();
   _o.motd = this.motd();
   _o.connectionNonce = this.connectionNonce();
+  _o.mapSeed = this.mapSeed();
 }
 }
 
@@ -161,7 +173,8 @@ constructor(
   public snapshotRate: number = 0,
   public snapshotKeyframeInterval: number = 0,
   public motd: string|Uint8Array|null = null,
-  public connectionNonce: string|Uint8Array|null = null
+  public connectionNonce: string|Uint8Array|null = null,
+  public mapSeed: number = 0
 ){}
 
 
@@ -179,7 +192,8 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
     this.snapshotRate,
     this.snapshotKeyframeInterval,
     motd,
-    connectionNonce
+    connectionNonce,
+    this.mapSeed
   );
 }
 }

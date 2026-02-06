@@ -23,6 +23,12 @@ To auto-connect to the signaling server, set:
 VITE_SIGNALING_URL=http://localhost:8443 VITE_SIGNALING_AUTH_TOKEN=devtoken npm run dev
 ```
 
+Optional map/debug flags:
+
+```bash
+VITE_PROCEDURAL_MAP=true VITE_DEBUG_COLLIDERS=true VITE_DEBUG_INTERIORS=true npm run dev
+```
+
 To run server + client together (HTTP signaling, default):
 
 ```bash
@@ -57,6 +63,12 @@ cd server
 cmake -S . -B build
 cmake --build build
 ./build/afps_server --http --auth-token devtoken --host 0.0.0.0 --port 8443 --snapshot-keyframe-interval 5
+```
+
+Set a deterministic procedural map seed:
+
+```bash
+./build/afps_server --http --auth-token devtoken --map-seed 1337
 ```
 
 `--snapshot-keyframe-interval` controls how often full `StateSnapshot` keyframes are sent (0 = always full).

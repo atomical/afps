@@ -142,6 +142,7 @@ const buildServerHello = (connectionId: string) => {
     20,
     5,
     0,
+    0,
     0
   );
   builder.finish(offset);

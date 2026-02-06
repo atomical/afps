@@ -288,7 +288,8 @@ std::vector<uint8_t> BuildServerHello(const ServerHello &hello, uint32_t msg_seq
       static_cast<uint16_t>(hello.snapshot_rate),
       static_cast<uint16_t>(hello.snapshot_keyframe_interval),
       motd,
-      nonce);
+      nonce,
+      hello.map_seed);
   builder.Finish(offset);
   return EncodeEnvelope(MessageType::ServerHello, builder.GetBufferPointer(), builder.GetSize(), msg_seq,
                         server_seq_ack);
@@ -357,7 +358,10 @@ std::vector<uint8_t> BuildGameEventBatch(const GameEventBatch &event, uint32_t m
                 static_cast<afps::protocol::SurfaceType>(typed.surface_type),
                 typed.normal_oct_x,
                 typed.normal_oct_y,
-                typed.show_tracer);
+                typed.show_tracer,
+                typed.hit_pos_x_q,
+                typed.hit_pos_y_q,
+                typed.hit_pos_z_q);
             types.push_back(afps::protocol::FxEvent::ShotTraceFx);
             payloads.push_back(offset.Union());
             return;
@@ -482,6 +486,33 @@ std::vector<uint8_t> BuildGameEventBatch(const GameEventBatch &event, uint32_t m
                 builder,
                 typed.projectile_id);
             types.push_back(afps::protocol::FxEvent::ProjectileRemoveFx);
+            payloads.push_back(offset.Union());
+            return;
+          }
+
+          if constexpr (std::is_same_v<T, PickupSpawnedFx>) {
+            const auto offset = afps::protocol::CreatePickupSpawnedFx(
+                builder,
+                typed.pickup_id,
+                static_cast<afps::protocol::PickupKind>(typed.kind),
+                typed.pos_x_q,
+                typed.pos_y_q,
+                typed.pos_z_q,
+                typed.weapon_slot,
+                typed.amount);
+            types.push_back(afps::protocol::FxEvent::PickupSpawnedFx);
+            payloads.push_back(offset.Union());
+            return;
+          }
+
+          if constexpr (std::is_same_v<T, PickupTakenFx>) {
+            const auto taker_id = typed.taker_id.empty() ? 0 : builder.CreateString(typed.taker_id);
+            const auto offset = afps::protocol::CreatePickupTakenFx(
+                builder,
+                typed.pickup_id,
+                taker_id,
+                typed.server_tick);
+            types.push_back(afps::protocol::FxEvent::PickupTakenFx);
             payloads.push_back(offset.Union());
             return;
           }

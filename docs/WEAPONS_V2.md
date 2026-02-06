@@ -27,6 +27,10 @@ Client responsibilities:
 - Spawn hitscan tracer VFX only when paired `ShotTraceFx.showTracer == true` and `fxSettings.tracers == true`.
 - Spawn deterministic casing ejection for weapons with `ejectShellsWhileFiring == true`.
 
+Server note:
+- The authoritative shot direction is taken from each `FireWeaponRequest` direction vector (validated finite + normalized) so fire timing stays aligned with the client’s exact shot frame, instead of relying only on the last queued input-view sample.
+- Client fire direction must be derived from the rendered camera forward; in this codebase `lookPitch` is positive when aiming downward, so vertical direction uses `-sin(pitch)` when building `FireWeaponRequest.dir_*`.
+
 ### `ShotTraceFx` (hitscan only)
 Emitted for hitscan weapons with:
 - `dirOct*`: server view direction (oct-encoded).
@@ -34,12 +38,17 @@ Emitted for hitscan weapons with:
 - `hitKind`: `None | World | Player`.
 - `surfaceType`: `Stone | Metal | Dirt | Energy`.
 - `normalOct*`: hit normal (oct-encoded).
+- `hitPos*Q`: authoritative world hit point (signed int16 quantized at `0.01m`).
 
 Client responsibilities:
 - Compute muzzle position as `eyeOrigin + dir * 0.2` (same constant as server).
 - Compute tracer length as `max(0, hitDistance - 0.2)` when drawing from muzzle.
-- Spawn impact VFX when `hitKind != None`.
-- Spawn decals only when `hitKind == World` and `fxSettings.decals == true`.
+- Spawn impact VFX at `hitPos*Q` when `hitKind != None`.
+- Spawn decals at `hitPos*Q` only when `hitKind == World` and `fxSettings.decals == true`.
+- For `hitKind == World`, project onto tagged static map meshes using the shot line first (muzzle ray + short backtrack probe), then fall back to authoritative hit position when no mesh hit is available. This keeps decals on visible walls/roofs even when gameplay colliders are coarse.
+
+Debug aid:
+- `window.__afpsWorldSurface` exposes `projectTraceWorldHit`, `raycastStaticSurface`, and `getPlayerPose` for browser/UI diagnostics.
 
 ### `ProjectileSpawnFx` / `ProjectileImpactFx` / `ProjectileRemoveFx`
 Emitted for projectile weapons.
@@ -95,4 +104,3 @@ If you add a new `SurfaceType`:
 - FX events are cosmetic: the server may drop lower-priority FX under size caps.
 - The client schedules FX by `serverTick` using `GameEventQueue` and will drop events that arrive too late.
 - All client FX should be pooled (`client/src/app.ts`) to avoid per-event allocations.
-

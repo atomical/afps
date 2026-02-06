@@ -47,6 +47,7 @@ set(AFPS_SERVER_SOURCES
   src/combat.cpp
   src/config.cpp
   src/health.cpp
+  src/map_world.cpp
   src/rate_limiter.cpp
   src/security_headers.cpp
   src/tick.cpp
@@ -107,6 +108,7 @@ set(AFPS_SERVER_TEST_SOURCES
   tests/test_combat.cpp
   tests/test_config.cpp
   tests/test_health.cpp
+  tests/test_map_world.cpp
   tests/test_property.cpp
   tests/test_rate_limiter.cpp
   tests/test_security_headers.cpp

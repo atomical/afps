@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstddef>
+#include <exception>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -396,10 +397,23 @@ SignalingError SignalingStore::AddRemoteCandidate(const std::string &session_tok
     connection = iter->second;
   }
 
-  if (mid.empty()) {
-    connection->peer->AddRemoteCandidate(rtc::Candidate(candidate));
-  } else {
-    connection->peer->AddRemoteCandidate(rtc::Candidate(candidate, mid));
+  if (candidate.empty()) {
+    // Browsers may send an end-of-candidates notification with an empty candidate.
+    // Treat it as a no-op to avoid surfacing unnecessary 400 responses.
+    return SignalingError::None;
+  }
+
+  try {
+    if (mid.empty()) {
+      connection->peer->AddRemoteCandidate(rtc::Candidate(candidate));
+    } else {
+      connection->peer->AddRemoteCandidate(rtc::Candidate(candidate, mid));
+    }
+  } catch (const std::exception &) {
+    // Candidate parse/compat failures are not fatal; ignore and continue gathering.
+    return SignalingError::None;
+  } catch (...) {
+    return SignalingError::None;
   }
   return SignalingError::None;
 }
@@ -562,6 +576,27 @@ std::vector<std::string> SignalingStore::ReadyConnectionIds() {
   }
 
   return ready;
+}
+
+bool SignalingStore::SendReliable(const std::string &connection_id, const std::vector<uint8_t> &message) {
+  std::shared_ptr<ConnectionState> connection;
+  {
+    std::scoped_lock lock(mutex_);
+    auto iter = connections_.find(connection_id);
+    if (iter == connections_.end()) {
+      return false;
+    }
+    connection = iter->second;
+  }
+
+  {
+    std::scoped_lock lock(connection->mutex);
+    if (!connection->handshake_complete || connection->closed) {
+      return false;
+    }
+  }
+
+  return connection->peer->SendOn(kReliableChannelLabel, ToRtcBinary(message));
 }
 
 bool SignalingStore::SendUnreliable(const std::string &connection_id, const std::vector<uint8_t> &message) {
@@ -951,6 +986,7 @@ void SignalingStore::HandleClientMessage(const std::shared_ptr<ConnectionState> 
     response.snapshot_rate = kSnapshotRate;
     response.snapshot_keyframe_interval = config_.snapshot_keyframe_interval;
     response.connection_nonce = connection->connection_nonce;
+    response.map_seed = config_.map_seed;
     {
       const auto seq = NextServerMessageSeq(connection->id);
       const auto ack = LastClientMessageSeq(connection->id);

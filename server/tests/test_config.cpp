@@ -24,7 +24,9 @@ TEST_CASE("ParseArgs parses required flags") {
       "--turn-ttl",
       "600",
       "--snapshot-keyframe-interval",
-      "3"};
+      "3",
+      "--map-seed",
+      "42"};
   const int argc = static_cast<int>(sizeof(argv) / sizeof(argv[0]));
 
   const auto result = ParseArgs(argc, argv);
@@ -41,6 +43,7 @@ TEST_CASE("ParseArgs parses required flags") {
   CHECK(result.config.turn_user == "afps");
   CHECK(result.config.turn_ttl_seconds == 600);
   CHECK(result.config.snapshot_keyframe_interval == 3);
+  CHECK(result.config.map_seed == 42u);
   CHECK(result.config.use_https);
 }
 

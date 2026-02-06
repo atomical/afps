@@ -62,6 +62,7 @@ TEST_CASE("BuildServerHello emits expected fields") {
   hello.snapshot_keyframe_interval = 5;
   hello.motd = "hi";
   hello.connection_nonce = "nonce";
+  hello.map_seed = 4242u;
 
   const auto payload = BuildServerHello(hello, 7, 3);
   DecodedEnvelope envelope;
@@ -82,6 +83,7 @@ TEST_CASE("BuildServerHello emits expected fields") {
   CHECK(parsed->snapshot_keyframe_interval() == 5);
   CHECK(parsed->motd()->str() == "hi");
   CHECK(parsed->connection_nonce()->str() == "nonce");
+  CHECK(static_cast<uint32_t>(parsed->map_seed()) == 4242u);
 }
 
 TEST_CASE("BuildProtocolError emits code and message") {
@@ -125,6 +127,30 @@ TEST_CASE("BuildPong echoes client time") {
   const auto *parsed = flatbuffers::GetRoot<afps::protocol::Pong>(envelope.payload.data());
   CHECK(parsed->Verify(verifier));
   CHECK(parsed->client_time_ms() == doctest::Approx(55.25));
+}
+
+TEST_CASE("ParseFireWeaponRequestPayload reads origin and direction") {
+  flatbuffers::FlatBufferBuilder builder(128);
+  const auto weapon_id = builder.CreateString("PLASMA_RIFLE");
+  const auto offset = afps::protocol::CreateFireWeaponRequest(
+      builder, 17, weapon_id, 2, 1.25, -2.5, 3.75, 0.33, -0.66, 0.11);
+  builder.Finish(offset);
+  const std::vector<uint8_t> payload(builder.GetBufferPointer(),
+                                     builder.GetBufferPointer() + builder.GetSize());
+
+  FireWeaponRequest request;
+  std::string error;
+  CHECK(ParseFireWeaponRequestPayload(payload, request, error));
+  CHECK(error.empty());
+  CHECK(request.client_shot_seq == 17);
+  CHECK(request.weapon_id == "PLASMA_RIFLE");
+  CHECK(request.weapon_slot == 2);
+  CHECK(request.origin_x == doctest::Approx(1.25));
+  CHECK(request.origin_y == doctest::Approx(-2.5));
+  CHECK(request.origin_z == doctest::Approx(3.75));
+  CHECK(request.dir_x == doctest::Approx(0.33));
+  CHECK(request.dir_y == doctest::Approx(-0.66));
+  CHECK(request.dir_z == doctest::Approx(0.11));
 }
 
 TEST_CASE("BuildGameEventBatch emits projectile spawn fields") {
@@ -172,6 +198,59 @@ TEST_CASE("BuildGameEventBatch emits projectile spawn fields") {
   CHECK(payload_spawn->vel_y_q() == -505);
   CHECK(payload_spawn->vel_z_q() == 606);
   CHECK(payload_spawn->ttl_q() == 707);
+}
+
+TEST_CASE("BuildGameEventBatch emits shot trace hit position fields") {
+  GameEventBatch batch;
+  batch.server_tick = 18;
+  ShotTraceFx trace;
+  trace.shooter_id = "owner-2";
+  trace.weapon_slot = 2;
+  trace.shot_seq = 14;
+  trace.dir_oct_x = 321;
+  trace.dir_oct_y = -654;
+  trace.hit_dist_q = 4321;
+  trace.hit_kind = HitKind::World;
+  trace.surface_type = SurfaceType::Metal;
+  trace.normal_oct_x = -111;
+  trace.normal_oct_y = 222;
+  trace.show_tracer = true;
+  trace.hit_pos_x_q = 123;
+  trace.hit_pos_y_q = -234;
+  trace.hit_pos_z_q = 345;
+  batch.events.push_back(trace);
+
+  const auto payload = BuildGameEventBatch(batch, 4, 2);
+  DecodedEnvelope envelope;
+  std::string error;
+  REQUIRE(DecodeEnvelope(payload, envelope, error));
+  CHECK(envelope.header.msg_type == MessageType::GameEvent);
+
+  flatbuffers::Verifier verifier(envelope.payload.data(), envelope.payload.size());
+  const auto *parsed = flatbuffers::GetRoot<afps::protocol::GameEvent>(envelope.payload.data());
+  CHECK(parsed->Verify(verifier));
+  CHECK(parsed->server_tick() == 18);
+  REQUIRE(parsed->events_type());
+  REQUIRE(parsed->events());
+  REQUIRE(parsed->events_type()->size() == 1);
+  REQUIRE(parsed->events()->size() == 1);
+  CHECK(parsed->events_type()->Get(0) == afps::protocol::FxEvent::ShotTraceFx);
+  const auto *payload_trace = parsed->events()->GetAs<afps::protocol::ShotTraceFx>(0);
+  REQUIRE(payload_trace);
+  CHECK(payload_trace->shooter_id()->str() == "owner-2");
+  CHECK(payload_trace->weapon_slot() == 2);
+  CHECK(payload_trace->shot_seq() == 14);
+  CHECK(payload_trace->dir_oct_x() == 321);
+  CHECK(payload_trace->dir_oct_y() == -654);
+  CHECK(payload_trace->hit_dist_q() == 4321);
+  CHECK(payload_trace->hit_kind() == afps::protocol::HitKind::World);
+  CHECK(payload_trace->surface_type() == afps::protocol::SurfaceType::Metal);
+  CHECK(payload_trace->normal_oct_x() == -111);
+  CHECK(payload_trace->normal_oct_y() == 222);
+  CHECK(payload_trace->show_tracer() == true);
+  CHECK(payload_trace->hit_pos_x_q() == 123);
+  CHECK(payload_trace->hit_pos_y_q() == -234);
+  CHECK(payload_trace->hit_pos_z_q() == 345);
 }
 
 TEST_CASE("BuildStateSnapshot emits expected fields") {

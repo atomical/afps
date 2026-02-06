@@ -53,6 +53,7 @@ import { decodeOct16, decodePitchQ, decodeUnitU16, decodeYawQ, dequantizeI16, de
 import { GameEventQueue } from './net/event_queue';
 import { loadFxSettings, saveFxSettings } from './rendering/fx_settings';
 import type { WebRtcSession } from './net/types';
+import { createPickupManager } from './pickups/manager';
 
 const three = {
   ...THREE,
@@ -81,6 +82,231 @@ const SERVER_STALE_TIMEOUT_MS = 4000;
 const SERVER_STALE_POLL_INTERVAL_MS = 500;
 const FOOTSTEP_STRIDE = resolvePlayerHeight(SIM_CONFIG);
 const RECONNECT_DELAY_MS = 1000;
+const SKY_DECAL_FADE_SECONDS = 3;
+const SKY_DECAL_HEIGHT_METERS = 8;
+const SKY_DECAL_VERTICAL_DELTA_METERS = 1;
+
+type Vec3 = { x: number; y: number; z: number };
+type TraceWorldHitInput = {
+  dir: Vec3;
+  normal: Vec3;
+  hitDistance: number;
+  hitPos: Vec3;
+  muzzlePos: Vec3 | null;
+};
+type TraceWorldHitResult = { position: Vec3; normal: Vec3 };
+
+const dotVec = (a: Vec3, b: Vec3) => a.x * b.x + a.y * b.y + a.z * b.z;
+
+const normalizeVec = (v: Vec3): Vec3 => {
+  const len = Math.hypot(v.x, v.y, v.z);
+  if (!Number.isFinite(len) || len <= 1e-8) {
+    return { x: 0, y: 0, z: -1 };
+  }
+  return { x: v.x / len, y: v.y / len, z: v.z / len };
+};
+
+const isFiniteVec3 = (v: Vec3) => Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z);
+
+const createWorldSurfaceProjector = (
+  getSceneAndCamera: () => { scene: THREE.Scene | null; camera: THREE.Camera | null }
+) => {
+  const raycaster = new THREE.Raycaster();
+  const rayOrigin = new THREE.Vector3();
+  const rayDir = new THREE.Vector3();
+  const WORLD_SURFACE_RAY_MAX_METERS = 160;
+  const WORLD_SURFACE_RAY_EXTRA_METERS = 24;
+  const WORLD_SURFACE_DIRECT_BACKTRACK_METERS = 0.35;
+  const WORLD_SURFACE_DIRECT_MARGIN_METERS = 0.5;
+
+  const isStaticSurfaceObject = (object: THREE.Object3D | null | undefined) => {
+    let current: THREE.Object3D | null = object ?? null;
+    let depth = 0;
+    while (current && depth < 16) {
+      if ((current.userData as { afpsStaticSurface?: unknown } | undefined)?.afpsStaticSurface === true) {
+        return true;
+      }
+      current = current.parent;
+      depth += 1;
+    }
+    return false;
+  };
+
+  const toRayHit = (
+    hit: THREE.Intersection,
+    dir: Vec3
+  ): (TraceWorldHitResult & { distance: number }) | null => {
+    const hitObject = hit.object as (THREE.Object3D & { isMesh?: boolean }) | null | undefined;
+    if (!hitObject || hitObject.isMesh !== true) {
+      return null;
+    }
+    if (!isStaticSurfaceObject(hitObject)) {
+      return null;
+    }
+    if (!Number.isFinite(hit.distance) || hit.distance < 0) {
+      return null;
+    }
+    const point = hit.point;
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y) || !Number.isFinite(point.z)) {
+      return null;
+    }
+    let normal = normalizeVec({ x: -dir.x, y: -dir.y, z: -dir.z });
+    if (hit.face?.normal && hitObject.matrixWorld) {
+      const worldNormal = hit.face.normal.clone().transformDirection(hitObject.matrixWorld);
+      normal = normalizeVec({ x: worldNormal.x, y: worldNormal.y, z: worldNormal.z });
+    }
+    if (dotVec(normal, dir) > 0) {
+      normal = { x: -normal.x, y: -normal.y, z: -normal.z };
+    }
+    return {
+      position: { x: point.x, y: point.y, z: point.z },
+      normal,
+      distance: hit.distance
+    };
+  };
+
+  const castIntersections = (origin: Vec3, dir: Vec3, far: number) => {
+    if (!isFiniteVec3(origin) || !isFiniteVec3(dir) || !Number.isFinite(far) || far <= 0) {
+      return [] as THREE.Intersection[];
+    }
+    const { scene, camera } = getSceneAndCamera();
+    if (!scene) {
+      return [] as THREE.Intersection[];
+    }
+    const staticRoots = scene.children.filter((child) => isStaticSurfaceObject(child));
+    if (staticRoots.length === 0) {
+      return [] as THREE.Intersection[];
+    }
+    rayOrigin.set(origin.x, origin.y, origin.z);
+    rayDir.set(dir.x, dir.y, dir.z);
+    if (rayDir.lengthSq() <= 1e-8) {
+      return [] as THREE.Intersection[];
+    }
+    rayDir.normalize();
+    raycaster.near = 0;
+    raycaster.far = far;
+    if (camera && (camera as { isCamera?: boolean }).isCamera) {
+      raycaster.camera = camera;
+    } else {
+      raycaster.camera = null;
+    }
+    raycaster.set(rayOrigin, rayDir);
+    try {
+      return raycaster.intersectObjects(staticRoots, true);
+    } catch {
+      return [] as THREE.Intersection[];
+    }
+  };
+
+  const raycastStaticSurface = (
+    origin: Vec3,
+    dir: Vec3,
+    maxDistance = WORLD_SURFACE_RAY_MAX_METERS
+  ): (TraceWorldHitResult & { distance: number }) | null => {
+    const safeDir = normalizeVec(dir);
+    const hits = castIntersections(origin, safeDir, maxDistance);
+    for (const hit of hits) {
+      const parsed = toRayHit(hit, safeDir);
+      if (parsed) {
+        return parsed;
+      }
+    }
+    return null;
+  };
+
+  const projectTraceWorldHit = (trace: TraceWorldHitInput): TraceWorldHitResult | null => {
+    if (!trace.muzzlePos || !isFiniteVec3(trace.muzzlePos)) {
+      return null;
+    }
+    const muzzle = trace.muzzlePos;
+    const dir = normalizeVec(trace.dir);
+    const maxDistance =
+      Number.isFinite(trace.hitDistance) && trace.hitDistance > 0
+        ? Math.min(WORLD_SURFACE_RAY_MAX_METERS, trace.hitDistance + WORLD_SURFACE_RAY_EXTRA_METERS)
+        : WORLD_SURFACE_RAY_MAX_METERS;
+    if (!Number.isFinite(maxDistance) || maxDistance <= 0) {
+      return null;
+    }
+
+    const directCandidates: Array<{ score: number; position: Vec3; normal: Vec3 }> = [];
+    const addDirectCandidate = (origin: Vec3, rayDir: Vec3, far: number) => {
+      const hit = raycastStaticSurface(origin, rayDir, far);
+      if (!hit) {
+        return;
+      }
+      const toHit = {
+        x: hit.position.x - muzzle.x,
+        y: hit.position.y - muzzle.y,
+        z: hit.position.z - muzzle.z
+      };
+      const along = dotVec(toHit, dir);
+      if (
+        !Number.isFinite(along) ||
+        along < -(WORLD_SURFACE_DIRECT_BACKTRACK_METERS + WORLD_SURFACE_DIRECT_MARGIN_METERS) ||
+        along > maxDistance + WORLD_SURFACE_DIRECT_MARGIN_METERS
+      ) {
+        return;
+      }
+      const hasServerDepth = Number.isFinite(trace.hitDistance) && trace.hitDistance > 0;
+      const depthError = hasServerDepth ? Math.abs(along - trace.hitDistance) : 0;
+      const behindPenalty = along < 0 ? Math.abs(along) * 12 : 0;
+      const score = Math.max(0, along) + depthError * 0.08 + behindPenalty;
+      directCandidates.push({
+        score,
+        position: hit.position,
+        normal: hit.normal
+      });
+    };
+
+    addDirectCandidate(muzzle, dir, maxDistance);
+    addDirectCandidate(
+      {
+        x: muzzle.x - dir.x * WORLD_SURFACE_DIRECT_BACKTRACK_METERS,
+        y: muzzle.y - dir.y * WORLD_SURFACE_DIRECT_BACKTRACK_METERS,
+        z: muzzle.z - dir.z * WORLD_SURFACE_DIRECT_BACKTRACK_METERS
+      },
+      dir,
+      maxDistance + WORLD_SURFACE_DIRECT_BACKTRACK_METERS
+    );
+    if (isFiniteVec3(trace.hitPos)) {
+      const snapProbeRange = 1.4;
+      const snapProbeOffset = 0.45;
+      addDirectCandidate(
+        {
+          x: trace.hitPos.x + dir.x * snapProbeOffset,
+          y: trace.hitPos.y + dir.y * snapProbeOffset,
+          z: trace.hitPos.z + dir.z * snapProbeOffset
+        },
+        { x: -dir.x, y: -dir.y, z: -dir.z },
+        snapProbeRange
+      );
+      addDirectCandidate(
+        {
+          x: trace.hitPos.x - dir.x * snapProbeOffset,
+          y: trace.hitPos.y - dir.y * snapProbeOffset,
+          z: trace.hitPos.z - dir.z * snapProbeOffset
+        },
+        dir,
+        snapProbeRange
+      );
+    }
+
+    if (directCandidates.length > 0) {
+      directCandidates.sort((a, b) => a.score - b.score);
+      const best = directCandidates[0]!;
+      return {
+        position: best.position,
+        normal: best.normal
+      };
+    }
+    return null;
+  };
+
+  return {
+    projectTraceWorldHit,
+    raycastStaticSurface
+  };
+};
 
 const createMemoryStorage = (): Storage => {
   const entries = new Map<string, string>();
@@ -162,6 +388,17 @@ if (shouldValidateWeapons) {
 }
 const { app, canvas } = startApp({ three, document, window, lookSensitivity, loadEnvironment: true });
 const baseFov = app.state.camera?.fov ?? 70;
+const worldSurfaceProjector = createWorldSurfaceProjector(() => {
+  const scene = app.state.scene as THREE.Scene;
+  const camera = (app.state.camera as unknown as THREE.Camera | null) ?? null;
+  return { scene, camera };
+});
+(window as unknown as { __afpsWorldSurface?: unknown }).__afpsWorldSurface = {
+  projectTraceWorldHit: (trace: TraceWorldHitInput) => worldSurfaceProjector.projectTraceWorldHit(trace),
+  raycastStaticSurface: (origin: Vec3, dir: Vec3, maxDistance?: number) =>
+    worldSurfaceProjector.raycastStaticSurface(origin, dir, maxDistance),
+  getPlayerPose: () => app.getPlayerPose()
+};
 const debugAudio = (import.meta.env?.VITE_DEBUG_AUDIO ?? '') === 'true';
 if (debugAudio) {
   (window as unknown as { __afpsAudio?: unknown }).__afpsAudio = {
@@ -178,6 +415,7 @@ if (debugAudio) {
 }
 const remoteAvatars = createRemoteAvatarManager({ three, scene: app.state.scene });
 remoteAvatars.setAimDebugEnabled(fxSettings.aimDebug);
+const pickupManager = createPickupManager({ three, scene: app.state.scene });
 const casingPool = createCasingPool({
   three,
   scene: app.state.scene,
@@ -382,13 +620,14 @@ app.setBeforeRender((deltaSeconds, nowMs) => {
     }
   }
   remoteAvatars.update(safeDelta);
+  pickupManager.update(safeDelta, nowMs);
   casingPool.update(safeDelta);
   const cameraPos = app.state.camera?.position;
   if (cameraPos) {
     const cosPitch = Math.cos(viewAngles.pitch);
     const forward = {
       x: Math.sin(viewAngles.yaw) * cosPitch,
-      y: Math.sin(viewAngles.pitch),
+      y: -Math.sin(viewAngles.pitch),
       z: -Math.cos(viewAngles.yaw) * cosPitch
     };
     audio.setListenerPosition({ x: cameraPos.x, y: cameraPos.y, z: cameraPos.z }, forward);
@@ -446,7 +685,8 @@ const anglesToDirection = (angles: { yaw: number; pitch: number }) => {
   const cosPitch = Math.cos(angles.pitch);
   return {
     x: Math.sin(angles.yaw) * cosPitch,
-    y: Math.sin(angles.pitch),
+    // App look pitch is positive when aiming downward.
+    y: -Math.sin(angles.pitch),
     z: -Math.cos(angles.yaw) * cosPitch
   };
 };
@@ -644,6 +884,15 @@ window.addEventListener('keydown', (event) => {
   if (event.code === 'Backquote') {
     if (!event.repeat) {
       setDebugOverlaysVisible(!debugOverlaysVisible);
+      const pose = app.getPlayerPose();
+      const x = Number.isFinite(pose.posX) ? pose.posX : 0;
+      const y = Number.isFinite(pose.posY) ? pose.posY : 0;
+      const z = Number.isFinite(pose.posZ) ? pose.posZ : 0;
+      console.log('[afps] player coords', {
+        x: Number(x.toFixed(3)),
+        y: Number(y.toFixed(3)),
+        z: Number(z.toFixed(3))
+      });
     }
   }
 });
@@ -769,6 +1018,7 @@ if (!signalingUrl) {
     };
 
     const HIT_DISTANCE_STEP_METERS = 0.01;
+    const SHOT_TRACE_POS_STEP_METERS = 0.01;
     const PROJECTILE_POS_STEP_METERS = 0.01;
     const PROJECTILE_VEL_STEP_METERS_PER_SECOND = 0.01;
     const PROJECTILE_TTL_STEP_SECONDS = 0.01;
@@ -915,15 +1165,16 @@ if (!signalingUrl) {
     };
 
     const resolveOriginServer = (clientId: string) => {
-      const snapshot = lastSnapshots.get(clientId);
-      if (snapshot) {
-        return { x: snapshot.posX, y: snapshot.posY, z: snapshot.posZ + PLAYER_EYE_HEIGHT };
-      }
-      if (localConnectionId && clientId === localConnectionId) {
+      const isLocalShooter = Boolean(localConnectionId) && clientId === localConnectionId;
+      if (isLocalShooter) {
         const cameraPos = app.state.camera?.position;
         if (cameraPos && Number.isFinite(cameraPos.x) && Number.isFinite(cameraPos.y) && Number.isFinite(cameraPos.z)) {
           return swapYZ({ x: cameraPos.x, y: cameraPos.y, z: cameraPos.z });
         }
+      }
+      const snapshot = lastSnapshots.get(clientId);
+      if (snapshot) {
+        return { x: snapshot.posX, y: snapshot.posY, z: snapshot.posZ + PLAYER_EYE_HEIGHT };
       }
       return null;
     };
@@ -940,6 +1191,29 @@ if (!signalingUrl) {
       };
       return swapYZ(muzzleServer);
     };
+    const resolveMuzzlePosFromTraceServer = (
+      dirServer: { x: number; y: number; z: number },
+      hitPosServer: { x: number; y: number; z: number },
+      hitDistance: number
+    ) => {
+      if (!Number.isFinite(hitDistance) || hitDistance < 0) {
+        return null;
+      }
+      const originServer = {
+        x: hitPosServer.x - dirServer.x * hitDistance,
+        y: hitPosServer.y - dirServer.y * hitDistance,
+        z: hitPosServer.z - dirServer.z * hitDistance
+      };
+      if (!Number.isFinite(originServer.x) || !Number.isFinite(originServer.y) || !Number.isFinite(originServer.z)) {
+        return null;
+      }
+      return swapYZ({
+        x: originServer.x + dirServer.x * MUZZLE_FORWARD_OFFSET,
+        y: originServer.y + dirServer.y * MUZZLE_FORWARD_OFFSET,
+        z: originServer.z + dirServer.z * MUZZLE_FORWARD_OFFSET
+      });
+    };
+    const projectTraceWorldHit = worldSurfaceProjector.projectTraceWorldHit;
 
     const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
@@ -1009,6 +1283,7 @@ if (!signalingUrl) {
         {
           dirServer: { x: number; y: number; z: number };
           dir: { x: number; y: number; z: number };
+          hitPos: { x: number; y: number; z: number };
           normal: { x: number; y: number; z: number };
           hitDistance: number;
           hitKind: number;
@@ -1029,12 +1304,21 @@ if (!signalingUrl) {
         if (event.type === 'ShotTraceFx') {
           const dirServer = decodeOct16(event.dirOctX, event.dirOctY);
           const normalServer = decodeOct16(event.normalOctX, event.normalOctY);
-          const muzzlePos = resolveMuzzlePos(event.shooterId, dirServer);
+          const hitPosServer = {
+            x: dequantizeI16(event.hitPosXQ, SHOT_TRACE_POS_STEP_METERS),
+            y: dequantizeI16(event.hitPosYQ, SHOT_TRACE_POS_STEP_METERS),
+            z: dequantizeI16(event.hitPosZQ, SHOT_TRACE_POS_STEP_METERS)
+          };
+          const hitDistance = dequantizeU16(event.hitDistQ, HIT_DISTANCE_STEP_METERS);
+          const muzzlePos =
+            resolveMuzzlePosFromTraceServer(dirServer, hitPosServer, hitDistance) ??
+            resolveMuzzlePos(event.shooterId, dirServer);
           traceByShot.set(`${event.shooterId}:${event.shotSeq}`, {
             dirServer,
             dir: swapYZ(dirServer),
+            hitPos: swapYZ(hitPosServer),
             normal: swapYZ(normalServer),
-            hitDistance: dequantizeU16(event.hitDistQ, HIT_DISTANCE_STEP_METERS),
+            hitDistance,
             hitKind: event.hitKind,
             surfaceType: event.surfaceType,
             showTracer: event.showTracer,
@@ -1275,29 +1559,52 @@ if (!signalingUrl) {
           case 'ShotTraceFx': {
             const traceKey = `${event.shooterId}:${event.shotSeq}`;
             const trace = traceByShot.get(traceKey);
-            if (!trace || !trace.muzzlePos) {
+            if (!trace) {
               break;
             }
             if (trace.hitKind === 0) {
               break;
             }
-            const hitDistance = trace.hitDistance > 0 ? trace.hitDistance : resolveWeaponForSlot(event.weaponSlot)?.range ?? 0;
-            const length = Math.max(0, hitDistance - MUZZLE_FORWARD_OFFSET);
-            const hitPos = advance(trace.muzzlePos, trace.dir, length);
             const seed = (hashString(event.shooterId) ^ (event.shotSeq >>> 0)) >>> 0;
+            const projectedWorldHit = trace.hitKind === 1 ? projectTraceWorldHit(trace) : null;
+            const fallbackImpactPos = trace.hitPos;
+            const impactPos = projectedWorldHit?.position ?? fallbackImpactPos;
+            const impactNormal = projectedWorldHit?.normal ?? trace.normal;
             app.spawnImpactVfx({
-              position: hitPos,
-              normal: trace.normal,
+              position: impactPos,
+              normal: impactNormal,
               surfaceType: trace.surfaceType,
               seed
             });
             if (fxSettings.decals && trace.hitKind === 1) {
+              let decalTtl: number | undefined;
+              if (!projectedWorldHit) {
+                const firedDownward = trace.dir.y < -0.05;
+                const aboveSkyHeight = impactPos.y > SKY_DECAL_HEIGHT_METERS;
+                const aboveMuzzleByMargin =
+                  trace.muzzlePos !== null ? impactPos.y > trace.muzzlePos.y + SKY_DECAL_VERTICAL_DELTA_METERS : false;
+                if (aboveSkyHeight || (firedDownward && aboveMuzzleByMargin)) {
+                  decalTtl = SKY_DECAL_FADE_SECONDS;
+                }
+              }
               app.spawnDecalVfx({
-                position: hitPos,
-                normal: trace.normal,
+                position: impactPos,
+                normal: impactNormal,
                 surfaceType: trace.surfaceType,
-                seed
+                seed,
+                ttl: decalTtl
               });
+            }
+            break;
+          }
+          case 'PickupSpawnedFx': {
+            pickupManager.applyFx(event);
+            break;
+          }
+          case 'PickupTakenFx': {
+            pickupManager.applyFx(event);
+            if (localConnectionId && event.takerId === localConnectionId) {
+              audio.play('uiClick', { group: 'ui', volume: 0.6 });
             }
             break;
           }
@@ -1381,6 +1688,7 @@ if (!signalingUrl) {
         refreshHudLockState();
         app.setSnapshotRate(session.serverHello.snapshotRate);
         app.setTickRate(session.serverHello.serverTickRate);
+        app.setMapSeed(session.serverHello.mapSeed ?? 0);
         queue.setTickRate(session.serverHello.serverTickRate);
         snapshotKeyframeInterval = session.serverHello.snapshotKeyframeInterval ?? null;
         updateMetrics();
@@ -1388,7 +1696,7 @@ if (!signalingUrl) {
         hudStore.dispatch({ type: 'abilityCooldowns', value: app.getAbilityCooldowns() });
 
         sendLoadoutBits = (bits: number) => {
-          const channel = session.reliableChannel;
+          const channel = session.unreliableChannel;
           if (!channel || channel.readyState !== 'open') {
             return;
           }

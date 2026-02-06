@@ -18,6 +18,7 @@ const makeSim = () => ({
   setState: vi.fn(),
   reset: vi.fn(),
   setConfig: vi.fn(),
+  setColliders: vi.fn(),
   dispose: vi.fn()
 });
 
@@ -57,6 +58,9 @@ describe('createWasmPredictionSim', () => {
       obstacleMaxY: 1
     });
     adapter.setState(3, 4, 2, 1, -1, 0.25, 0.15);
+    adapter.setColliders([
+      { id: 1, minX: -1, minY: -1, minZ: 0, maxX: 1, maxY: 1, maxZ: 2, surfaceType: 3 }
+    ]);
     adapter.step(
       { moveX: 1, moveY: -1, sprint: true, jump: true, dash: true, grapple: true, shield: false, shockwave: false },
       0.016
@@ -92,6 +96,9 @@ describe('createWasmPredictionSim', () => {
       obstacleMinY: -1,
       obstacleMaxY: 1
     });
+    expect(sim.setColliders).toHaveBeenCalledWith([
+      { id: 1, minX: -1, minY: -1, minZ: 0, maxX: 1, maxY: 1, maxZ: 2, surfaceType: 3 }
+    ]);
     expect(sim.setState).toHaveBeenCalledWith(3, 4, 2, 1, -1, 0.25, 0.15);
     expect(sim.step).toHaveBeenCalledWith(
       {
