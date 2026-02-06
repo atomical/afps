@@ -5,7 +5,7 @@ import { WEAPON_DEFS } from '../weapons/config';
 import { LOADOUT_BITS, hasLoadoutBit } from '../weapons/loadout';
 import type { PlayerProfile } from '../net/protocol';
 import { decodePitchQ, decodeYawQ } from '../net/quantization';
-import { SIM_CONFIG, resolvePlayerHeight } from '../sim/config';
+import { SIM_CONFIG, resolveCrouchHeight, resolvePlayerHeight } from '../sim/config';
 
 type AnimationActionLike = {
   play: () => void;
@@ -44,6 +44,11 @@ type RemoteAvatar = {
   viewYaw?: number;
   viewPitch?: number;
   playerFlags?: number;
+  crouchBlend?: number;
+  simPosX?: number;
+  simPosY?: number;
+  simPosZ?: number;
+  crouchBones?: CrouchBoneBinding[];
   loadoutBits?: number;
   adsBlend?: number;
   sprintBlend?: number;
@@ -70,11 +75,20 @@ type RemoteAvatar = {
   lastSeenMs: number;
 };
 
+type QuaternionTuple = [number, number, number, number];
+
+type CrouchBoneBinding = {
+  bone: Object3DLike;
+  baseQuat: QuaternionTuple;
+  targetQuat?: QuaternionTuple;
+};
+
 export interface RemoteAvatarManager {
   upsertSnapshot: (snapshot: NetworkSnapshot, nowMs?: number) => void;
   setLocalClientId: (clientId: string | null) => void;
   setProfile: (profile: PlayerProfile) => void;
   setCatalog: (catalog: CharacterCatalog) => void;
+  setNameplatesVisible: (visible: boolean) => void;
   pulseWeaponRecoil: (clientId: string, shotSeq: number, loadoutBits?: number) => void;
   setAimDebugEnabled: (enabled: boolean) => void;
   update: (deltaSeconds: number) => void;
@@ -100,19 +114,24 @@ export interface RemoteAvatarManager {
 // local (first-person) and remote player proportions match.
 const BODY_HEIGHT = resolvePlayerHeight(SIM_CONFIG);
 const BODY_HALF = BODY_HEIGHT / 2;
+const CROUCH_HEIGHT = resolveCrouchHeight(SIM_CONFIG);
+const CROUCH_SCALE_REDUCTION = Math.max(0, Math.min(0.7, 1 - CROUCH_HEIGHT / Math.max(0.01, BODY_HEIGHT)));
+const CROUCH_KNEEL_DROP_METERS = Math.max(0.45, BODY_HEIGHT - CROUCH_HEIGHT);
 const STALE_MS = 8000;
-const NAMEPLATE_WIDTH = 256;
-const NAMEPLATE_HEIGHT = 64;
-const NAMEPLATE_SCALE = { x: 1.6, y: 0.4 };
+const NAMEPLATE_WIDTH = 192;
+const NAMEPLATE_HEIGHT = 48;
+const NAMEPLATE_SCALE = { x: 0.9, y: 0.24 };
 const NAMEPLATE_OFFSET_Y = BODY_HEIGHT + 0.45;
 const PLAYER_FLAG_ADS = 1 << 0;
 const PLAYER_FLAG_SPRINT = 1 << 1;
 const PLAYER_FLAG_RELOAD = 1 << 2;
 const PLAYER_FLAG_OVERHEAT = 1 << 4;
+const PLAYER_FLAG_CROUCHED = 1 << 5;
 const ADS_BLEND_SPEED = 12;
 const SPRINT_BLEND_SPEED = 10;
 const RELOAD_BLEND_SPEED = 8;
 const OVERHEAT_BLEND_SPEED = 7;
+const CROUCH_BLEND_SPEED = 14;
 const AIM_PITCH_BLEND_SPEED = 16;
 const RECOIL_DECAY_SPEED = 18;
 const THIRD_PERSON_RECOIL_SCALE = 0.6;
@@ -142,6 +161,17 @@ const HAND_DEFAULT_OFFSET: WeaponOffset = {
 // Character GLBs are authored facing +Z, while gameplay yaw 0 faces -Y (client -Z).
 // Keep an offset of PI so remote body facing matches authoritative view yaw.
 const MODEL_YAW_OFFSET = Math.PI;
+const KNEEL_POSE_QUATS: Readonly<Record<string, QuaternionTuple>> = Object.freeze({
+  Body: [-0.132576868, 0.123875953, 0.001070219, 0.983400762],
+  Abdomen: [0.142660126, 0.033740167, -0.04820184, 0.988021493],
+  Torso: [0.163900867, -0.097130023, 0.019018965, 0.981499135],
+  'UpperLeg.L': [0.486219853, -0.605932593, -0.419758677, 0.469296038],
+  'LowerLeg.L': [0.608122408, 0.36081472, -0.608122289, 0.360814512],
+  'Foot.L': [0.705213606, 0.000019745, 0.000019787, 0.708994925],
+  'UpperLeg.R': [0.398578197, 0.496639222, 0.513448, 0.575201035],
+  'LowerLeg.R': [0.618648708, -0.342452705, 0.618648708, 0.342452466],
+  'Foot.R': [0.677819908, 0.038980834, -0.042749692, 0.732948244]
+});
 const BASE_URL = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
 const NORMALIZED_BASE = BASE_URL.endsWith('/') ? BASE_URL : `${BASE_URL}/`;
 const WEAPON_MODEL_ROOT = `${NORMALIZED_BASE}assets/weapons/cc0/kenney_blaster_kit/`;
@@ -255,6 +285,7 @@ export const createRemoteAvatarManager = ({
   let gltfLoaderPromise: Promise<{ load: Function } | null> | null = null;
   let skeletonClonePromise: Promise<((root: Object3DLike) => Object3DLike) | null> | null = null;
   let aimDebugEnabled = false;
+  let nameplatesVisible = true;
 
   const getGltfLoader = async () => {
     if (!gltfLoaderPromise) {
@@ -486,7 +517,7 @@ export const createRemoteAvatarManager = ({
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = 'rgba(245, 245, 245, 0.95)';
-    ctx.font = 'bold 32px system-ui, sans-serif';
+    ctx.font = 'bold 24px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(label, NAMEPLATE_WIDTH / 2, NAMEPLATE_HEIGHT / 2);
@@ -517,6 +548,7 @@ export const createRemoteAvatarManager = ({
     if (sprite.scale) {
       sprite.scale.set(NAMEPLATE_SCALE.x, NAMEPLATE_SCALE.y, 1);
     }
+    sprite.visible = nameplatesVisible;
     return { sprite, texture, canvas, ctx };
   };
 
@@ -689,8 +721,204 @@ export const createRemoteAvatarManager = ({
     avatar.root.visible = !(localClientId && avatar.id === localClientId);
   };
 
+  const applyNameplateVisibility = (avatar: RemoteAvatar) => {
+    if (!avatar.nameplate?.sprite) {
+      return;
+    }
+    avatar.nameplate.sprite.visible = nameplatesVisible;
+  };
+
   const detachWeapon = (avatar: RemoteAvatar) => {
     avatar.weaponParent?.remove?.(avatar.weapon);
+  };
+
+  const ensureRootBaseScale = (avatar: RemoteAvatar) => {
+    const tag = avatar.root as unknown as { __afpsBaseScale?: { x: number; y: number; z: number } };
+    if (!tag.__afpsBaseScale) {
+      tag.__afpsBaseScale = {
+        x: avatar.root.scale?.x ?? 1,
+        y: avatar.root.scale?.y ?? 1,
+        z: avatar.root.scale?.z ?? 1
+      };
+    }
+    return tag.__afpsBaseScale;
+  };
+
+  const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+
+  const normalizeQuat = (quat: QuaternionTuple): QuaternionTuple => {
+    const [x, y, z, w] = quat;
+    const length = Math.hypot(x, y, z, w);
+    if (!Number.isFinite(length) || length <= 1e-8) {
+      return [0, 0, 0, 1];
+    }
+    return [x / length, y / length, z / length, w / length];
+  };
+
+  const eulerToQuat = (x: number, y: number, z: number): QuaternionTuple => {
+    const halfX = x * 0.5;
+    const halfY = y * 0.5;
+    const halfZ = z * 0.5;
+    const sx = Math.sin(halfX);
+    const cx = Math.cos(halfX);
+    const sy = Math.sin(halfY);
+    const cy = Math.cos(halfY);
+    const sz = Math.sin(halfZ);
+    const cz = Math.cos(halfZ);
+    return normalizeQuat([
+      sx * cy * cz + cx * sy * sz,
+      cx * sy * cz - sx * cy * sz,
+      cx * cy * sz + sx * sy * cz,
+      cx * cy * cz - sx * sy * sz
+    ]);
+  };
+
+  const getBoneQuat = (bone: Object3DLike): QuaternionTuple => {
+    const maybeQuat = (bone as unknown as { quaternion?: { x: number; y: number; z: number; w: number } }).quaternion;
+    if (
+      maybeQuat &&
+      Number.isFinite(maybeQuat.x) &&
+      Number.isFinite(maybeQuat.y) &&
+      Number.isFinite(maybeQuat.z) &&
+      Number.isFinite(maybeQuat.w)
+    ) {
+      return normalizeQuat([maybeQuat.x, maybeQuat.y, maybeQuat.z, maybeQuat.w]);
+    }
+    return eulerToQuat(bone.rotation?.x ?? 0, bone.rotation?.y ?? 0, bone.rotation?.z ?? 0);
+  };
+
+  const setBoneQuat = (bone: Object3DLike, quat: QuaternionTuple) => {
+    const normalized = normalizeQuat(quat);
+    const maybeQuat = (bone as unknown as {
+      quaternion?: { x: number; y: number; z: number; w: number; set?: (x: number, y: number, z: number, w: number) => void };
+    }).quaternion;
+    if (!maybeQuat) {
+      return;
+    }
+    if (typeof maybeQuat.set === 'function') {
+      maybeQuat.set(normalized[0], normalized[1], normalized[2], normalized[3]);
+      return;
+    }
+    maybeQuat.x = normalized[0];
+    maybeQuat.y = normalized[1];
+    maybeQuat.z = normalized[2];
+    maybeQuat.w = normalized[3];
+  };
+
+  const slerpQuat = (from: QuaternionTuple, to: QuaternionTuple, t: number): QuaternionTuple => {
+    const blend = clamp01(t);
+    if (blend <= 0) {
+      return from;
+    }
+    if (blend >= 1) {
+      return to;
+    }
+    let [x0, y0, z0, w0] = normalizeQuat(from);
+    let [x1, y1, z1, w1] = normalizeQuat(to);
+    let dot = x0 * x1 + y0 * y1 + z0 * z1 + w0 * w1;
+    if (dot < 0) {
+      dot = -dot;
+      x1 = -x1;
+      y1 = -y1;
+      z1 = -z1;
+      w1 = -w1;
+    }
+    if (dot > 0.9995) {
+      return normalizeQuat([
+        x0 + (x1 - x0) * blend,
+        y0 + (y1 - y0) * blend,
+        z0 + (z1 - z0) * blend,
+        w0 + (w1 - w0) * blend
+      ]);
+    }
+    const theta0 = Math.acos(Math.max(-1, Math.min(1, dot)));
+    const theta = theta0 * blend;
+    const sinTheta = Math.sin(theta);
+    const sinTheta0 = Math.sin(theta0);
+    if (Math.abs(sinTheta0) < 1e-6) {
+      return normalizeQuat([x0, y0, z0, w0]);
+    }
+    const s0 = Math.cos(theta) - (dot * sinTheta) / sinTheta0;
+    const s1 = sinTheta / sinTheta0;
+    return normalizeQuat([
+      x0 * s0 + x1 * s1,
+      y0 * s0 + y1 * s1,
+      z0 * s0 + z1 * s1,
+      w0 * s0 + w1 * s1
+    ]);
+  };
+
+  const hasKneelPoseTargets = (avatar: RemoteAvatar) =>
+    (avatar.crouchBones ?? []).some((binding) => Boolean(binding.targetQuat));
+
+  const resolveCrouchDrop = (avatar: RemoteAvatar, crouchBlend: number) => {
+    const groundOffset = avatar.groundOffsetY ?? BODY_HALF;
+    const blend = clamp01(crouchBlend);
+    if (hasKneelPoseTargets(avatar)) {
+      // Rigged models often use feet-at-origin roots (groundOffset ~= 0), so derive
+      // kneel drop from configured body/crouch heights instead of root offset.
+      return CROUCH_KNEEL_DROP_METERS * blend;
+    }
+    return groundOffset * CROUCH_SCALE_REDUCTION * blend;
+  };
+
+  const applyAvatarRootPosition = (avatar: RemoteAvatar) => {
+    if (
+      !Number.isFinite(avatar.simPosX) ||
+      !Number.isFinite(avatar.simPosY) ||
+      !Number.isFinite(avatar.simPosZ)
+    ) {
+      return;
+    }
+    const blend = Number.isFinite(avatar.crouchBlend) ? (avatar.crouchBlend as number) : 0;
+    const groundOffset = avatar.groundOffsetY ?? BODY_HALF;
+    const crouchDrop = resolveCrouchDrop(avatar, blend);
+    avatar.root.position.set(
+      avatar.simPosX as number,
+      groundOffset + (avatar.simPosZ as number) - crouchDrop,
+      avatar.simPosY as number
+    );
+  };
+
+  const updateCrouchBindings = (avatar: RemoteAvatar) => {
+    const bindings: CrouchBoneBinding[] = [];
+    if (typeof avatar.root.traverse !== 'function') {
+      avatar.crouchBones = bindings;
+      return;
+    }
+    avatar.root.traverse((node) => {
+      const candidate = node as unknown as { isBone?: boolean; name?: string };
+      if (candidate.isBone !== true || typeof candidate.name !== 'string') {
+        return;
+      }
+      const targetQuat = KNEEL_POSE_QUATS[candidate.name];
+      if (!targetQuat) {
+        return;
+      }
+      const bone = node as Object3DLike;
+      bindings.push({
+        bone,
+        baseQuat: getBoneQuat(bone),
+        targetQuat
+      });
+    });
+    avatar.crouchBones = bindings;
+  };
+
+  const applyCrouchPose = (avatar: RemoteAvatar) => {
+    const blend = clamp01(Number.isFinite(avatar.crouchBlend) ? (avatar.crouchBlend as number) : 0);
+    const bindings = avatar.crouchBones ?? [];
+    const rootBaseScale = ensureRootBaseScale(avatar);
+    if (bindings.length === 0) {
+      const targetScaleY = rootBaseScale.y * (1 - CROUCH_SCALE_REDUCTION * blend);
+      avatar.root.scale?.set?.(rootBaseScale.x, targetScaleY, rootBaseScale.z);
+      return;
+    }
+    avatar.root.scale?.set?.(rootBaseScale.x, rootBaseScale.y, rootBaseScale.z);
+    for (const binding of bindings) {
+      const target = binding.targetQuat ?? binding.baseQuat;
+      setBoneQuat(binding.bone, slerpQuat(binding.baseQuat, target, blend));
+    }
   };
 
   const loadRiggedModel = async (url: string, skinUrl?: string) => {
@@ -946,6 +1174,10 @@ export const createRemoteAvatarManager = ({
       viewYaw: 0,
       viewPitch: 0,
       playerFlags: 0,
+      crouchBlend: 0,
+      simPosX: 0,
+      simPosY: 0,
+      simPosZ: 0,
       loadoutBits: 0,
       adsBlend: 0,
       sprintBlend: 0,
@@ -956,6 +1188,8 @@ export const createRemoteAvatarManager = ({
       recoilYaw: 0,
       lastSeenMs: nowMs
     };
+    ensureRootBaseScale(avatar);
+    updateCrouchBindings(avatar);
     applyVisibility(avatar);
     avatars.set(id, avatar);
     void requestWeaponModel(avatar, slot);
@@ -995,15 +1229,20 @@ export const createRemoteAvatarManager = ({
       avatars.get(snapshot.clientId) ??
       createAvatar(snapshot.clientId, slot, nowMs, entry?.weaponOffset, desiredCharacterId, entry?.handBone);
     avatar.lastSeenMs = nowMs;
+    avatar.simPosX = snapshot.posX;
+    avatar.simPosY = snapshot.posY;
+    avatar.simPosZ = snapshot.posZ;
     avatar.velocity = { x: snapshot.velX, y: snapshot.velY, z: snapshot.velZ };
     avatar.height = snapshot.posZ;
     avatar.viewYaw = decodeYawQ(snapshot.viewYawQ);
     avatar.viewPitch = decodePitchQ(snapshot.viewPitchQ);
     avatar.playerFlags = snapshot.playerFlags;
+    if (!Number.isFinite(avatar.crouchBlend)) {
+      avatar.crouchBlend = (snapshot.playerFlags & PLAYER_FLAG_CROUCHED) !== 0 ? 1 : 0;
+    }
     avatar.loadoutBits = snapshot.loadoutBits;
     updateWeapon(avatar, slot);
-    const groundOffset = avatar.groundOffsetY ?? BODY_HALF;
-    avatar.root.position.set(snapshot.posX, groundOffset + snapshot.posZ, snapshot.posY);
+    applyAvatarRootPosition(avatar);
     const yaw = avatar.viewYaw ?? 0;
     if (avatar.root.rotation) {
       avatar.root.rotation.y = MODEL_YAW_OFFSET - yaw;
@@ -1040,18 +1279,21 @@ export const createRemoteAvatarManager = ({
           current.root = model.root;
           current.weaponParent = weaponParent;
           current.groundOffsetY = computeGroundOffset(model.root);
+          ensureRootBaseScale(current);
+          updateCrouchBindings(current);
           setupAnimations(current, model);
+          applyAvatarRootPosition(current);
+          applyCrouchPose(current);
           current.modelLoading = false;
           current.modelUrl = desiredModelUrl;
           current.modelCharacterId = desiredCharacterId;
+          applyNameplateVisibility(current);
           applyVisibility(current);
           scene.add(model.root);
         })();
       }
     }
   };
-
-  const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
   const approachBlend = (current: number, target: number, speed: number, deltaSeconds: number) => {
     const safeDelta = Math.max(0, deltaSeconds);
@@ -1216,6 +1458,7 @@ export const createRemoteAvatarManager = ({
       } else {
         updateNameplateLabel(avatar, profile.nickname);
       }
+      applyNameplateVisibility(avatar);
     }
   };
 
@@ -1272,14 +1515,26 @@ export const createRemoteAvatarManager = ({
           current.root = model.root;
           current.weaponParent = weaponParent;
           current.groundOffsetY = computeGroundOffset(model.root);
+          ensureRootBaseScale(current);
+          updateCrouchBindings(current);
           setupAnimations(current, model);
+          applyAvatarRootPosition(current);
+          applyCrouchPose(current);
           current.modelLoading = false;
           current.modelUrl = desiredModelUrl;
           current.modelCharacterId = desiredCharacterId;
+          applyNameplateVisibility(current);
           applyVisibility(current);
           scene.add(model.root);
         })();
       }
+    }
+  };
+
+  const setNameplatesVisible = (visible: boolean) => {
+    nameplatesVisible = visible !== false;
+    for (const avatar of avatars.values()) {
+      applyNameplateVisibility(avatar);
     }
   };
 
@@ -1306,6 +1561,12 @@ export const createRemoteAvatarManager = ({
           setAnimationState(avatar, 'idle');
         }
       }
+      const flags = avatar.playerFlags ?? 0;
+      const wantsCrouch = (flags & PLAYER_FLAG_CROUCHED) !== 0;
+      const crouchBlend = Number.isFinite(avatar.crouchBlend) ? (avatar.crouchBlend as number) : (wantsCrouch ? 1 : 0);
+      avatar.crouchBlend = approachBlend(crouchBlend, wantsCrouch ? 1 : 0, CROUCH_BLEND_SPEED, deltaSeconds);
+      applyAvatarRootPosition(avatar);
+      applyCrouchPose(avatar);
       updateWeaponPose(avatar, deltaSeconds);
     }
   };
@@ -1403,6 +1664,7 @@ export const createRemoteAvatarManager = ({
     setLocalClientId,
     setProfile,
     setCatalog,
+    setNameplatesVisible,
     pulseWeaponRecoil,
     setAimDebugEnabled,
     update,

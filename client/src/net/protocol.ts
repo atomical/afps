@@ -409,7 +409,8 @@ export const encodeInputCmd = (cmd: InputCmd, msgSeq = 1, serverSeqAck = 0) => {
     cmd.dash,
     cmd.grapple,
     cmd.shield,
-    cmd.shockwave
+    cmd.shockwave,
+    cmd.crouch
   ).pack(builder);
   builder.finish(payload);
   return encodeEnvelope(MessageType.InputCmd, builder.asUint8Array(), msgSeq, serverSeqAck);

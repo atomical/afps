@@ -81,6 +81,7 @@ describe('sim config', () => {
     expect(result).toEqual({
       moveSpeed: 7,
       sprintMultiplier: 2.25,
+      crouchSpeedMultiplier: DEFAULT_SIM_CONFIG.crouchSpeedMultiplier,
       accel: 55,
       friction: 9,
       gravity: 32,
@@ -103,6 +104,7 @@ describe('sim config', () => {
       arenaHalfSize: 42,
       playerRadius: 0.4,
       playerHeight: 1.9,
+      crouchHeight: DEFAULT_SIM_CONFIG.crouchHeight,
       obstacleMinX: -2,
       obstacleMaxX: 2,
       obstacleMinY: -1,

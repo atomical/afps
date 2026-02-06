@@ -2464,6 +2464,7 @@ struct InputCmdT : public ::flatbuffers::NativeTable {
   bool grapple = false;
   bool shield = false;
   bool shockwave = false;
+  bool crouch = false;
 };
 
 struct InputCmd FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -2485,7 +2486,8 @@ struct InputCmd FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_DASH = 28,
     VT_GRAPPLE = 30,
     VT_SHIELD = 32,
-    VT_SHOCKWAVE = 34
+    VT_SHOCKWAVE = 34,
+    VT_CROUCH = 36
   };
   int32_t input_seq() const {
     return GetField<int32_t>(VT_INPUT_SEQ, 0);
@@ -2535,6 +2537,9 @@ struct InputCmd FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   bool shockwave() const {
     return GetField<uint8_t>(VT_SHOCKWAVE, 0) != 0;
   }
+  bool crouch() const {
+    return GetField<uint8_t>(VT_CROUCH, 0) != 0;
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -2554,6 +2559,7 @@ struct InputCmd FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<uint8_t>(verifier, VT_GRAPPLE, 1) &&
            VerifyField<uint8_t>(verifier, VT_SHIELD, 1) &&
            VerifyField<uint8_t>(verifier, VT_SHOCKWAVE, 1) &&
+           VerifyField<uint8_t>(verifier, VT_CROUCH, 1) &&
            verifier.EndTable();
   }
   InputCmdT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -2613,6 +2619,9 @@ struct InputCmdBuilder {
   void add_shockwave(bool shockwave) {
     fbb_.AddElement<uint8_t>(InputCmd::VT_SHOCKWAVE, static_cast<uint8_t>(shockwave), 0);
   }
+  void add_crouch(bool crouch) {
+    fbb_.AddElement<uint8_t>(InputCmd::VT_CROUCH, static_cast<uint8_t>(crouch), 0);
+  }
   explicit InputCmdBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -2641,7 +2650,8 @@ inline ::flatbuffers::Offset<InputCmd> CreateInputCmd(
     bool dash = false,
     bool grapple = false,
     bool shield = false,
-    bool shockwave = false) {
+    bool shockwave = false,
+    bool crouch = false) {
   InputCmdBuilder builder_(_fbb);
   builder_.add_view_pitch(view_pitch);
   builder_.add_view_yaw(view_yaw);
@@ -2651,6 +2661,7 @@ inline ::flatbuffers::Offset<InputCmd> CreateInputCmd(
   builder_.add_move_x(move_x);
   builder_.add_weapon_slot(weapon_slot);
   builder_.add_input_seq(input_seq);
+  builder_.add_crouch(crouch);
   builder_.add_shockwave(shockwave);
   builder_.add_shield(shield);
   builder_.add_grapple(grapple);
@@ -4609,6 +4620,7 @@ inline void InputCmd::UnPackTo(InputCmdT *_o, const ::flatbuffers::resolver_func
   { auto _e = grapple(); _o->grapple = _e; }
   { auto _e = shield(); _o->shield = _e; }
   { auto _e = shockwave(); _o->shockwave = _e; }
+  { auto _e = crouch(); _o->crouch = _e; }
 }
 
 inline ::flatbuffers::Offset<InputCmd> CreateInputCmd(::flatbuffers::FlatBufferBuilder &_fbb, const InputCmdT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
@@ -4635,6 +4647,7 @@ inline ::flatbuffers::Offset<InputCmd> InputCmd::Pack(::flatbuffers::FlatBufferB
   auto _grapple = _o->grapple;
   auto _shield = _o->shield;
   auto _shockwave = _o->shockwave;
+  auto _crouch = _o->crouch;
   return afps::protocol::CreateInputCmd(
       _fbb,
       _input_seq,
@@ -4652,7 +4665,8 @@ inline ::flatbuffers::Offset<InputCmd> InputCmd::Pack(::flatbuffers::FlatBufferB
       _dash,
       _grapple,
       _shield,
-      _shockwave);
+      _shockwave,
+      _crouch);
 }
 
 inline FireWeaponRequestT *FireWeaponRequest::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {

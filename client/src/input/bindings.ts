@@ -25,6 +25,7 @@ export const normalizeBindings = (value: unknown): InputBindings => {
     right: sanitizeList(record.right, DEFAULT_BINDINGS.right),
     jump: sanitizeList(record.jump, DEFAULT_BINDINGS.jump),
     sprint: sanitizeList(record.sprint, DEFAULT_BINDINGS.sprint),
+    crouch: sanitizeList(record.crouch, DEFAULT_BINDINGS.crouch),
     dash: sanitizeList(record.dash, DEFAULT_BINDINGS.dash),
     grapple: sanitizeList(record.grapple, DEFAULT_BINDINGS.grapple),
     shield: sanitizeList(record.shield, DEFAULT_BINDINGS.shield),

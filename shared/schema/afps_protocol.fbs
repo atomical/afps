@@ -201,6 +201,7 @@ table InputCmd {
   grapple:bool;
   shield:bool;
   shockwave:bool;
+  crouch:bool;
 }
 
 table FireWeaponRequest {

@@ -1,4 +1,4 @@
-import { SIM_CONFIG, type SimConfig } from './config';
+import { SIM_CONFIG, type SimConfig, resolveEyeHeight } from './config';
 import { sanitizeColliders, type AabbCollider } from '../world/collision';
 
 export interface WasmInput {
@@ -10,6 +10,7 @@ export interface WasmInput {
   grapple: boolean;
   shield: boolean;
   shockwave: boolean;
+  crouch?: boolean;
   viewYaw?: number;
   viewPitch?: number;
 }
@@ -22,6 +23,8 @@ export interface WasmSimState {
   velY: number;
   velZ: number;
   dashCooldown: number;
+  crouched: boolean;
+  eyeHeight: number;
   shieldCooldown: number;
   shieldTimer: number;
   shockwaveCooldown: number;
@@ -35,6 +38,7 @@ export interface WasmSimModule {
     handle: number,
     moveSpeed: number,
     sprintMultiplier: number,
+    crouchSpeedMultiplier: number,
     accel: number,
     friction: number,
     gravity: number,
@@ -57,6 +61,7 @@ export interface WasmSimModule {
     arenaHalfSize: number,
     playerRadius: number,
     playerHeight: number,
+    crouchHeight: number,
     obstacleMinX: number,
     obstacleMaxX: number,
     obstacleMinY: number,
@@ -70,7 +75,8 @@ export interface WasmSimModule {
     velX: number,
     velY: number,
     velZ: number,
-    dashCooldown: number
+    dashCooldown: number,
+    crouched: number
   ) => void;
   _sim_clear_colliders: (handle: number) => void;
   _sim_add_aabb_collider: (
@@ -95,6 +101,7 @@ export interface WasmSimModule {
     grapple: number,
     shield: number,
     shockwave: number,
+    crouch: number,
     viewYaw: number,
     viewPitch: number
   ) => void;
@@ -105,6 +112,7 @@ export interface WasmSimModule {
   _sim_get_vy: (handle: number) => number;
   _sim_get_vz: (handle: number) => number;
   _sim_get_dash_cooldown: (handle: number) => number;
+  _sim_get_crouched: (handle: number) => number;
   _sim_get_shield_cooldown: (handle: number) => number;
   _sim_get_shield_timer: (handle: number) => number;
   _sim_get_shockwave_cooldown: (handle: number) => number;
@@ -114,7 +122,16 @@ export interface WasmSimInstance {
   step: (input: WasmInput, dt: number) => void;
   getState: () => WasmSimState;
   reset: () => void;
-  setState: (x: number, y: number, z: number, velX: number, velY: number, velZ: number, dashCooldown: number) => void;
+  setState: (
+    x: number,
+    y: number,
+    z: number,
+    velX: number,
+    velY: number,
+    velZ: number,
+    dashCooldown: number,
+    crouched?: boolean
+  ) => void;
   setConfig: (config: SimConfig) => void;
   setColliders: (colliders: readonly AabbCollider[]) => void;
   dispose: () => void;
@@ -124,12 +141,15 @@ const toNumber = (value: number) => (Number.isFinite(value) ? value : 0);
 
 export const createWasmSim = (module: WasmSimModule, config: SimConfig = SIM_CONFIG): WasmSimInstance => {
   const handle = module._sim_create();
+  let currentConfig = { ...config };
 
   const setConfig = (next: SimConfig) => {
+    currentConfig = { ...next };
     module._sim_set_config(
       handle,
       toNumber(next.moveSpeed),
       toNumber(next.sprintMultiplier),
+      toNumber(next.crouchSpeedMultiplier),
       toNumber(next.accel),
       toNumber(next.friction),
       toNumber(next.gravity),
@@ -152,6 +172,7 @@ export const createWasmSim = (module: WasmSimModule, config: SimConfig = SIM_CON
       toNumber(next.arenaHalfSize),
       toNumber(next.playerRadius),
       toNumber(next.playerHeight),
+      toNumber(next.crouchHeight),
       toNumber(next.obstacleMinX),
       toNumber(next.obstacleMaxX),
       toNumber(next.obstacleMinY),
@@ -173,29 +194,44 @@ export const createWasmSim = (module: WasmSimModule, config: SimConfig = SIM_CON
       input.grapple ? 1 : 0,
       input.shield ? 1 : 0,
       input.shockwave ? 1 : 0,
+      input.crouch ? 1 : 0,
       toNumber(input.viewYaw ?? 0),
       toNumber(input.viewPitch ?? 0)
     );
   };
 
-  const getState = (): WasmSimState => ({
-    x: module._sim_get_x(handle),
-    y: module._sim_get_y(handle),
-    z: module._sim_get_z(handle),
-    velX: module._sim_get_vx(handle),
-    velY: module._sim_get_vy(handle),
-    velZ: module._sim_get_vz(handle),
-    dashCooldown: module._sim_get_dash_cooldown(handle),
-    shieldCooldown: module._sim_get_shield_cooldown(handle),
-    shieldTimer: module._sim_get_shield_timer(handle),
-    shockwaveCooldown: module._sim_get_shockwave_cooldown(handle)
-  });
+  const getState = (): WasmSimState => {
+    const crouched = module._sim_get_crouched(handle) !== 0;
+    return {
+      x: module._sim_get_x(handle),
+      y: module._sim_get_y(handle),
+      z: module._sim_get_z(handle),
+      velX: module._sim_get_vx(handle),
+      velY: module._sim_get_vy(handle),
+      velZ: module._sim_get_vz(handle),
+      dashCooldown: module._sim_get_dash_cooldown(handle),
+      crouched,
+      eyeHeight: resolveEyeHeight(currentConfig, 1.6, crouched),
+      shieldCooldown: module._sim_get_shield_cooldown(handle),
+      shieldTimer: module._sim_get_shield_timer(handle),
+      shockwaveCooldown: module._sim_get_shockwave_cooldown(handle)
+    };
+  };
 
   const reset = () => {
     module._sim_reset(handle);
   };
 
-  const setState = (x: number, y: number, z: number, velX: number, velY: number, velZ: number, dashCooldown: number) => {
+  const setState = (
+    x: number,
+    y: number,
+    z: number,
+    velX: number,
+    velY: number,
+    velZ: number,
+    dashCooldown: number,
+    crouched = false
+  ) => {
     module._sim_set_state(
       handle,
       toNumber(x),
@@ -204,7 +240,8 @@ export const createWasmSim = (module: WasmSimModule, config: SimConfig = SIM_CON
       toNumber(velX),
       toNumber(velY),
       toNumber(velZ),
-      toNumber(dashCooldown)
+      toNumber(dashCooldown),
+      crouched ? 1 : 0
     );
   };
 

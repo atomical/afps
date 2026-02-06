@@ -78,6 +78,7 @@ constexpr uint8_t kPlayerFlagSprint = 1 << 1;
 constexpr uint8_t kPlayerFlagReloading = 1 << 2;
 constexpr uint8_t kPlayerFlagShieldActive = 1 << 3;
 constexpr uint8_t kPlayerFlagOverheated = 1 << 4;
+constexpr uint8_t kPlayerFlagCrouched = 1 << 5;
 
 constexpr uint32_t kLoadoutSuppressor = 1u << 0;
 constexpr uint32_t kLoadoutCompensator = 1u << 1;
@@ -463,6 +464,39 @@ bool ResolveSpawnPoint(const afps::sim::CollisionWorld &world,
   return false;
 }
 
+bool ResolveRandomSpawnPoint(const afps::sim::CollisionWorld &world,
+                             const afps::sim::SimConfig &config,
+                             std::mt19937 &rng,
+                             double &out_x,
+                             double &out_y) {
+  const double half =
+      (std::isfinite(config.arena_half_size) && config.arena_half_size > 0.0) ? config.arena_half_size : 10.0;
+  const double max_radius = std::max(0.0, std::min(half * 0.85, half - config.player_radius));
+  if (!std::isfinite(max_radius) || max_radius <= 0.0) {
+    return false;
+  }
+  const double min_bound = -half + config.player_radius;
+  const double max_bound = half - config.player_radius;
+  std::uniform_real_distribution<double> angle_dist(0.0, 2.0 * kPi);
+  std::uniform_real_distribution<double> unit_dist(0.0, 1.0);
+  constexpr int kRandomSpawnAttempts = 96;
+  for (int attempt = 0; attempt < kRandomSpawnAttempts; ++attempt) {
+    const double angle = angle_dist(rng);
+    const double radius = std::sqrt(unit_dist(rng)) * max_radius;
+    const double x = std::cos(angle) * radius;
+    const double y = std::sin(angle) * radius;
+    if (x < min_bound || x > max_bound || y < min_bound || y > max_bound) {
+      continue;
+    }
+    if (!IsSpawnPointBlocked(world, config, x, y, 0.0)) {
+      out_x = x;
+      out_y = y;
+      return true;
+    }
+  }
+  return false;
+}
+
 afps::sim::PlayerState MakeSpawnState(const std::string &connection_id,
                                       const afps::sim::SimConfig &config,
                                       const afps::sim::CollisionWorld &world) {
@@ -470,11 +504,19 @@ afps::sim::PlayerState MakeSpawnState(const std::string &connection_id,
   const double half =
       (std::isfinite(config.arena_half_size) && config.arena_half_size > 0.0) ? config.arena_half_size : 10.0;
   const double radius = std::max(0.0, std::min(half * 0.5, half - config.player_radius));
-  const size_t hash = std::hash<std::string>{}(connection_id);
-  const double angle = static_cast<double>(hash % 360) * (kPi / 180.0);
-  state.x = std::cos(angle) * radius;
-  state.y = std::sin(angle) * radius;
-  ResolveSpawnPoint(world, config, angle, state.x, state.y);
+  static thread_local std::mt19937 rng{std::random_device{}()};
+  std::uniform_real_distribution<double> angle_dist(0.0, 2.0 * kPi);
+  const double random_angle = angle_dist(rng);
+  state.x = std::cos(random_angle) * radius;
+  state.y = std::sin(random_angle) * radius;
+  if (!ResolveRandomSpawnPoint(world, config, rng, state.x, state.y) &&
+      !ResolveSpawnPoint(world, config, random_angle, state.x, state.y)) {
+    const size_t hash = std::hash<std::string>{}(connection_id);
+    const double fallback_angle = static_cast<double>(hash % 360) * (kPi / 180.0);
+    state.x = std::cos(fallback_angle) * radius;
+    state.y = std::sin(fallback_angle) * radius;
+    ResolveSpawnPoint(world, config, fallback_angle, state.x, state.y);
+  }
   state.z = 0.0;
   state.vel_x = 0.0;
   state.vel_y = 0.0;
@@ -871,7 +913,7 @@ void TickLoop::Step() {
     if (combat_state.alive) {
       const auto sim_input = afps::sim::MakeInput(input.move_x, input.move_y, input.sprint, input.jump, input.dash,
                                                   input.grapple, input.shield, input.shockwave, input.view_yaw,
-                                                  input.view_pitch);
+                                                  input.view_pitch, input.crouch);
       afps::sim::StepPlayer(state, sim_input, sim_config_, dt, &collision_world_);
       if (state.shockwave_triggered) {
         shockwave_events.push_back({connection_id,
@@ -899,6 +941,7 @@ void TickLoop::Step() {
       state.shockwave_cooldown = 0.0;
       state.shockwave_input = false;
       state.shockwave_triggered = false;
+      state.crouched = false;
     }
 
     const int safe_tick_rate = std::max(1, accumulator_.tick_rate());
@@ -1674,6 +1717,9 @@ void TickLoop::Step() {
 	      }
 	      if (overheated) {
 	        flags |= kPlayerFlagOverheated;
+	      }
+	      if (state_iter != players_.end() && state_iter->second.crouched) {
+	        flags |= kPlayerFlagCrouched;
 	      }
 	      snapshot.player_flags = flags;
 	      auto loadout_iter = loadout_bits_.find(connection_id);

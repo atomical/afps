@@ -58,7 +58,7 @@ This document describes the runtime architecture for AFPS: browser client, share
 
 - **Sampler:** `client/src/input/sampler.ts` captures per-frame input and emits `InputCmd` per sim tick.
 - **Pointer lock:** `client/src/input/pointer_lock.ts` drives relative mouse deltas.
-- **Settings:** Keybinds, sensitivity, and look inversion are persisted in localStorage.
+- **Settings:** Audio sliders/mute are persisted in localStorage; keybinds are displayed read-only.
 
 ### Prediction + interpolation
 
@@ -81,8 +81,10 @@ This document describes the runtime architecture for AFPS: browser client, share
 
 ### UI overlays
 
-- **HUD:** Crosshair, health, weapon slot, cooldowns, and net metrics.
-- **Settings:** Input + metrics visibility overlay.
+- **HUD:** Crosshair, top-left health bar, vitals/score/weapon/cooldowns, and hitmarkers.
+- **Scoreboard:** Hold `P` to show player names + kills (sorted desc).
+- **Name tags:** Player nameplates above remote avatars, toggle with `N`.
+- **Settings:** Tabbed overlay with audio controls and read-only keyboard bindings.
 - **Pre-join flow:** Character selection + nickname, stored in `afps.playerProfile`.
 
 ---

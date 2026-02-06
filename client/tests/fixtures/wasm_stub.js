@@ -7,6 +7,7 @@ export default async function createWasmStub() {
     velY: 0,
     velZ: 0,
     dashCooldown: 0,
+    crouched: false,
     shieldCooldown: 0,
     shieldTimer: 0,
     shockwaveCooldown: 0
@@ -24,13 +25,14 @@ export default async function createWasmStub() {
         velY: 0,
         velZ: 0,
         dashCooldown: 0,
+        crouched: false,
         shieldCooldown: 0,
         shieldTimer: 0,
         shockwaveCooldown: 0
       };
     },
     _sim_set_config: () => {},
-    _sim_set_state: (_handle, x, y, z, velX, velY, velZ, dashCooldown) => {
+    _sim_set_state: (_handle, x, y, z, velX, velY, velZ, dashCooldown, crouched) => {
       state = {
         x,
         y,
@@ -39,6 +41,7 @@ export default async function createWasmStub() {
         velY,
         velZ,
         dashCooldown,
+        crouched: Boolean(crouched),
         shieldCooldown: 0,
         shieldTimer: 0,
         shockwaveCooldown: 0
@@ -52,6 +55,7 @@ export default async function createWasmStub() {
     _sim_get_vy: () => state.velY,
     _sim_get_vz: () => state.velZ,
     _sim_get_dash_cooldown: () => state.dashCooldown,
+    _sim_get_crouched: () => (state.crouched ? 1 : 0),
     _sim_get_shield_cooldown: () => state.shieldCooldown,
     _sim_get_shield_timer: () => state.shieldTimer,
     _sim_get_shockwave_cooldown: () => state.shockwaveCooldown

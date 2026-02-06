@@ -13,6 +13,7 @@ export const createWasmPredictionSim = (sim: WasmSimInstance): PredictionSim => 
         grapple: input.grapple,
         shield: input.shield,
         shockwave: input.shockwave,
+        crouch: input.crouch ?? false,
         viewYaw: input.viewYaw ?? 0,
         viewPitch: input.viewPitch ?? 0
       },
@@ -29,7 +30,13 @@ export const createWasmPredictionSim = (sim: WasmSimInstance): PredictionSim => 
       shieldActive: shieldTimer > 0
     };
   },
-  setState: (x, y, z, velX, velY, velZ, dashCooldown) => sim.setState(x, y, z, velX, velY, velZ, dashCooldown),
+  setState: (x, y, z, velX, velY, velZ, dashCooldown, crouched) => {
+    if (typeof crouched === 'boolean') {
+      sim.setState(x, y, z, velX, velY, velZ, dashCooldown, crouched);
+      return;
+    }
+    sim.setState(x, y, z, velX, velY, velZ, dashCooldown);
+  },
   reset: () => sim.reset(),
   setConfig: (config) => sim.setConfig(config),
   setColliders: (colliders) => sim.setColliders(colliders)

@@ -22,6 +22,8 @@ const createSampler = (sampleOverride?: Partial<ReturnType<InputSampler['sample'
     weaponSlot: 0,
     ...sampleOverride
   }),
+  setBindings: () => {},
+  reset: () => {},
   dispose: () => {}
 });
 

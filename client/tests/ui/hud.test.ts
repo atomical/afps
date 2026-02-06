@@ -13,6 +13,8 @@ describe('hud overlay', () => {
     const lock = hud.element.querySelector('.hud-lock');
     const sensitivity = hud.element.querySelector('.hud-sensitivity');
     const health = hud.element.querySelector('.hud-health');
+    const healthBarLabel = hud.element.querySelector('.hud-healthbar-label');
+    const healthBarFill = hud.element.querySelector('.hud-healthbar-fill') as HTMLElement | null;
     const ammo = hud.element.querySelector('.hud-ammo');
     const score = hud.element.querySelector('.hud-score');
     const weapon = hud.element.querySelector('.hud-weapon');
@@ -26,6 +28,8 @@ describe('hud overlay', () => {
     expect(lock?.textContent).toContain('Click to lock');
     expect(sensitivity?.textContent).toContain('--');
     expect(health?.textContent).toContain('--');
+    expect(healthBarLabel?.textContent).toContain('--');
+    expect(healthBarFill?.style.width).toBe('0%');
     expect(ammo?.textContent).toContain('--');
     expect(score?.textContent).toContain('--');
     expect(weapon?.textContent).toContain('Weapon 1');
@@ -52,6 +56,8 @@ describe('hud overlay', () => {
 
     hud.setVitals({ health: 88, ammo: Infinity });
     expect(health?.textContent).toContain('88');
+    expect(healthBarLabel?.textContent).toContain('88');
+    expect(healthBarFill?.style.width).toBe('88%');
     expect(ammo?.textContent).toContain('INF');
 
     hud.setScore({ kills: 2, deaths: 1 });

@@ -30,6 +30,7 @@ canvas {
   position: absolute;
   top: 12px;
   left: 12px;
+  z-index: 40;
   padding: 10px 12px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -85,6 +86,22 @@ canvas {
 
 .status-overlay[data-state='disabled'] {
   border-color: rgba(160, 160, 160, 0.4);
+}
+
+.status-overlay[data-reconnect='true'] {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  min-width: min(520px, 90vw);
+  text-align: center;
+}
+
+.status-overlay[data-reconnect='true'] .status-title {
+  font-size: 14px;
+}
+
+.status-overlay[data-reconnect='true'] .status-detail {
+  font-size: 12px;
 }
 
 .hud-overlay {
@@ -166,6 +183,40 @@ canvas {
   box-shadow: 0 0 8px rgba(255, 107, 107, 0.5);
 }
 
+.hud-healthbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 220px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(10, 12, 18, 0.7);
+  backdrop-filter: blur(6px);
+}
+
+.hud-healthbar-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #d7e7f6;
+}
+
+.hud-healthbar-track {
+  margin-top: 6px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+
+.hud-healthbar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #5eff8a, #24d65f);
+  transition: width 120ms ease;
+}
+
 .hud-info {
   position: absolute;
   left: 12px;
@@ -238,6 +289,89 @@ canvas {
   color: #f2c166;
 }
 
+.scoreboard-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 4;
+}
+
+.scoreboard-overlay[data-visible='false'] {
+  display: none;
+}
+
+.scoreboard-panel {
+  width: min(420px, 92vw);
+  max-height: min(70vh, 520px);
+  overflow: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(8, 11, 16, 0.84);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+  padding: 12px 14px;
+}
+
+.scoreboard-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #d6e4f6;
+}
+
+.scoreboard-hint {
+  margin-top: 3px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8ca2bc;
+}
+
+.scoreboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  font-size: 12px;
+  color: #dce7f5;
+}
+
+.scoreboard-table th {
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+  color: #9eb4cc;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 4px 6px;
+}
+
+.scoreboard-table th:last-child,
+.scoreboard-table td:last-child {
+  text-align: right;
+}
+
+.scoreboard-row td,
+.scoreboard-row-empty td {
+  padding: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.scoreboard-row-local td {
+  color: #a8ffd6;
+}
+
+.scoreboard-row-empty td {
+  color: #91a6bc;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+}
+
 .settings-overlay {
   position: absolute;
   inset: 0;
@@ -255,7 +389,7 @@ canvas {
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 10px;
   padding: 12px 14px;
-  width: 220px;
+  width: min(520px, 92vw);
   color: #d7e2ec;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
   opacity: 0;
@@ -281,17 +415,42 @@ canvas {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  margin-bottom: 10px;
+  margin: 6px 0 10px;
 }
 
-.settings-group {
+.settings-tabs {
+  margin-top: 10px;
   display: flex;
-  flex-direction: column;
   gap: 6px;
 }
 
-.settings-toggles {
-  margin-top: 6px;
+.settings-tab {
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(19, 24, 36, 0.84);
+  color: #d0ddef;
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.settings-tab[data-active='true'] {
+  border-color: rgba(76, 195, 255, 0.72);
+  color: #9fddff;
+}
+
+.settings-content {
+  margin-top: 10px;
+}
+
+.settings-section[hidden] {
+  display: none;
+}
+
+.settings-section[data-active='true'] {
+  display: block;
 }
 
 .settings-toggle {
@@ -308,18 +467,6 @@ canvas {
   accent-color: #4cc3ff;
 }
 
-.settings-label {
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.settings-value {
-  color: #a8ffd6;
-}
-
 .settings-panel input[type='range'] {
   width: 100%;
   accent-color: #4cc3ff;
@@ -330,14 +477,46 @@ canvas {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #8fa3b8;
-  margin-top: 8px;
+  margin-top: 0;
 }
 
-.settings-bindings-list {
+.settings-keyboard-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-top: 6px;
+  gap: 4px;
+  max-height: min(44vh, 360px);
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(12, 16, 24, 0.55);
+}
+
+.settings-keyboard-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 5px 0;
+}
+
+.settings-keyboard-row:last-child {
+  border-bottom: none;
+}
+
+.settings-keyboard-action {
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #c8d7e8;
+}
+
+.settings-keyboard-keys {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: #8fd0ff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
 }
 
 .settings-audio-list {
@@ -364,31 +543,6 @@ canvas {
 
 .settings-audio-value {
   color: #a8ffd6;
-}
-
-.settings-binding-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.settings-binding-label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.settings-binding-button {
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(22, 26, 38, 0.8);
-  color: #e6e9ef;
-  border-radius: 6px;
-  padding: 4px 8px;
-  font-size: 11px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  cursor: pointer;
 }
 
 .prejoin-overlay {

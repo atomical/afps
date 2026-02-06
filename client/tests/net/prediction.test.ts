@@ -1878,7 +1878,8 @@ describe('ClientPrediction', () => {
       seededState.velX,
       seededState.velY,
       seededState.velZ,
-      seededState.dashCooldown
+      seededState.dashCooldown,
+      seededState.crouched
     );
 
     prediction.recordInput(makeInput(2, 1, 0));

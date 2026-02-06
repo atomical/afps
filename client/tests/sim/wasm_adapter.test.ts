@@ -11,6 +11,8 @@ const makeSim = () => ({
     velY: -0.5,
     velZ: 1,
     dashCooldown: 0.25,
+    crouched: false,
+    eyeHeight: 1.6,
     shieldCooldown: 0.4,
     shieldTimer: 1.2,
     shockwaveCooldown: 0.5
@@ -110,6 +112,7 @@ describe('createWasmPredictionSim', () => {
         grapple: true,
         shield: false,
         shockwave: false,
+        crouch: false,
         viewYaw: 0,
         viewPitch: 0
       },
@@ -123,6 +126,8 @@ describe('createWasmPredictionSim', () => {
       velY: -0.5,
       velZ: 1,
       dashCooldown: 0.25,
+      crouched: false,
+      eyeHeight: 1.6,
       shockwaveCooldown: 0.5,
       shieldTimer: 1.2,
       shieldCooldown: 0.4,
@@ -143,6 +148,8 @@ describe('createWasmPredictionSim', () => {
       velY: 0,
       velZ: 0,
       dashCooldown: 0,
+      crouched: false,
+      eyeHeight: 1.6,
       shieldCooldown: Number.POSITIVE_INFINITY,
       shieldTimer: Number.NaN,
       shockwaveCooldown: 0
@@ -157,6 +164,8 @@ describe('createWasmPredictionSim', () => {
       velY: 0,
       velZ: 0,
       dashCooldown: 0,
+      crouched: false,
+      eyeHeight: 1.6,
       shockwaveCooldown: 0,
       shieldTimer: 0,
       shieldCooldown: 0,

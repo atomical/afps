@@ -69,6 +69,7 @@ const inputSenderInstance = {
 const samplerInstance = {
   sample: vi.fn(),
   setBindings: vi.fn(),
+  reset: vi.fn(),
   dispose: vi.fn()
 };
 const statusMock = {
@@ -372,6 +373,7 @@ describe('main entry', () => {
     pointerLockMock.isLocked.mockReturnValue(false);
     pointerLockMock.dispose.mockReset();
     samplerInstance.sample.mockReset();
+    samplerInstance.reset.mockReset();
     samplerInstance.dispose.mockReset();
     createInputSamplerMock.mockReturnValue(samplerInstance);
     createInputSenderMock.mockReturnValue(inputSenderInstance);
@@ -788,6 +790,106 @@ describe('main entry', () => {
     expect(samplerInstance.dispose).toHaveBeenCalled();
   });
 
+  it('pauses and retries when the active data channel closes', async () => {
+    vi.useFakeTimers();
+    try {
+      const sendUnreliable1 = vi.fn();
+      const closeSession1 = vi.fn();
+      const unreliable1 = {
+        label: 'afps_unreliable',
+        readyState: 'open' as 'open' | 'closed',
+        send: sendUnreliable1
+      };
+      connectMock
+        .mockResolvedValueOnce({
+          connectionId: 'conn-1',
+          serverHello: { serverTickRate: 60, snapshotRate: 20 },
+          peerConnection: { connectionState: 'connected', iceConnectionState: 'connected' },
+          unreliableChannel: unreliable1,
+          nextClientMessageSeq: () => 1,
+          getServerSeqAck: () => 0,
+          close: closeSession1
+        })
+        .mockResolvedValueOnce({
+          connectionId: 'conn-2',
+          serverHello: { serverTickRate: 60, snapshotRate: 20 },
+          peerConnection: { connectionState: 'connected', iceConnectionState: 'connected' },
+          unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: vi.fn() },
+          nextClientMessageSeq: () => 1,
+          getServerSeqAck: () => 0,
+          close: vi.fn()
+        });
+      envMock.getSignalingUrl.mockReturnValue('https://example.test');
+      envMock.getSignalingAuthToken.mockReturnValue('token');
+
+      await import('../src/main');
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(connectMock).toHaveBeenCalledTimes(1);
+
+      const senderArgs = createInputSenderMock.mock.calls[0]?.[0] as {
+        onSend?: (cmd: Record<string, unknown>) => void;
+      };
+      unreliable1.readyState = 'closed';
+
+      await vi.advanceTimersByTimeAsync(600);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(statusMock.setState).toHaveBeenCalledWith('connecting', expect.stringContaining('data channel closed'));
+      expect(statusMock.setVisible).toHaveBeenCalledWith(true);
+      expect(hudMock.setLockState).toHaveBeenCalledWith('reconnecting');
+      expect(closeSession1).toHaveBeenCalledTimes(1);
+      expect(statusMock.element.dataset.reconnect).toBe('true');
+
+      const cmd: Record<string, unknown> = {
+        type: 'InputCmd',
+        inputSeq: 8,
+        moveX: 1,
+        moveY: -1,
+        lookDeltaX: 0.7,
+        lookDeltaY: -0.4,
+        viewYaw: 0,
+        viewPitch: 0,
+        weaponSlot: 0,
+        jump: true,
+        fire: true,
+        ads: true,
+        sprint: true,
+        crouch: true,
+        dash: true,
+        grapple: true,
+        shield: true,
+        shockwave: true
+      };
+      senderArgs.onSend?.(cmd);
+      expect(cmd.moveX).toBe(0);
+      expect(cmd.moveY).toBe(0);
+      expect(cmd.lookDeltaX).toBe(0);
+      expect(cmd.lookDeltaY).toBe(0);
+      expect(cmd.jump).toBe(false);
+      expect(cmd.fire).toBe(false);
+      expect(cmd.ads).toBe(false);
+      expect(cmd.sprint).toBe(false);
+      expect(cmd.crouch).toBe(false);
+      expect(cmd.dash).toBe(false);
+      expect(cmd.grapple).toBe(false);
+      expect(cmd.shield).toBe(false);
+      expect(cmd.shockwave).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1200);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(connectMock).toHaveBeenCalledTimes(2);
+      expect(statusMock.setState).toHaveBeenCalledWith('connected', 'conn conn-2');
+      expect(statusMock.setVisible.mock.calls.at(-1)?.[0]).toBe(false);
+      expect(statusMock.element.dataset.reconnect).toBe('false');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('sends fire direction with downward z when look pitch is positive', async () => {
     const sendUnreliable = vi.fn();
     connectMock.mockResolvedValue({
@@ -832,6 +934,66 @@ describe('main entry', () => {
     expect(firePayload).toBeTruthy();
     const fire = FireWeaponRequest.getRootAsFireWeaponRequest(new flatbuffers.ByteBuffer(firePayload!.payload));
     expect(fire.dirZ()).toBeLessThan(0);
+  });
+
+  it('uses a larger impact effect for grenade launcher projectile explosions', async () => {
+    connectMock.mockResolvedValue({
+      connectionId: 'conn',
+      serverHello: { serverTickRate: 60, snapshotRate: 20 },
+      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: vi.fn() },
+      nextClientMessageSeq: () => 1,
+      getServerSeqAck: () => 0
+    });
+    envMock.getSignalingUrl.mockReturnValue('https://example.test');
+    envMock.getSignalingAuthToken.mockReturnValue('token');
+
+    await import('../src/main');
+    await flushPromises();
+
+    appInstance.spawnImpactVfx.mockClear();
+    const onGameEvent = connectMock.mock.calls[0]?.[0]?.onGameEvent as
+      | ((event: { type: string; serverTick: number; events: unknown[] }) => void)
+      | undefined;
+    onGameEvent?.({
+      type: 'GameEventBatch',
+      serverTick: 0,
+      events: [
+        {
+          type: 'ProjectileSpawnFx',
+          shooterId: 'conn',
+          weaponSlot: 1,
+          shotSeq: 77,
+          projectileId: 501,
+          posXQ: 0,
+          posYQ: 0,
+          posZQ: 0,
+          velXQ: 0,
+          velYQ: 0,
+          velZQ: 100,
+          ttlQ: 80
+        },
+        {
+          type: 'ProjectileImpactFx',
+          projectileId: 501,
+          hitWorld: true,
+          targetId: '',
+          posXQ: 10,
+          posYQ: 11,
+          posZQ: 12,
+          normalOctX: 0,
+          normalOctY: 0,
+          surfaceType: 0
+        }
+      ]
+    });
+    beforeRenderHook?.(0.016, 1000);
+
+    expect(appInstance.spawnImpactVfx).toHaveBeenCalledWith(
+      expect.objectContaining({
+        size: 1.35,
+        ttl: 0.32
+      })
+    );
   });
 
   it('shows keyframe interval in metrics before snapshots arrive', async () => {
@@ -952,6 +1114,63 @@ describe('main entry', () => {
       z: 0.123
     });
     logSpy.mockRestore();
+  });
+
+  it('forces crouch while debug overlays are visible and restores normal crouch input when closed', async () => {
+    connectMock.mockResolvedValue({
+      connectionId: 'conn',
+      serverHello: { serverTickRate: 60, snapshotRate: 20 },
+      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: vi.fn() },
+      nextClientMessageSeq: () => 1,
+      getServerSeqAck: () => 0
+    });
+    envMock.getSignalingUrl.mockReturnValue('https://example.test');
+    envMock.getSignalingAuthToken.mockReturnValue('token');
+
+    await import('../src/main');
+    await flushPromises();
+
+    const senderArgs = createInputSenderMock.mock.calls[0]?.[0] as {
+      onSend?: (cmd: Record<string, unknown>) => void;
+    };
+    const resetCallsBeforeOpen = samplerInstance.reset.mock.calls.length;
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Backquote' }));
+    expect(samplerInstance.reset.mock.calls.length).toBeGreaterThan(resetCallsBeforeOpen);
+
+    const cmd: Record<string, unknown> = {
+      type: 'InputCmd',
+      inputSeq: 1,
+      moveX: 0,
+      moveY: 0,
+      lookDeltaX: 0,
+      lookDeltaY: 0,
+      viewYaw: 0,
+      viewPitch: 0,
+      weaponSlot: 0,
+      jump: false,
+      fire: false,
+      ads: false,
+      sprint: false,
+      crouch: true,
+      dash: false,
+      grapple: false,
+      shield: false,
+      shockwave: false
+    };
+    senderArgs.onSend?.(cmd);
+    expect(cmd.crouch).toBe(true);
+
+    const resetCallsBeforeClose = samplerInstance.reset.mock.calls.length;
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Backquote' }));
+    expect(samplerInstance.reset.mock.calls.length).toBeGreaterThan(resetCallsBeforeClose);
+
+    const afterCloseCmd: Record<string, unknown> = {
+      ...cmd,
+      inputSeq: 2,
+      crouch: false
+    };
+    senderArgs.onSend?.(afterCloseCmd);
+    expect(afterCloseCmd.crouch).toBe(false);
   });
 
   it('toggles the settings window on escape', async () => {

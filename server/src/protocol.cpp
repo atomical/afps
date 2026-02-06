@@ -215,6 +215,7 @@ bool ParseInputCmdPayload(const std::vector<uint8_t> &payload, InputCmd &out, st
   out.grapple = cmd->grapple();
   out.shield = cmd->shield();
   out.shockwave = cmd->shockwave();
+  out.crouch = cmd->crouch();
   return true;
 }
 

@@ -7,7 +7,7 @@ export type PredictionInput = Pick<
   InputCmd,
   'moveX' | 'moveY' | 'sprint' | 'jump' | 'dash' | 'grapple' | 'shield' | 'shockwave'
 > &
-  Partial<Pick<InputCmd, 'viewYaw' | 'viewPitch'>>;
+  Partial<Pick<InputCmd, 'viewYaw' | 'viewPitch' | 'crouch'>>;
 
 export interface PredictionSim {
   step: (input: PredictionInput, dt: number) => void;
@@ -19,12 +19,23 @@ export interface PredictionSim {
     velY: number;
     velZ: number;
     dashCooldown: number;
+    crouched: boolean;
+    eyeHeight: number;
     shieldTimer: number;
     shieldCooldown: number;
     shieldActive: boolean;
     shockwaveCooldown: number;
   };
-  setState: (x: number, y: number, z: number, velX: number, velY: number, velZ: number, dashCooldown: number) => void;
+  setState: (
+    x: number,
+    y: number,
+    z: number,
+    velX: number,
+    velY: number,
+    velZ: number,
+    dashCooldown: number,
+    crouched?: boolean
+  ) => void;
   reset: () => void;
   setConfig: (config: SimConfig) => void;
   setColliders?: (colliders: readonly AabbCollider[]) => void;
@@ -40,11 +51,14 @@ export interface PredictedState {
   velY: number;
   velZ: number;
   dashCooldown: number;
+  crouched: boolean;
+  eyeHeight: number;
   lastProcessedInputSeq: number;
 }
 
 const DEFAULT_TICK_RATE = 60;
 const MAX_HISTORY = 120;
+const PLAYER_FLAG_CROUCHED = 1 << 5;
 
 const clampAxis = (value: number) => {
   if (!Number.isFinite(value)) {
@@ -350,6 +364,8 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
     velY: 0,
     velZ: 0,
     grounded: true,
+    crouched: false,
+    crouchInput: false,
     dashCooldown: 0,
     grappleCooldown: 0,
     grappleActive: false,
@@ -378,6 +394,9 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
     }
     if (Number.isFinite(next.sprintMultiplier) && next.sprintMultiplier > 0) {
       currentConfig.sprintMultiplier = next.sprintMultiplier;
+    }
+    if (Number.isFinite(next.crouchSpeedMultiplier) && next.crouchSpeedMultiplier > 0) {
+      currentConfig.crouchSpeedMultiplier = next.crouchSpeedMultiplier;
     }
     if (Number.isFinite(next.accel) && next.accel >= 0) {
       currentConfig.accel = next.accel;
@@ -445,6 +464,9 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
     if (Number.isFinite(next.playerHeight) && next.playerHeight >= 0) {
       currentConfig.playerHeight = next.playerHeight;
     }
+    if (Number.isFinite(next.crouchHeight) && next.crouchHeight > 0) {
+      currentConfig.crouchHeight = next.crouchHeight;
+    }
     currentConfig.obstacleMinX = next.obstacleMinX;
     currentConfig.obstacleMaxX = next.obstacleMaxX;
     currentConfig.obstacleMinY = next.obstacleMinY;
@@ -503,18 +525,30 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
     maxY: number;
   };
 
-  const resolvePlayerHeightForCollision = () => {
+  const resolveStandingHeight = () => {
     if (!Number.isFinite(currentConfig.playerHeight) || currentConfig.playerHeight <= 0) {
       return DEFAULT_PLAYER_HEIGHT;
     }
     return currentConfig.playerHeight;
   };
 
+  const resolveCrouchHeightForCollision = () => {
+    const standing = resolveStandingHeight();
+    const raw =
+      Number.isFinite(currentConfig.crouchHeight) && currentConfig.crouchHeight > 0
+        ? currentConfig.crouchHeight
+        : standing * 0.62;
+    return Math.max(0.5, Math.min(standing, raw));
+  };
+
+  const resolvePlayerHeightForCollision = (crouched: boolean) =>
+    crouched ? resolveCrouchHeightForCollision() : resolveStandingHeight();
+
   const getExpandedColliders = (): ExpandedAabb2D[] => {
     const expanded: ExpandedAabb2D[] = [];
     const radius = Math.max(0, toNumber(currentConfig.playerRadius));
     const playerMinZ = state.z;
-    const playerMaxZ = state.z + resolvePlayerHeightForCollision();
+    const playerMaxZ = state.z + resolvePlayerHeightForCollision(state.crouched);
     for (const collider of worldColliders) {
       if (playerMaxZ <= collider.minZ || playerMinZ >= collider.maxZ) {
         continue;
@@ -542,6 +576,35 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
       });
     }
     return expanded;
+  };
+
+  const canOccupyHeight = (testHeight: number) => {
+    if (!Number.isFinite(testHeight) || testHeight <= 0) {
+      return false;
+    }
+    const radius = Math.max(0, toNumber(currentConfig.playerRadius));
+    const minZ = state.z;
+    const maxZ = state.z + testHeight;
+    for (const collider of worldColliders) {
+      if (maxZ <= collider.minZ || minZ >= collider.maxZ) {
+        continue;
+      }
+      if (state.x < collider.minX - radius || state.x > collider.maxX + radius) {
+        continue;
+      }
+      if (state.y < collider.minY - radius || state.y > collider.maxY + radius) {
+        continue;
+      }
+      return false;
+    }
+    if (Number.isFinite(currentConfig.arenaHalfSize) && currentConfig.arenaHalfSize > 0) {
+      const halfSize = Math.max(0, currentConfig.arenaHalfSize);
+      const ceilingZ = Math.max(0, halfSize - testHeight);
+      if (state.z > ceilingZ + 1e-6) {
+        return false;
+      }
+    }
+    return true;
   };
 
   const sweepSegmentAabb = (
@@ -809,11 +872,29 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
     if (!Number.isFinite(dt) || dt <= 0) {
       return;
     }
+    const standingHeight = resolvePlayerHeightForCollision(false);
+    const wantsCrouch = Boolean(input.crouch);
+    state.crouchInput = wantsCrouch;
+    if (wantsCrouch) {
+      state.crouched = true;
+    } else if (state.crouched && canOccupyHeight(standingHeight)) {
+      state.crouched = false;
+    }
+    if (!state.crouched && !canOccupyHeight(standingHeight)) {
+      state.crouched = true;
+    }
     const accel = Math.max(0, currentConfig.accel);
     const friction = Math.max(0, currentConfig.friction);
     let maxSpeed = Math.max(0, currentConfig.moveSpeed);
+    const crouchSpeedMultiplier =
+      Number.isFinite(currentConfig.crouchSpeedMultiplier) && currentConfig.crouchSpeedMultiplier > 0
+        ? currentConfig.crouchSpeedMultiplier
+        : 0.55;
+    if (state.crouched) {
+      maxSpeed *= crouchSpeedMultiplier;
+    }
     const sprintMultiplier = currentConfig.sprintMultiplier;
-    if (input.sprint) {
+    if (input.sprint && !state.crouched) {
       maxSpeed *= sprintMultiplier;
     }
 
@@ -903,7 +984,7 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
       const maxDistance = Math.max(0, currentConfig.grappleMaxDistance);
       if (maxDistance > 0) {
         const dir = viewDirection(input.viewYaw ?? 0, input.viewPitch ?? 0);
-        const eyeHeight = resolveEyeHeight(currentConfig);
+        const eyeHeight = resolveEyeHeight(currentConfig, 1.6, state.crouched);
         const origin = { x: state.x, y: state.y, z: state.z + eyeHeight };
         const hit = raycastWorld(origin, dir, currentConfig, worldColliders);
         if (hit.hit && hit.t >= 0 && hit.t <= maxDistance) {
@@ -913,7 +994,7 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
           let ceilingZ = Number.POSITIVE_INFINITY;
           if (Number.isFinite(currentConfig.arenaHalfSize) && currentConfig.arenaHalfSize > 0) {
             const halfSize = Math.max(0, currentConfig.arenaHalfSize);
-            const playerHeight = Math.max(0, currentConfig.playerHeight);
+            const playerHeight = resolvePlayerHeightForCollision(state.crouched);
             ceilingZ = Math.max(0, halfSize - playerHeight);
           }
           anchorZ = Math.max(0, Math.min(anchorZ, ceilingZ));
@@ -995,7 +1076,7 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
       if (grappleReleased) {
         releaseGrapple();
       } else {
-        const eyeHeight = resolveEyeHeight(currentConfig);
+        const eyeHeight = resolveEyeHeight(currentConfig, 1.6, state.crouched);
         const origin = { x: state.x, y: state.y, z: state.z + eyeHeight };
         const dx = state.grappleAnchorX - origin.x;
         const dy = state.grappleAnchorY - origin.y;
@@ -1047,7 +1128,7 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
 
     advanceWithCollisions(dt);
 
-    const playerHeight = Math.max(0, currentConfig.playerHeight);
+    const playerHeight = resolvePlayerHeightForCollision(state.crouched);
     let ceilingZ = Number.POSITIVE_INFINITY;
     if (Number.isFinite(currentConfig.arenaHalfSize) && currentConfig.arenaHalfSize > 0) {
       const halfSize = Math.max(0, currentConfig.arenaHalfSize);
@@ -1075,11 +1156,24 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
     }
   };
 
-  const setState = (x: number, y: number, z: number, velX: number, velY: number, velZ: number, dashCooldown: number) => {
+  const setState = (
+    x: number,
+    y: number,
+    z: number,
+    velX: number,
+    velY: number,
+    velZ: number,
+    dashCooldown: number,
+    crouched = false
+  ) => {
     state.x = toNumber(x);
     state.y = toNumber(y);
+    state.crouched = Boolean(crouched);
+    if (!state.crouched && !canOccupyHeight(resolvePlayerHeightForCollision(false))) {
+      state.crouched = true;
+    }
     const safeZ = toNumber(z);
-    const playerHeight = Math.max(0, currentConfig.playerHeight);
+    const playerHeight = resolvePlayerHeightForCollision(state.crouched);
     let ceilingZ = Number.POSITIVE_INFINITY;
     if (Number.isFinite(currentConfig.arenaHalfSize) && currentConfig.arenaHalfSize > 0) {
       const halfSize = Math.max(0, currentConfig.arenaHalfSize);
@@ -1098,6 +1192,7 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
     state.shieldInput = false;
     state.shockwaveCooldown = 0;
     state.shockwaveInput = false;
+    state.crouchInput = state.crouched;
   };
 
   const getState = () => ({
@@ -1108,6 +1203,8 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
     velY: state.velY,
     velZ: state.velZ,
     dashCooldown: state.dashCooldown,
+    crouched: state.crouched,
+    eyeHeight: resolveEyeHeight(currentConfig, 1.6, state.crouched),
     grappleActive: state.grappleActive,
     grappleAnchorZ: state.grappleAnchorZ,
     grappleLength: state.grappleLength,
@@ -1127,6 +1224,8 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
       velY: 0,
       velZ: 0,
       grounded: true,
+      crouched: false,
+      crouchInput: false,
       dashCooldown: 0,
       grappleCooldown: 0,
       grappleActive: false,
@@ -1169,6 +1268,8 @@ export class ClientPrediction {
     velY: 0,
     velZ: 0,
     dashCooldown: 0,
+    crouched: false,
+    eyeHeight: resolveEyeHeight(SIM_CONFIG),
     lastProcessedInputSeq: -1
   };
   private tickRate = DEFAULT_TICK_RATE;
@@ -1223,7 +1324,8 @@ export class ClientPrediction {
       this.state.velX,
       this.state.velY,
       this.state.velZ,
-      this.state.dashCooldown
+      this.state.dashCooldown,
+      this.state.crouched
     );
   }
 
@@ -1246,6 +1348,7 @@ export class ClientPrediction {
   }
 
   reconcile(snapshot: StateSnapshot) {
+    const crouched = (snapshot.playerFlags & PLAYER_FLAG_CROUCHED) !== 0;
     this.sim.setState(
       snapshot.posX,
       snapshot.posY,
@@ -1253,7 +1356,8 @@ export class ClientPrediction {
       snapshot.velX,
       snapshot.velY,
       snapshot.velZ,
-      snapshot.dashCooldown
+      snapshot.dashCooldown,
+      crouched
     );
     this.state.lastProcessedInputSeq = snapshot.lastProcessedInputSeq;
 
@@ -1282,5 +1386,7 @@ export class ClientPrediction {
     this.state.velY = next.velY;
     this.state.velZ = next.velZ;
     this.state.dashCooldown = next.dashCooldown;
+    this.state.crouched = next.crouched;
+    this.state.eyeHeight = next.eyeHeight;
   }
 }

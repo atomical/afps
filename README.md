@@ -9,6 +9,18 @@ Living spec: `docs/LIVING_SPEC.md`.
 - Protocol reference: `docs/PROTOCOL.md`
 - Netcode flow: `docs/NETCODE.md`
 
+## Controls
+
+- `WASD` / arrow keys: movement
+- `Space`: jump
+- `C`: crouch
+- Mouse left/right: fire / ADS
+- `1` / `2` (or mouse wheel): weapon select
+- `Escape`: settings (audio + keyboard tabs)
+- `P` (hold): scoreboard overlay (player + kills)
+- `N`: toggle player name tags
+- `` ` `` (backquote): toggle debug overlays and print local coords
+
 ## Client
 
 ```bash

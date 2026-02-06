@@ -7,6 +7,7 @@ export interface InputSample {
   fire: boolean;
   ads: boolean;
   sprint: boolean;
+  crouch: boolean;
   dash: boolean;
   grapple: boolean;
   shield: boolean;
@@ -17,6 +18,7 @@ export interface InputSample {
 export interface InputSampler {
   sample: () => InputSample;
   setBindings: (bindings: InputBindings) => void;
+  reset: () => void;
   dispose: () => void;
 }
 
@@ -27,6 +29,7 @@ export interface InputBindings {
   right: string[];
   jump: string[];
   sprint: string[];
+  crouch: string[];
   dash: string[];
   grapple: string[];
   shield: string[];
@@ -42,6 +45,7 @@ export const DEFAULT_BINDINGS: InputBindings = {
   right: ['KeyD', 'ArrowRight'],
   jump: ['Space'],
   sprint: ['ShiftLeft', 'ShiftRight'],
+  crouch: ['KeyC'],
   dash: ['KeyE'],
   grapple: ['KeyQ'],
   shield: ['KeyF'],
@@ -159,6 +163,7 @@ export const createInputSampler = ({
     const right = isAnyPressed(pressed, currentBindings.right);
     const jump = isAnyPressed(pressed, currentBindings.jump);
     const sprint = isAnyPressed(pressed, currentBindings.sprint);
+    const crouch = isAnyPressed(pressed, currentBindings.crouch);
     const dash = isAnyPressed(pressed, currentBindings.dash);
     const grapple = isAnyPressed(pressed, currentBindings.grapple);
     const shield = isAnyPressed(pressed, currentBindings.shield);
@@ -176,6 +181,7 @@ export const createInputSampler = ({
       fire,
       ads,
       sprint,
+      crouch,
       dash,
       grapple,
       shield,
@@ -209,5 +215,9 @@ export const createInputSampler = ({
     currentBindings = nextBindings;
   };
 
-  return { sample, setBindings, dispose };
+  const reset = () => {
+    onBlur();
+  };
+
+  return { sample, setBindings, reset, dispose };
 };

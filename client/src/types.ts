@@ -200,6 +200,8 @@ export interface App {
     velX: number;
     velY: number;
     velZ: number;
+    crouched?: boolean;
+    eyeHeight?: number;
   };
   ingestSnapshot: (snapshot: NetworkSnapshot, nowMs: number) => void;
   setSnapshotRate: (snapshotRate: number) => void;
@@ -215,6 +217,7 @@ export interface App {
     jump: boolean;
     fire: boolean;
     sprint: boolean;
+    crouch: boolean;
     dash: boolean;
     grapple: boolean;
     shield: boolean;

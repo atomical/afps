@@ -51,14 +51,15 @@ void sim_add_aabb_collider(WasmSimState *state, int id, double min_x, double min
   afps::sim::AddAabbCollider(state->world, collider);
 }
 
-void sim_set_config(WasmSimState *state, double move_speed, double sprint_multiplier, double accel,
-                    double friction, double gravity, double jump_velocity, double dash_impulse,
+void sim_set_config(WasmSimState *state, double move_speed, double sprint_multiplier,
+                    double crouch_speed_multiplier, double accel, double friction, double gravity,
+                    double jump_velocity, double dash_impulse,
                     double dash_cooldown, double grapple_max_distance, double grapple_pull_strength,
                     double grapple_damping, double grapple_cooldown, double grapple_min_attach_normal_y,
                     double grapple_rope_slack, double shield_duration, double shield_cooldown,
                     double shield_damage_multiplier, double shockwave_radius, double shockwave_impulse,
                     double shockwave_cooldown, double shockwave_damage, double arena_half_size,
-                    double player_radius, double player_height, double obstacle_min_x,
+                    double player_radius, double player_height, double crouch_height, double obstacle_min_x,
                     double obstacle_max_x, double obstacle_min_y, double obstacle_max_y) {
   if (!state) {
     return;
@@ -68,6 +69,9 @@ void sim_set_config(WasmSimState *state, double move_speed, double sprint_multip
   }
   if (std::isfinite(sprint_multiplier) && sprint_multiplier > 0.0) {
     state->config.sprint_multiplier = sprint_multiplier;
+  }
+  if (std::isfinite(crouch_speed_multiplier) && crouch_speed_multiplier > 0.0) {
+    state->config.crouch_speed_multiplier = crouch_speed_multiplier;
   }
   if (std::isfinite(accel) && accel >= 0.0) {
     state->config.accel = accel;
@@ -135,6 +139,9 @@ void sim_set_config(WasmSimState *state, double move_speed, double sprint_multip
   if (std::isfinite(player_height) && player_height >= 0.0) {
     state->config.player_height = player_height;
   }
+  if (std::isfinite(crouch_height) && crouch_height > 0.0) {
+    state->config.crouch_height = crouch_height;
+  }
   if (std::isfinite(obstacle_min_x)) {
     state->config.obstacle_min_x = obstacle_min_x;
   }
@@ -150,7 +157,7 @@ void sim_set_config(WasmSimState *state, double move_speed, double sprint_multip
 }
 
 void sim_set_state(WasmSimState *state, double x, double y, double z, double vel_x, double vel_y, double vel_z,
-                   double dash_cooldown) {
+                   double dash_cooldown, int crouched) {
   if (!state) {
     return;
   }
@@ -161,6 +168,7 @@ void sim_set_state(WasmSimState *state, double x, double y, double z, double vel
   state->player.vel_y = std::isfinite(vel_y) ? vel_y : 0.0;
   state->player.vel_z = std::isfinite(vel_z) ? vel_z : 0.0;
   state->player.grounded = state->player.z <= 0.0;
+  state->player.crouched = crouched != 0;
   state->player.dash_cooldown =
       (std::isfinite(dash_cooldown) && dash_cooldown > 0.0) ? dash_cooldown : 0.0;
   state->player.shield_timer = 0.0;
@@ -182,14 +190,14 @@ void sim_step(WasmSimState *state,
               int grapple,
               int shield,
               int shockwave,
+              int crouch,
               double view_yaw,
               double view_pitch) {
   if (!state) {
     return;
   }
-  const auto input =
-      afps::sim::MakeInput(move_x, move_y, sprint != 0, jump != 0, dash != 0, grapple != 0, shield != 0,
-                           shockwave != 0, view_yaw, view_pitch);
+  const auto input = afps::sim::MakeInput(move_x, move_y, sprint != 0, jump != 0, dash != 0, grapple != 0,
+                                          shield != 0, shockwave != 0, view_yaw, view_pitch, crouch != 0);
   afps::sim::StepPlayer(state->player, input, state->config, dt, &state->world);
 }
 
@@ -240,6 +248,13 @@ double sim_get_dash_cooldown(WasmSimState *state) {
     return 0.0;
   }
   return state->player.dash_cooldown;
+}
+
+int sim_get_crouched(WasmSimState *state) {
+  if (!state) {
+    return 0;
+  }
+  return state->player.crouched ? 1 : 0;
 }
 
 double sim_get_shield_cooldown(WasmSimState *state) {

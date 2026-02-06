@@ -1,27 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createSettingsOverlay } from '../../src/ui/settings';
-import { LOADOUT_BITS } from '../../src/weapons/loadout';
 
 describe('settings overlay', () => {
-  it('creates overlay and updates sensitivity', () => {
+  it('renders audio and keyboard tabs', () => {
     document.body.innerHTML = '<div id="app"></div>';
-    const onChange = vi.fn();
-    const onShowMetricsChange = vi.fn();
-    const onFxSettingsChange = vi.fn();
     const onAudioSettingsChange = vi.fn();
-    const onLoadoutBitsChange = vi.fn();
     const settings = createSettingsOverlay(document, {
-      initialSensitivity: 0.003,
-      onSensitivityChange: onChange,
-      initialShowMetrics: false,
-      onShowMetricsChange,
-      initialFxSettings: {
-        muzzleFlash: false,
-        tracers: true,
-        decals: false,
-        aimDebug: true
-      },
-      onFxSettingsChange,
       initialAudioSettings: {
         master: 0.6,
         sfx: 0.5,
@@ -29,76 +13,32 @@ describe('settings overlay', () => {
         music: 0.3,
         muted: false
       },
-      onAudioSettingsChange,
-      initialLoadoutBits: LOADOUT_BITS.suppressor | LOADOUT_BITS.optic,
-      onLoadoutBitsChange
+      onAudioSettingsChange
     });
 
     expect(settings.isVisible()).toBe(false);
     settings.setVisible(true);
     expect(settings.isVisible()).toBe(true);
 
-    const sensitivityLabel = Array.from(settings.element.querySelectorAll('.settings-label')).find((row) =>
-      row.textContent?.includes('Look Sensitivity')
-    ) as HTMLElement;
-    const slider = sensitivityLabel.parentElement?.querySelector('input[type="range"]') as HTMLInputElement;
-    expect(slider).not.toBeNull();
-    expect(Number(slider.value)).toBeCloseTo(0.003);
+    const tabs = Array.from(settings.element.querySelectorAll('.settings-tab')) as HTMLButtonElement[];
+    expect(tabs).toHaveLength(2);
+    expect(tabs[0]?.textContent).toContain('Audio');
+    expect(tabs[1]?.textContent).toContain('Keyboard');
 
-    slider.value = '0.006';
-    slider.dispatchEvent(new Event('input'));
-    expect(onChange).toHaveBeenCalledWith(0.006);
+    const audioSection = settings.element.querySelector(".settings-section[data-tab='audio']") as HTMLElement;
+    const keyboardSection = settings.element.querySelector(".settings-section[data-tab='keyboard']") as HTMLElement;
+    expect(audioSection.hidden).toBe(false);
+    expect(keyboardSection.hidden).toBe(true);
 
-    const toggleRows = Array.from(settings.element.querySelectorAll('.settings-toggle'));
-    const metricsRow = toggleRows.find((row) => row.textContent?.includes('Show net stats')) as HTMLElement;
-    const muzzleFlashRow = toggleRows.find((row) => row.textContent?.includes('Muzzle flash')) as HTMLElement;
-    const tracersRow = toggleRows.find((row) => row.textContent?.includes('Tracers')) as HTMLElement;
-    const decalsRow = toggleRows.find((row) => row.textContent?.includes('Decals')) as HTMLElement;
-    const aimDebugRow = toggleRows.find((row) => row.textContent?.includes('Aim debug')) as HTMLElement;
-    const suppressorRow = toggleRows.find((row) => row.textContent?.includes('Suppressor')) as HTMLElement;
-    const compensatorRow = toggleRows.find((row) => row.textContent?.includes('Compensator')) as HTMLElement;
-    const opticRow = toggleRows.find((row) => row.textContent?.includes('Optic')) as HTMLElement;
-    const extendedMagRow = toggleRows.find((row) => row.textContent?.includes('Extended mag')) as HTMLElement;
-    const gripRow = toggleRows.find((row) => row.textContent?.includes('Grip')) as HTMLElement;
-    const metricsToggle = metricsRow.querySelector('input') as HTMLInputElement;
-    const muzzleFlashToggle = muzzleFlashRow.querySelector('input') as HTMLInputElement;
-    const tracersToggle = tracersRow.querySelector('input') as HTMLInputElement;
-    const decalsToggle = decalsRow.querySelector('input') as HTMLInputElement;
-    const aimDebugToggle = aimDebugRow.querySelector('input') as HTMLInputElement;
-    const suppressorToggle = suppressorRow.querySelector('input') as HTMLInputElement;
-    const compensatorToggle = compensatorRow.querySelector('input') as HTMLInputElement;
-    const opticToggle = opticRow.querySelector('input') as HTMLInputElement;
-    const extendedMagToggle = extendedMagRow.querySelector('input') as HTMLInputElement;
-    const gripToggle = gripRow.querySelector('input') as HTMLInputElement;
+    tabs[1]?.click();
+    expect(audioSection.hidden).toBe(true);
+    expect(keyboardSection.hidden).toBe(false);
+    expect(keyboardSection.textContent).toContain('Move Forward');
+    expect(keyboardSection.textContent).toContain('Hold P');
+    expect(keyboardSection.textContent).toContain('N');
 
-    expect(metricsToggle.checked).toBe(false);
-    metricsToggle.click();
-    expect(onShowMetricsChange).toHaveBeenCalledWith(true);
-    settings.setMetricsVisible(false);
-    expect(metricsToggle.checked).toBe(false);
-
-    expect(muzzleFlashToggle.checked).toBe(false);
-    expect(tracersToggle.checked).toBe(true);
-    expect(decalsToggle.checked).toBe(false);
-    expect(aimDebugToggle.checked).toBe(true);
-    muzzleFlashToggle.click();
-    expect(onFxSettingsChange).toHaveBeenCalledWith(
-      expect.objectContaining({ muzzleFlash: true })
-    );
-
-    expect(suppressorToggle.checked).toBe(true);
-    expect(compensatorToggle.checked).toBe(false);
-    expect(opticToggle.checked).toBe(true);
-    expect(extendedMagToggle.checked).toBe(false);
-    expect(gripToggle.checked).toBe(false);
-    onLoadoutBitsChange.mockClear();
-    compensatorToggle.click();
-    expect(onLoadoutBitsChange).toHaveBeenCalledWith(
-      LOADOUT_BITS.suppressor | LOADOUT_BITS.optic | LOADOUT_BITS.compensator
-    );
-    onLoadoutBitsChange.mockClear();
-    suppressorToggle.click();
-    expect(onLoadoutBitsChange).toHaveBeenCalledWith(LOADOUT_BITS.optic | LOADOUT_BITS.compensator);
+    tabs[0]?.click();
+    expect(audioSection.hidden).toBe(false);
 
     const audioControls = Array.from(settings.element.querySelectorAll('.settings-audio-control'));
     const masterControl = audioControls.find((control) => control.textContent?.includes('Master')) as HTMLElement;
@@ -106,9 +46,13 @@ describe('settings overlay', () => {
     expect(Number(masterSlider.value)).toBeCloseTo(0.6);
     masterSlider.value = '0.4';
     masterSlider.dispatchEvent(new Event('input'));
-    expect(onAudioSettingsChange).toHaveBeenCalled();
+    expect(onAudioSettingsChange).toHaveBeenCalledWith(
+      expect.objectContaining({ master: 0.4 })
+    );
 
-    const muteRow = toggleRows.find((row) => row.textContent?.includes('Mute all')) as HTMLElement;
+    const muteRow = Array.from(settings.element.querySelectorAll('.settings-toggle')).find((row) =>
+      row.textContent?.includes('Mute all')
+    ) as HTMLElement;
     const muteToggle = muteRow.querySelector('input') as HTMLInputElement;
     muteToggle.click();
     expect(onAudioSettingsChange).toHaveBeenCalledWith(
@@ -120,35 +64,5 @@ describe('settings overlay', () => {
 
     settings.dispose();
     expect(document.querySelector('.settings-overlay')).toBeNull();
-  });
-
-  it('clamps invalid sensitivity values', () => {
-    document.body.innerHTML = '<div id="app"></div>';
-    const settings = createSettingsOverlay(document, { initialSensitivity: 0.5 });
-
-    const sensitivityLabel = Array.from(settings.element.querySelectorAll('.settings-label')).find((row) =>
-      row.textContent?.includes('Look Sensitivity')
-    ) as HTMLElement;
-    const slider = sensitivityLabel.parentElement?.querySelector('input[type="range"]') as HTMLInputElement;
-    expect(Number(slider.value)).toBeLessThanOrEqual(0.01);
-
-    slider.value = '0';
-    slider.dispatchEvent(new Event('input'));
-    expect(Number(slider.value)).toBeGreaterThan(0);
-
-    settings.dispose();
-  });
-
-  it('defaults sensitivity when none provided', () => {
-    document.body.innerHTML = '<div id="app"></div>';
-    const settings = createSettingsOverlay(document);
-
-    const sensitivityLabel = Array.from(settings.element.querySelectorAll('.settings-label')).find((row) =>
-      row.textContent?.includes('Look Sensitivity')
-    ) as HTMLElement;
-    const slider = sensitivityLabel.parentElement?.querySelector('input[type="range"]') as HTMLInputElement;
-    expect(Number(slider.value)).toBeCloseTo(0.002);
-
-    settings.dispose();
   });
 });

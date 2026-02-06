@@ -19,7 +19,10 @@ export interface CreateAppOptions {
   loadEnvironment?: boolean;
 }
 
+const PLAYER_FLAG_CROUCHED = 1 << 5;
 const CAMERA_HEIGHT = resolveEyeHeight(SIM_CONFIG);
+const CROUCH_CAMERA_HEIGHT = resolveEyeHeight(SIM_CONFIG, CAMERA_HEIGHT, true);
+const CROUCH_CAMERA_BLEND_SPEED = 14;
 const MAP_SEED_FLAG = 'VITE_MAP_SEED';
 
 const parseMapSeed = (value: unknown) => {
@@ -563,8 +566,12 @@ export const createApp = ({
     posZ: cube.position.y - 0.5,
     velX: 0,
     velY: 0,
-    velZ: 0
+    velZ: 0,
+    crouched: false,
+    eyeHeight: DEFAULTS.cameraHeight
   };
+  let cameraEyeHeight = DEFAULTS.cameraHeight;
+  const resolvePoseEyeHeight = (crouched: boolean) => (crouched ? CROUCH_CAMERA_HEIGHT : DEFAULTS.cameraHeight);
   const resolvePlayerPose = (nowMs: number) => {
     const timeline = snapshotBuffer.sampleWithRenderTick(nowMs);
     if (timeline) {
@@ -572,24 +579,31 @@ export const createApp = ({
     }
     if (prediction.isActive()) {
       const predicted = prediction.getState();
+      const crouched = Boolean(predicted.crouched);
+      const eyeHeight = Number.isFinite(predicted.eyeHeight) ? predicted.eyeHeight : resolvePoseEyeHeight(crouched);
       return {
         posX: predicted.x,
         posY: predicted.y,
         posZ: predicted.z,
         velX: predicted.velX,
         velY: predicted.velY,
-        velZ: predicted.velZ
+        velZ: predicted.velZ,
+        crouched,
+        eyeHeight
       };
     }
     const snapshot = timeline?.snapshot ?? null;
     if (snapshot) {
+      const crouched = (snapshot.playerFlags & PLAYER_FLAG_CROUCHED) !== 0;
       return {
         posX: snapshot.posX,
         posY: snapshot.posY,
         posZ: snapshot.posZ,
         velX: snapshot.velX,
         velY: snapshot.velY,
-        velZ: snapshot.velZ
+        velZ: snapshot.velZ,
+        crouched,
+        eyeHeight: resolvePoseEyeHeight(crouched)
       };
     }
     const fallbackX = Number.isFinite(cube.position.x) ? cube.position.x : 0;
@@ -601,7 +615,9 @@ export const createApp = ({
       posZ: fallbackZ,
       velX: 0,
       velY: 0,
-      velZ: 0
+      velZ: 0,
+      crouched: false,
+      eyeHeight: DEFAULTS.cameraHeight
     };
   };
   let lookYaw = 0;
@@ -1094,7 +1110,15 @@ export const createApp = ({
     lastPlayerPose = pose;
     const height = pose.posZ ?? 0;
     cube.position.set(pose.posX, 0.5 + height, pose.posY);
-    camera.position.set(pose.posX, DEFAULTS.cameraHeight + height, pose.posY);
+    const targetEyeHeight =
+      Number.isFinite(pose.eyeHeight) ? pose.eyeHeight : resolvePoseEyeHeight(Boolean(pose.crouched));
+    if (safeDelta > 0) {
+      const blend = 1 - Math.exp(-CROUCH_CAMERA_BLEND_SPEED * safeDelta);
+      cameraEyeHeight += (targetEyeHeight - cameraEyeHeight) * blend;
+    } else {
+      cameraEyeHeight = targetEyeHeight;
+    }
+    camera.position.set(pose.posX, cameraEyeHeight + height, pose.posY);
     beforeRenderHook?.(safeDelta, now);
     refreshOutlineFlash(now);
     if (composer) {

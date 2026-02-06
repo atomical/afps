@@ -11,6 +11,7 @@ namespace afps::sim {
 struct SimConfig {
   double move_speed;
   double sprint_multiplier;
+  double crouch_speed_multiplier;
   double accel;
   double friction;
   double gravity;
@@ -33,6 +34,7 @@ struct SimConfig {
   double arena_half_size;
   double player_radius;
   double player_height;
+  double crouch_height;
   double obstacle_min_x;
   double obstacle_max_x;
   double obstacle_min_y;
@@ -48,6 +50,7 @@ struct SimInput {
   bool grapple = false;
   bool shield = false;
   bool shockwave = false;
+  bool crouch = false;
   double view_yaw = 0.0;
   double view_pitch = 0.0;
 };
@@ -106,6 +109,7 @@ struct PlayerState {
   double vel_y = 0.0;
   double vel_z = 0.0;
   bool grounded = true;
+  bool crouched = false;
   double dash_cooldown = 0.0;
   double grapple_cooldown = 0.0;
   bool grapple_active = false;
@@ -129,6 +133,7 @@ struct PlayerState {
 inline constexpr SimConfig kDefaultSimConfig{
     5.0,
     1.5,
+    0.55,
     50.0,
     8.0,
     30.0,
@@ -151,6 +156,7 @@ inline constexpr SimConfig kDefaultSimConfig{
     30.0,
     0.5,
     1.7,
+    1.05,
     0.0,
     0.0,
     0.0,
@@ -177,8 +183,18 @@ inline SimInput MakeInput(double move_x,
                           bool shield,
                           bool shockwave,
                           double view_yaw = 0.0,
-                          double view_pitch = 0.0) {
-  return {ClampAxis(move_x), ClampAxis(move_y), sprint, jump, dash, grapple, shield, shockwave, SafeAngle(view_yaw),
+                          double view_pitch = 0.0,
+                          bool crouch = false) {
+  return {ClampAxis(move_x),
+          ClampAxis(move_y),
+          sprint,
+          jump,
+          dash,
+          grapple,
+          shield,
+          shockwave,
+          crouch,
+          SafeAngle(view_yaw),
           SafeAngle(view_pitch)};
 }
 
@@ -571,12 +587,71 @@ inline RaycastHit RaycastWorld(const Vec3 &origin,
   return best;
 }
 
-inline double ResolveEyeHeight(const SimConfig &config) {
-  constexpr double kDefaultEyeHeight = 1.6;
-  if (!std::isfinite(config.player_height) || config.player_height <= 0.0) {
-    return kDefaultEyeHeight;
+inline double ResolveStandingHeight(const SimConfig &config) {
+  return (std::isfinite(config.player_height) && config.player_height > 0.0) ? config.player_height : 1.7;
+}
+
+inline double ResolveCrouchHeight(const SimConfig &config) {
+  const double standing = ResolveStandingHeight(config);
+  double crouch_height = (std::isfinite(config.crouch_height) && config.crouch_height > 0.0)
+                             ? config.crouch_height
+                             : standing * 0.62;
+  crouch_height = std::min(crouch_height, standing);
+  return std::max(0.5, crouch_height);
+}
+
+inline double ResolveCollisionPlayerHeight(const SimConfig &config, bool crouched) {
+  return crouched ? ResolveCrouchHeight(config) : ResolveStandingHeight(config);
+}
+
+inline double ResolveCollisionPlayerHeight(const SimConfig &config, const PlayerState *state = nullptr) {
+  return ResolveCollisionPlayerHeight(config, state ? state->crouched : false);
+}
+
+inline double ResolveEyeHeight(const SimConfig &config, bool crouched = false) {
+  const double player_height = ResolveCollisionPlayerHeight(config, crouched);
+  if (crouched) {
+    return std::max(0.35, std::min(player_height, player_height - 0.1));
   }
-  return std::min(config.player_height, kDefaultEyeHeight);
+  constexpr double kDefaultEyeHeight = 1.6;
+  return std::min(player_height, kDefaultEyeHeight);
+}
+
+inline bool CanOccupyHeight(const PlayerState &state,
+                            const SimConfig &config,
+                            const CollisionWorld *world,
+                            double test_height) {
+  if (!std::isfinite(test_height) || test_height <= 0.0) {
+    return false;
+  }
+  const double radius = (std::isfinite(config.player_radius) && config.player_radius > 0.0) ? config.player_radius : 0.0;
+  const double min_z = state.z;
+  const double max_z = state.z + test_height;
+  if (world) {
+    for (const auto &collider : world->colliders) {
+      if (!IsValidAabbCollider(collider)) {
+        continue;
+      }
+      if (max_z <= collider.min_z || min_z >= collider.max_z) {
+        continue;
+      }
+      if (state.x < collider.min_x - radius || state.x > collider.max_x + radius) {
+        continue;
+      }
+      if (state.y < collider.min_y - radius || state.y > collider.max_y + radius) {
+        continue;
+      }
+      return false;
+    }
+  }
+  if (std::isfinite(config.arena_half_size) && config.arena_half_size > 0.0) {
+    const double half_size = std::max(0.0, config.arena_half_size);
+    const double ceiling_z = std::max(0.0, half_size - test_height);
+    if (state.z > ceiling_z + 1e-6) {
+      return false;
+    }
+  }
+  return true;
 }
 
 inline void ResolveAabbPenetration(PlayerState &state, double min_x, double max_x, double min_y, double max_y) {
@@ -757,10 +832,6 @@ struct ExpandedAabb2D {
   double max_y = 0.0;
 };
 
-inline double ResolveCollisionPlayerHeight(const SimConfig &config) {
-  return (std::isfinite(config.player_height) && config.player_height > 0.0) ? config.player_height : 1.7;
-}
-
 inline bool BuildExpandedAabbFromCollider(const AabbCollider &collider,
                                           const PlayerState &state,
                                           const SimConfig &config,
@@ -769,7 +840,7 @@ inline bool BuildExpandedAabbFromCollider(const AabbCollider &collider,
     return false;
   }
   const double player_min_z = state.z;
-  const double player_max_z = state.z + ResolveCollisionPlayerHeight(config);
+  const double player_max_z = state.z + ResolveCollisionPlayerHeight(config, &state);
   if (player_max_z <= collider.min_z || player_min_z >= collider.max_z) {
     return false;
   }
@@ -912,14 +983,32 @@ inline void StepPlayer(PlayerState &state,
     return;
   }
 
+  const double standing_height = ResolveStandingHeight(config);
+  const bool wants_crouch = input.crouch;
+  if (wants_crouch) {
+    state.crouched = true;
+  } else if (state.crouched && CanOccupyHeight(state, config, world, standing_height)) {
+    state.crouched = false;
+  }
+  if (!state.crouched && !CanOccupyHeight(state, config, world, standing_height)) {
+    state.crouched = true;
+  }
+
   const double accel = std::max(0.0, config.accel);
   const double friction = std::max(0.0, config.friction);
   double max_speed = std::max(0.0, config.move_speed);
+  const double crouch_speed_multiplier =
+      (std::isfinite(config.crouch_speed_multiplier) && config.crouch_speed_multiplier > 0.0)
+          ? config.crouch_speed_multiplier
+          : 0.55;
+  if (state.crouched) {
+    max_speed *= crouch_speed_multiplier;
+  }
   const double sprint_multiplier =
       (std::isfinite(config.sprint_multiplier) && config.sprint_multiplier > 0.0)
           ? config.sprint_multiplier
           : 1.0;
-  if (input.sprint) {
+  if (input.sprint && !state.crouched) {
     max_speed *= sprint_multiplier;
   }
 
@@ -1012,7 +1101,7 @@ inline void StepPlayer(PlayerState &state,
     if (max_distance > 0.0) {
       const ViewAngles view = SanitizeViewAngles(input.view_yaw, input.view_pitch);
       const Vec3 dir = ViewDirection(view);
-      const double eye_height = ResolveEyeHeight(config);
+      const double eye_height = ResolveEyeHeight(config, state.crouched);
       Vec3 origin{state.x, state.y, state.z + eye_height};
       const RaycastHit hit = RaycastWorld(origin, dir, config, world);
       if (hit.hit && hit.t >= 0.0 && hit.t <= max_distance) {
@@ -1022,8 +1111,7 @@ inline void StepPlayer(PlayerState &state,
         double ceiling_z = std::numeric_limits<double>::infinity();
         if (std::isfinite(config.arena_half_size) && config.arena_half_size > 0.0) {
           const double half_size = std::max(0.0, config.arena_half_size);
-          const double player_height =
-              (std::isfinite(config.player_height) && config.player_height >= 0.0) ? config.player_height : 0.0;
+          const double player_height = ResolveCollisionPlayerHeight(config, &state);
           ceiling_z = std::max(0.0, half_size - player_height);
         }
         if (!std::isfinite(anchor_z)) {
@@ -1113,7 +1201,7 @@ inline void StepPlayer(PlayerState &state,
     if (grapple_released) {
       release_grapple(true);
     } else {
-      const double eye_height = ResolveEyeHeight(config);
+      const double eye_height = ResolveEyeHeight(config, state.crouched);
       Vec3 origin{state.x, state.y, state.z + eye_height};
       const double dx = state.grapple_anchor_x - origin.x;
       const double dy = state.grapple_anchor_y - origin.y;
@@ -1165,8 +1253,7 @@ inline void StepPlayer(PlayerState &state,
 
   AdvanceWithCollisions(state, config, dt, world);
 
-  const double player_height =
-      (std::isfinite(config.player_height) && config.player_height >= 0.0) ? config.player_height : 0.0;
+  const double player_height = ResolveCollisionPlayerHeight(config, &state);
   constexpr double kWalkableNormalZ = 0.7;
   double ceiling_z = std::numeric_limits<double>::infinity();
   if (std::isfinite(config.arena_half_size) && config.arena_half_size > 0.0) {

@@ -104,8 +104,13 @@ shockwave():boolean {
   return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
 }
 
+crouch():boolean {
+  const offset = this.bb!.__offset(this.bb_pos, 36);
+  return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
+}
+
 static startInputCmd(builder:flatbuffers.Builder) {
-  builder.startObject(16);
+  builder.startObject(17);
 }
 
 static addInputSeq(builder:flatbuffers.Builder, inputSeq:number) {
@@ -172,12 +177,16 @@ static addShockwave(builder:flatbuffers.Builder, shockwave:boolean) {
   builder.addFieldInt8(15, +shockwave, +false);
 }
 
+static addCrouch(builder:flatbuffers.Builder, crouch:boolean) {
+  builder.addFieldInt8(16, +crouch, +false);
+}
+
 static endInputCmd(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createInputCmd(builder:flatbuffers.Builder, inputSeq:number, moveX:number, moveY:number, lookDeltaX:number, lookDeltaY:number, viewYaw:number, viewPitch:number, weaponSlot:number, jump:boolean, fire:boolean, ads:boolean, sprint:boolean, dash:boolean, grapple:boolean, shield:boolean, shockwave:boolean):flatbuffers.Offset {
+static createInputCmd(builder:flatbuffers.Builder, inputSeq:number, moveX:number, moveY:number, lookDeltaX:number, lookDeltaY:number, viewYaw:number, viewPitch:number, weaponSlot:number, jump:boolean, fire:boolean, ads:boolean, sprint:boolean, dash:boolean, grapple:boolean, shield:boolean, shockwave:boolean, crouch:boolean):flatbuffers.Offset {
   InputCmd.startInputCmd(builder);
   InputCmd.addInputSeq(builder, inputSeq);
   InputCmd.addMoveX(builder, moveX);
@@ -195,6 +204,7 @@ static createInputCmd(builder:flatbuffers.Builder, inputSeq:number, moveX:number
   InputCmd.addGrapple(builder, grapple);
   InputCmd.addShield(builder, shield);
   InputCmd.addShockwave(builder, shockwave);
+  InputCmd.addCrouch(builder, crouch);
   return InputCmd.endInputCmd(builder);
 }
 
@@ -215,7 +225,8 @@ unpack(): InputCmdT {
     this.dash(),
     this.grapple(),
     this.shield(),
-    this.shockwave()
+    this.shockwave(),
+    this.crouch()
   );
 }
 
@@ -237,6 +248,7 @@ unpackTo(_o: InputCmdT): void {
   _o.grapple = this.grapple();
   _o.shield = this.shield();
   _o.shockwave = this.shockwave();
+  _o.crouch = this.crouch();
 }
 }
 
@@ -257,7 +269,8 @@ constructor(
   public dash: boolean = false,
   public grapple: boolean = false,
   public shield: boolean = false,
-  public shockwave: boolean = false
+  public shockwave: boolean = false,
+  public crouch: boolean = false
 ){}
 
 
@@ -278,7 +291,8 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
     this.dash,
     this.grapple,
     this.shield,
-    this.shockwave
+    this.shockwave,
+    this.crouch
   );
 }
 }

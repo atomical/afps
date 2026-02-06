@@ -26,6 +26,7 @@ import { createInputSender } from './net/input_sender';
 import { createPointerLockController } from './input/pointer_lock';
 import { createHudOverlay } from './ui/hud';
 import { createHudStore } from './ui/hud_state';
+import { createScoreboardOverlay } from './ui/scoreboard';
 import { createSettingsOverlay } from './ui/settings';
 import { loadMetricsVisibility, saveMetricsVisibility } from './ui/metrics_settings';
 import { createAudioManager } from './audio/manager';
@@ -82,6 +83,10 @@ const SERVER_STALE_TIMEOUT_MS = 4000;
 const SERVER_STALE_POLL_INTERVAL_MS = 500;
 const FOOTSTEP_STRIDE = resolvePlayerHeight(SIM_CONFIG);
 const RECONNECT_DELAY_MS = 1000;
+const PROJECTILE_IMPACT_SIZE_DEFAULT = 0.5;
+const PROJECTILE_IMPACT_TTL_DEFAULT = 0.16;
+const GRENADE_PROJECTILE_IMPACT_SIZE = 1.35;
+const GRENADE_PROJECTILE_IMPACT_TTL = 0.32;
 const SKY_DECAL_FADE_SECONDS = 3;
 const SKY_DECAL_HEIGHT_METERS = 8;
 const SKY_DECAL_VERTICAL_DELTA_METERS = 1;
@@ -399,6 +404,7 @@ const worldSurfaceProjector = createWorldSurfaceProjector(() => {
     worldSurfaceProjector.raycastStaticSurface(origin, dir, maxDistance),
   getPlayerPose: () => app.getPlayerPose()
 };
+let nameplatesVisible = true;
 const debugAudio = (import.meta.env?.VITE_DEBUG_AUDIO ?? '') === 'true';
 if (debugAudio) {
   (window as unknown as { __afpsAudio?: unknown }).__afpsAudio = {
@@ -415,6 +421,7 @@ if (debugAudio) {
 }
 const remoteAvatars = createRemoteAvatarManager({ three, scene: app.state.scene });
 remoteAvatars.setAimDebugEnabled(fxSettings.aimDebug);
+remoteAvatars.setNameplatesVisible(nameplatesVisible);
 const pickupManager = createPickupManager({ three, scene: app.state.scene });
 const casingPool = createCasingPool({
   three,
@@ -435,6 +442,8 @@ if (shouldValidateWeapons) {
 }
 let remotePruneInterval: number | null = null;
 let localConnectionId: string | null = null;
+const playerProfiles = new Map<string, NetPlayerProfile>();
+const lastSnapshots = new Map<string, StateSnapshot>();
 let localAvatarActive = false;
 let lastLocalAvatarSample: { x: number; y: number; z: number; time: number } | null = null;
 let gameEventQueue: GameEventQueue | null = null;
@@ -582,6 +591,9 @@ const updateLocalAvatar = (nowMs: number) => {
   }
 };
 app.setBeforeRender((deltaSeconds, nowMs) => {
+  if (reconnecting) {
+    return;
+  }
   updateLocalAvatar(nowMs);
   const safeDelta = Math.max(0, deltaSeconds);
   if (safeDelta > 0) {
@@ -655,6 +667,34 @@ const status = createStatusOverlay(document);
 status.setMetricsVisible(metricsVisible);
 const hud = createHudOverlay(document);
 const hudStore = createHudStore(hud);
+const scoreboard = createScoreboardOverlay(document);
+const buildScoreboardRows = () => {
+  const ids = new Set<string>();
+  for (const id of playerProfiles.keys()) {
+    ids.add(id);
+  }
+  for (const id of lastSnapshots.keys()) {
+    ids.add(id);
+  }
+  if (localConnectionId) {
+    ids.add(localConnectionId);
+  }
+  return Array.from(ids).map((id) => {
+    const profile = playerProfiles.get(id);
+    const snapshot = lastSnapshots.get(id);
+    const fallbackName = id.length > 10 ? `${id.slice(0, 10)}...` : id;
+    return {
+      id,
+      name: profile?.nickname?.trim() || fallbackName,
+      kills: snapshot?.kills ?? 0,
+      isLocal: localConnectionId === id
+    };
+  });
+};
+const refreshScoreboard = () => {
+  scoreboard.setRows(buildScoreboardRows());
+};
+refreshScoreboard();
 const debugHud = (import.meta.env?.VITE_DEBUG_HUD ?? '') === 'true';
 if (debugHud) {
   (window as unknown as { __afpsHud?: unknown }).__afpsHud = {
@@ -670,6 +710,11 @@ const resolveWeaponSlot = (slot: number) => {
   return Math.min(maxSlot, Math.max(0, Math.floor(slot)));
 };
 const resolveWeaponLabel = (slot: number) => WEAPON_DEFS[slot]?.displayName ?? '--';
+const isGrenadeLauncherWeapon = (weapon: (typeof WEAPON_DEFS)[number] | null) =>
+  Boolean(
+    weapon &&
+      (weapon.id === 'GRENADE_LAUNCHER' || weapon.id === 'launcher' || weapon.sfxProfile === 'GRENADE_LAUNCHER')
+  );
 const resolveTeamIndex = (connectionId: string | null) => {
   if (!connectionId) {
     return 0;
@@ -867,14 +912,35 @@ hudStore.dispatch({ type: 'abilityCooldowns', value: app.getAbilityCooldowns() }
 refreshHudLockState(pointerLock.supported ? pointerLock.isLocked() : undefined);
 
 let debugOverlaysVisible = false;
+let scoreboardVisible = false;
+const refreshStatusVisibility = () => {
+  status.setVisible(debugOverlaysVisible || reconnecting);
+  status.element.dataset.reconnect = reconnecting ? 'true' : 'false';
+};
 const setDebugOverlaysVisible = (visible: boolean) => {
   debugOverlaysVisible = visible;
-  status.setVisible(visible);
+  sampler?.reset?.();
+  refreshStatusVisibility();
   localAvatarDebug?.setVisible?.(visible);
 };
 setDebugOverlaysVisible(false);
 
 window.addEventListener('keydown', (event) => {
+  if (event.code === 'KeyP') {
+    if (!event.repeat) {
+      scoreboardVisible = true;
+      refreshScoreboard();
+      scoreboard.setVisible(true);
+    }
+    return;
+  }
+  if (event.code === 'KeyN') {
+    if (!event.repeat) {
+      nameplatesVisible = !nameplatesVisible;
+      remoteAvatars.setNameplatesVisible(nameplatesVisible);
+    }
+    return;
+  }
   if (event.code === 'Escape') {
     if (!event.repeat) {
       setSettingsVisible(!settingsVisible);
@@ -897,6 +963,22 @@ window.addEventListener('keydown', (event) => {
   }
 });
 
+window.addEventListener('keyup', (event) => {
+  if (event.code !== 'KeyP') {
+    return;
+  }
+  scoreboardVisible = false;
+  scoreboard.setVisible(false);
+});
+
+window.addEventListener('blur', () => {
+  if (!scoreboardVisible) {
+    return;
+  }
+  scoreboardVisible = false;
+  scoreboard.setVisible(false);
+});
+
 if (!signalingUrl) {
   status.setState('disabled', 'Set VITE_SIGNALING_URL');
 } else if (!signalingAuthToken) {
@@ -904,44 +986,61 @@ if (!signalingUrl) {
 } else {
   status.setState('idle', 'Awaiting pre-join');
   const storedProfile = loadProfile(localStorageRef);
-  const playerProfiles = new Map<string, NetPlayerProfile>();
-  const lastSnapshots = new Map<string, StateSnapshot>();
-  const scheduleReconnect = (reason: string) => {
-    if (reconnecting || !activeProfile) {
-      return;
-    }
-    reconnecting = true;
-    status.setState('connecting', `Reconnecting: ${reason}`);
-    refreshHudLockState();
+  const queueReconnectAttempt = () => {
     if (reconnectTimer !== null) {
-      window.clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-    }
-    if (activeCleanup) {
-      activeCleanup();
-      activeCleanup = null;
-    }
-    if (activeSession) {
-      activeSession.close();
-      activeSession = null;
+      return;
     }
     reconnectTimer = window.setTimeout(() => {
       reconnectTimer = null;
       if (!activeProfile) {
         reconnecting = false;
+        refreshStatusVisibility();
         refreshHudLockState();
         return;
       }
       void bootstrapNetwork(activeProfile);
     }, RECONNECT_DELAY_MS);
   };
+  const scheduleReconnect = (reason: string) => {
+    if (!activeProfile) {
+      return;
+    }
+    if (!reconnecting) {
+      reconnecting = true;
+      sampler?.reset?.();
+      lastFire = false;
+      adsTarget = 0;
+      if (typeof document.exitPointerLock === 'function') {
+        document.exitPointerLock();
+      }
+      if (activeSession) {
+        activeSession.close();
+        activeSession = null;
+      }
+      if (activeCleanup) {
+        activeCleanup();
+        activeCleanup = null;
+      }
+    }
+    status.setState('connecting', `Reconnecting: ${reason}`);
+    refreshStatusVisibility();
+    refreshHudLockState();
+    queueReconnectAttempt();
+  };
   const handlePlayerProfile = (profile: NetPlayerProfile) => {
     playerProfiles.set(profile.clientId, profile);
     remoteAvatars.setProfile(profile);
+    refreshScoreboard();
   };
 
   const bootstrapNetwork = async (profile: LocalPlayerProfile) => {
-    status.setState('connecting', signalingUrl);
+    status.setState('connecting', reconnecting ? `Reconnecting to ${signalingUrl}` : signalingUrl);
+    refreshStatusVisibility();
+    playerProfiles.clear();
+    lastSnapshots.clear();
+    localConnectionId = null;
+    remoteAvatars.setLocalClientId(null);
+    refreshScoreboard();
     remotePruneInterval = window.setInterval(() => remoteAvatars.prune(window.performance.now()), 2000);
     let lastSnapshotAt = 0;
     let lastRttMs = 0;
@@ -951,6 +1050,7 @@ if (!signalingUrl) {
     let lastEventSampleAt = 0;
     let lastEventReceived = 0;
     let lastEventRateText = '--';
+    const projectileWeaponSlotById = new Map<number, number>();
 
     const updateMetrics = () => {
       const now = window.performance.now();
@@ -1003,6 +1103,7 @@ if (!signalingUrl) {
         snapshot.clientId === localConnectionId;
       if (snapshot.clientId) {
         lastSnapshots.set(snapshot.clientId, snapshot);
+        refreshScoreboard();
       }
       if (snapshot.clientId && !isLocalSnapshot) {
         remoteAvatars.upsertSnapshot(snapshot, now);
@@ -1325,6 +1426,7 @@ if (!signalingUrl) {
             muzzlePos
           });
         } else if (event.type === 'ProjectileSpawnFx') {
+          projectileWeaponSlotById.set(event.projectileId, resolveWeaponSlot(event.weaponSlot));
           const originServer = {
             x: dequantizeI16(event.posXQ, PROJECTILE_POS_STEP_METERS),
             y: dequantizeI16(event.posYQ, PROJECTILE_POS_STEP_METERS),
@@ -1388,14 +1490,18 @@ if (!signalingUrl) {
             };
             const impactPos = swapYZ(impactPosServer);
             const normal = swapYZ(decodeOct16(event.normalOctX, event.normalOctY));
+            const projectileWeaponSlot = projectileWeaponSlotById.get(event.projectileId);
+            const projectileWeapon =
+              projectileWeaponSlot !== undefined ? resolveWeaponForSlot(projectileWeaponSlot) : null;
+            const isGrenadeExplosion = isGrenadeLauncherWeapon(projectileWeapon);
             audio.playPositional('impact', impactPos, { group: 'sfx', volume: 0.5 });
             app.spawnImpactVfx({
               position: impactPos,
               normal,
               surfaceType: event.surfaceType,
               seed: event.projectileId >>> 0,
-              size: 0.5,
-              ttl: 0.16
+              size: isGrenadeExplosion ? GRENADE_PROJECTILE_IMPACT_SIZE : PROJECTILE_IMPACT_SIZE_DEFAULT,
+              ttl: isGrenadeExplosion ? GRENADE_PROJECTILE_IMPACT_TTL : PROJECTILE_IMPACT_TTL_DEFAULT
             });
             if (fxSettings.decals && event.hitWorld) {
               app.spawnDecalVfx({
@@ -1405,10 +1511,12 @@ if (!signalingUrl) {
                 seed: event.projectileId >>> 0
               });
             }
+            projectileWeaponSlotById.delete(event.projectileId);
             app.removeProjectileVfx(event.projectileId);
             break;
           }
           case 'ProjectileRemoveFx': {
+            projectileWeaponSlotById.delete(event.projectileId);
             app.removeProjectileVfx(event.projectileId);
             break;
           }
@@ -1665,6 +1773,7 @@ if (!signalingUrl) {
         }
         localConnectionId = session.connectionId;
         remoteAvatars.setLocalClientId(localConnectionId);
+        refreshScoreboard();
         app.setOutlineTeam(resolveTeamIndex(localConnectionId));
         handlePlayerProfile({
           type: 'PlayerProfile',
@@ -1685,6 +1794,7 @@ if (!signalingUrl) {
           window.clearTimeout(reconnectTimer);
           reconnectTimer = null;
         }
+        refreshStatusVisibility();
         refreshHudLockState();
         app.setSnapshotRate(session.serverHello.snapshotRate);
         app.setTickRate(session.serverHello.serverTickRate);
@@ -1725,6 +1835,7 @@ if (!signalingUrl) {
               cmd.fire = false;
               cmd.ads = false;
               cmd.sprint = false;
+              cmd.crouch = false;
               cmd.dash = false;
               cmd.grapple = false;
               cmd.shield = false;
@@ -1734,6 +1845,9 @@ if (!signalingUrl) {
             const lookX = cmd.lookDeltaX;
             const lookY = cmd.lookDeltaY;
             adsTarget = cmd.ads ? 1 : 0;
+            if (debugOverlaysVisible) {
+              cmd.crouch = true;
+            }
             const adsSensitivity = 1 - adsBlend * (1 - ADS_SENSITIVITY_MULTIPLIER);
             const scaledLookX = lookX * adsSensitivity;
             const scaledLookY = lookY * adsSensitivity;
@@ -1819,6 +1933,23 @@ if (!signalingUrl) {
           if (reconnecting) {
             return;
           }
+          if (session.unreliableChannel.readyState !== 'open') {
+            scheduleReconnect('data channel closed');
+            return;
+          }
+          const peerState = session.peerConnection as
+            | { connectionState?: string; iceConnectionState?: string }
+            | undefined;
+          const connectionState = peerState?.connectionState;
+          const iceState = peerState?.iceConnectionState;
+          if (connectionState === 'failed' || connectionState === 'disconnected' || connectionState === 'closed') {
+            scheduleReconnect(`peer ${connectionState}`);
+            return;
+          }
+          if (iceState === 'failed' || iceState === 'disconnected' || iceState === 'closed') {
+            scheduleReconnect(`ice ${iceState}`);
+            return;
+          }
           const now = window.performance.now();
           if (now - lastServerActivityAt > SERVER_STALE_TIMEOUT_MS) {
             scheduleReconnect('server unresponsive');
@@ -1874,9 +2005,14 @@ if (!signalingUrl) {
         }
         remoteAvatars.dispose();
         const detail = error instanceof Error ? error.message : String(error);
-        status.setState('error', detail);
-        reconnecting = false;
-        refreshHudLockState();
+        if (reconnecting) {
+          scheduleReconnect(`network error (${detail})`);
+        } else {
+          status.setState('error', detail);
+          refreshStatusVisibility();
+          reconnecting = false;
+          refreshHudLockState();
+        }
         console.error('network bootstrap failed', error);
       });
   };

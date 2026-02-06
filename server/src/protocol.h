@@ -78,6 +78,7 @@ struct InputCmd {
   bool grapple = false;
   bool shield = false;
   bool shockwave = false;
+  bool crouch = false;
 };
 
 struct FireWeaponRequest {

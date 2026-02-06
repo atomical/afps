@@ -71,6 +71,17 @@ export const createHudOverlay = (doc: Document, containerId = 'app'): HudOverlay
   const hitmarker = doc.createElement('div');
   hitmarker.className = 'hud-hitmarker';
 
+  const healthBar = doc.createElement('div');
+  healthBar.className = 'hud-healthbar';
+  const healthBarLabel = doc.createElement('div');
+  healthBarLabel.className = 'hud-healthbar-label';
+  const healthBarTrack = doc.createElement('div');
+  healthBarTrack.className = 'hud-healthbar-track';
+  const healthBarFill = doc.createElement('div');
+  healthBarFill.className = 'hud-healthbar-fill';
+  healthBarTrack.append(healthBarFill);
+  healthBar.append(healthBarLabel, healthBarTrack);
+
   const info = doc.createElement('div');
   info.className = 'hud-info';
 
@@ -106,7 +117,7 @@ export const createHudOverlay = (doc: Document, containerId = 'app'): HudOverlay
   abilities.append(dashCooldown, shieldCooldown, shockwaveCooldown);
 
   info.append(lock, sensitivity, vitals, score, weapon, weaponCooldown, abilities);
-  overlay.append(crosshair, hitmarker, info);
+  overlay.append(crosshair, hitmarker, healthBar, info);
   host.appendChild(overlay);
 
   const setLockState = (state: HudLockState) => {
@@ -119,8 +130,14 @@ export const createHudOverlay = (doc: Document, containerId = 'app'): HudOverlay
   };
 
   const setVitals = (vitalsValue?: { health?: number; ammo?: number }) => {
+    const healthValue =
+      Number.isFinite(vitalsValue?.health) && vitalsValue?.health !== undefined
+        ? Math.max(0, Math.min(100, vitalsValue.health))
+        : null;
     health.textContent = `Health: ${formatStat(vitalsValue?.health)}`;
     ammo.textContent = `Ammo: ${formatAmmo(vitalsValue?.ammo)}`;
+    healthBarLabel.textContent = `Health ${healthValue === null ? '--' : Math.round(healthValue)}`;
+    healthBarFill.style.width = `${healthValue === null ? 0 : healthValue}%`;
   };
 
   const setScore = (scoreValue?: { kills?: number; deaths?: number }) => {

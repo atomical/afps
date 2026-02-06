@@ -14,6 +14,7 @@ export interface InputCmd {
   fire: boolean;
   ads: boolean;
   sprint: boolean;
+  crouch: boolean;
   dash: boolean;
   grapple: boolean;
   shield: boolean;
@@ -44,6 +45,7 @@ export const buildInputCmd = (inputSeq: number, sample: InputSample): InputCmd =
   fire: Boolean(sample.fire),
   ads: Boolean(sample.ads),
   sprint: Boolean(sample.sprint),
+  crouch: Boolean(sample.crouch),
   dash: Boolean(sample.dash),
   grapple: Boolean(sample.grapple),
   shield: Boolean(sample.shield),

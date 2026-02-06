@@ -1,6 +1,7 @@
 {
   "moveSpeed": 5.0,
   "sprintMultiplier": 1.5,
+  "crouchSpeedMultiplier": 0.55,
   "accel": 50.0,
   "friction": 8.0,
   "gravity": 30.0,
@@ -23,6 +24,7 @@
   "arenaHalfSize": 30.0,
   "playerRadius": 0.5,
   "playerHeight": 1.7,
+  "crouchHeight": 1.05,
   "obstacleMinX": 0.0,
   "obstacleMaxX": 0.0,
   "obstacleMinY": 0.0,

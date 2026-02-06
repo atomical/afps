@@ -3,6 +3,7 @@ import rawConfig from '../../../shared/sim/config.json';
 export interface SimConfig {
   moveSpeed: number;
   sprintMultiplier: number;
+  crouchSpeedMultiplier: number;
   accel: number;
   friction: number;
   gravity: number;
@@ -25,6 +26,7 @@ export interface SimConfig {
   arenaHalfSize: number;
   playerRadius: number;
   playerHeight: number;
+  crouchHeight: number;
   obstacleMinX: number;
   obstacleMaxX: number;
   obstacleMinY: number;
@@ -34,6 +36,7 @@ export interface SimConfig {
 export const DEFAULT_SIM_CONFIG: SimConfig = {
   moveSpeed: 5,
   sprintMultiplier: 1.5,
+  crouchSpeedMultiplier: 0.55,
   accel: 50,
   friction: 8,
   gravity: 30,
@@ -56,6 +59,7 @@ export const DEFAULT_SIM_CONFIG: SimConfig = {
   arenaHalfSize: 30,
   playerRadius: 0.5,
   playerHeight: 1.7,
+  crouchHeight: 1.05,
   obstacleMinX: 0,
   obstacleMaxX: 0,
   obstacleMinY: 0,
@@ -71,6 +75,7 @@ export const parseSimConfig = (value: unknown): SimConfig => {
   const record = value as Record<string, unknown>;
   const moveSpeed = readNumber(record.moveSpeed) ?? DEFAULT_SIM_CONFIG.moveSpeed;
   const sprintMultiplier = readNumber(record.sprintMultiplier) ?? DEFAULT_SIM_CONFIG.sprintMultiplier;
+  const crouchSpeedMultiplier = readNumber(record.crouchSpeedMultiplier) ?? DEFAULT_SIM_CONFIG.crouchSpeedMultiplier;
   const accel = readNumber(record.accel) ?? DEFAULT_SIM_CONFIG.accel;
   const friction = readNumber(record.friction) ?? DEFAULT_SIM_CONFIG.friction;
   const gravity = readNumber(record.gravity) ?? DEFAULT_SIM_CONFIG.gravity;
@@ -95,6 +100,7 @@ export const parseSimConfig = (value: unknown): SimConfig => {
   const arenaHalfSize = readNumber(record.arenaHalfSize) ?? DEFAULT_SIM_CONFIG.arenaHalfSize;
   const playerRadius = readNumber(record.playerRadius) ?? DEFAULT_SIM_CONFIG.playerRadius;
   const playerHeight = readNumber(record.playerHeight) ?? DEFAULT_SIM_CONFIG.playerHeight;
+  const crouchHeight = readNumber(record.crouchHeight) ?? DEFAULT_SIM_CONFIG.crouchHeight;
   const obstacleMinX = readNumber(record.obstacleMinX) ?? DEFAULT_SIM_CONFIG.obstacleMinX;
   const obstacleMaxX = readNumber(record.obstacleMaxX) ?? DEFAULT_SIM_CONFIG.obstacleMaxX;
   const obstacleMinY = readNumber(record.obstacleMinY) ?? DEFAULT_SIM_CONFIG.obstacleMinY;
@@ -102,6 +108,7 @@ export const parseSimConfig = (value: unknown): SimConfig => {
   return {
     moveSpeed,
     sprintMultiplier,
+    crouchSpeedMultiplier,
     accel,
     friction,
     gravity,
@@ -124,6 +131,7 @@ export const parseSimConfig = (value: unknown): SimConfig => {
     arenaHalfSize,
     playerRadius,
     playerHeight,
+    crouchHeight,
     obstacleMinX,
     obstacleMaxX,
     obstacleMinY,
@@ -140,5 +148,16 @@ export const resolvePlayerHeight = (config: SimConfig, fallback = DEFAULT_SIM_CO
   return config.playerHeight;
 };
 
-export const resolveEyeHeight = (config: SimConfig, fallback = 1.6) =>
-  Math.min(resolvePlayerHeight(config, fallback), fallback);
+export const resolveCrouchHeight = (config: SimConfig, fallback = DEFAULT_SIM_CONFIG.crouchHeight) => {
+  const standing = resolvePlayerHeight(config);
+  const crouchRaw = Number.isFinite(config.crouchHeight) && config.crouchHeight > 0 ? config.crouchHeight : fallback;
+  return Math.max(0.5, Math.min(standing, crouchRaw));
+};
+
+export const resolveEyeHeight = (config: SimConfig, fallback = 1.6, crouched = false) => {
+  if (crouched) {
+    const crouchHeight = resolveCrouchHeight(config);
+    return Math.max(0.35, Math.min(crouchHeight, crouchHeight - 0.1));
+  }
+  return Math.min(resolvePlayerHeight(config, fallback), fallback);
+};

@@ -1,8 +1,6 @@
 import type { AudioSettings } from '../audio/settings';
 import { DEFAULT_AUDIO_SETTINGS, normalizeAudioSettings } from '../audio/settings';
 import type { FxSettings } from '../rendering/fx_settings';
-import { DEFAULT_FX_SETTINGS, normalizeFxSettings } from '../rendering/fx_settings';
-import { LOADOUT_BITS, normalizeLoadoutBits } from '../weapons/loadout';
 
 export interface SettingsOverlay {
   element: HTMLDivElement;
@@ -28,35 +26,42 @@ export interface SettingsOptions {
   onLoadoutBitsChange?: (bits: number) => void;
 }
 
-const DEFAULT_SENSITIVITY = 0.002;
-const MIN_SENSITIVITY = 0.0005;
-const MAX_SENSITIVITY = 0.01;
-const STEP_SENSITIVITY = 0.0005;
-
-const clampSensitivity = (value: number) =>
-  Math.min(MAX_SENSITIVITY, Math.max(MIN_SENSITIVITY, value));
-
-const formatSensitivity = (value: number) => value.toFixed(4);
-
 const AUDIO_RANGE = {
   min: 0,
   max: 1,
   step: 0.05
 };
 
+const KEYBOARD_ROWS: Array<{ action: string; keys: string }> = [
+  { action: 'Move Forward', keys: 'W / ArrowUp' },
+  { action: 'Move Backward', keys: 'S / ArrowDown' },
+  { action: 'Move Left', keys: 'A / ArrowLeft' },
+  { action: 'Move Right', keys: 'D / ArrowRight' },
+  { action: 'Jump', keys: 'Space' },
+  { action: 'Sprint', keys: 'ShiftLeft / ShiftRight' },
+  { action: 'Crouch', keys: 'C' },
+  { action: 'Dash', keys: 'E' },
+  { action: 'Grapple', keys: 'Q' },
+  { action: 'Shield', keys: 'F' },
+  { action: 'Shockwave', keys: 'R' },
+  { action: 'Weapon 1', keys: '1 / Numpad1' },
+  { action: 'Weapon 2', keys: '2 / Numpad2' },
+  { action: 'Cycle Weapons', keys: 'Mouse Wheel' },
+  { action: 'Fire', keys: 'Mouse Left' },
+  { action: 'Aim Down Sights', keys: 'Mouse Right' },
+  { action: 'Scoreboard', keys: 'Hold P' },
+  { action: 'Toggle Name Tags', keys: 'N' },
+  { action: 'Toggle Settings', keys: 'Escape' },
+  { action: 'Toggle Debug', keys: '` (Backquote)' }
+];
+
+type SettingsTab = 'audio' | 'keyboard';
+
 export const createSettingsOverlay = (
   doc: Document,
   {
-    initialSensitivity,
-    onSensitivityChange,
-    initialShowMetrics,
-    onShowMetricsChange,
     initialAudioSettings,
-    onAudioSettingsChange,
-    initialFxSettings,
-    onFxSettingsChange,
-    initialLoadoutBits,
-    onLoadoutBitsChange
+    onAudioSettingsChange
   }: SettingsOptions = {},
   containerId = 'app'
 ): SettingsOverlay => {
@@ -72,140 +77,31 @@ export const createSettingsOverlay = (
   title.className = 'settings-title';
   title.textContent = 'Settings';
 
-  const group = doc.createElement('div');
-  group.className = 'settings-group';
+  const tabs = doc.createElement('div');
+  tabs.className = 'settings-tabs';
 
-  const label = doc.createElement('label');
-  label.className = 'settings-label';
-  label.textContent = 'Look Sensitivity';
+  const audioTabButton = doc.createElement('button');
+  audioTabButton.type = 'button';
+  audioTabButton.className = 'settings-tab';
+  audioTabButton.textContent = 'Audio';
 
-  const valueText = doc.createElement('span');
-  valueText.className = 'settings-value';
+  const keyboardTabButton = doc.createElement('button');
+  keyboardTabButton.type = 'button';
+  keyboardTabButton.className = 'settings-tab';
+  keyboardTabButton.textContent = 'Keyboard';
 
-  const input = doc.createElement('input');
-  input.type = 'range';
-  input.min = String(MIN_SENSITIVITY);
-  input.max = String(MAX_SENSITIVITY);
-  input.step = String(STEP_SENSITIVITY);
+  tabs.append(audioTabButton, keyboardTabButton);
 
-  label.append(valueText);
-  group.append(label, input);
+  const content = doc.createElement('div');
+  content.className = 'settings-content';
 
-  const audioGroup = doc.createElement('div');
-  audioGroup.className = 'settings-group settings-audio';
-
-  const metricsGroup = doc.createElement('div');
-  metricsGroup.className = 'settings-group settings-toggles';
-
-  const metricsRow = doc.createElement('label');
-  metricsRow.className = 'settings-toggle';
-  const metricsToggle = doc.createElement('input');
-  metricsToggle.type = 'checkbox';
-  const metricsLabel = doc.createElement('span');
-  metricsLabel.textContent = 'Show net stats';
-  metricsRow.append(metricsToggle, metricsLabel);
-  metricsGroup.append(metricsRow);
-
-  const fxGroup = doc.createElement('div');
-  fxGroup.className = 'settings-group settings-toggles settings-fx';
-
-  const fxTitle = doc.createElement('div');
-  fxTitle.className = 'settings-subtitle';
-  fxTitle.textContent = 'Effects';
-
-  const muzzleFlashRow = doc.createElement('label');
-  muzzleFlashRow.className = 'settings-toggle';
-  const muzzleFlashToggle = doc.createElement('input');
-  muzzleFlashToggle.type = 'checkbox';
-  const muzzleFlashLabel = doc.createElement('span');
-  muzzleFlashLabel.textContent = 'Muzzle flash';
-  muzzleFlashRow.append(muzzleFlashToggle, muzzleFlashLabel);
-
-  const tracersRow = doc.createElement('label');
-  tracersRow.className = 'settings-toggle';
-  const tracersToggle = doc.createElement('input');
-  tracersToggle.type = 'checkbox';
-  const tracersLabel = doc.createElement('span');
-  tracersLabel.textContent = 'Tracers';
-  tracersRow.append(tracersToggle, tracersLabel);
-
-  const decalsRow = doc.createElement('label');
-  decalsRow.className = 'settings-toggle';
-  const decalsToggle = doc.createElement('input');
-  decalsToggle.type = 'checkbox';
-  const decalsLabel = doc.createElement('span');
-  decalsLabel.textContent = 'Decals';
-  decalsRow.append(decalsToggle, decalsLabel);
-
-  const aimDebugRow = doc.createElement('label');
-  aimDebugRow.className = 'settings-toggle';
-  const aimDebugToggle = doc.createElement('input');
-  aimDebugToggle.type = 'checkbox';
-  const aimDebugLabel = doc.createElement('span');
-  aimDebugLabel.textContent = 'Aim debug';
-  aimDebugRow.append(aimDebugToggle, aimDebugLabel);
-
-  fxGroup.append(fxTitle, muzzleFlashRow, tracersRow, decalsRow, aimDebugRow);
-
-  const attachmentsGroup = doc.createElement('div');
-  attachmentsGroup.className = 'settings-group settings-toggles settings-attachments';
-
-  const attachmentsTitle = doc.createElement('div');
-  attachmentsTitle.className = 'settings-subtitle';
-  attachmentsTitle.textContent = 'Attachments';
-
-  const suppressorRow = doc.createElement('label');
-  suppressorRow.className = 'settings-toggle';
-  const suppressorToggle = doc.createElement('input');
-  suppressorToggle.type = 'checkbox';
-  const suppressorLabel = doc.createElement('span');
-  suppressorLabel.textContent = 'Suppressor';
-  suppressorRow.append(suppressorToggle, suppressorLabel);
-
-  const compensatorRow = doc.createElement('label');
-  compensatorRow.className = 'settings-toggle';
-  const compensatorToggle = doc.createElement('input');
-  compensatorToggle.type = 'checkbox';
-  const compensatorLabel = doc.createElement('span');
-  compensatorLabel.textContent = 'Compensator';
-  compensatorRow.append(compensatorToggle, compensatorLabel);
-
-  const opticRow = doc.createElement('label');
-  opticRow.className = 'settings-toggle';
-  const opticToggle = doc.createElement('input');
-  opticToggle.type = 'checkbox';
-  const opticLabel = doc.createElement('span');
-  opticLabel.textContent = 'Optic';
-  opticRow.append(opticToggle, opticLabel);
-
-  const extendedMagRow = doc.createElement('label');
-  extendedMagRow.className = 'settings-toggle';
-  const extendedMagToggle = doc.createElement('input');
-  extendedMagToggle.type = 'checkbox';
-  const extendedMagLabel = doc.createElement('span');
-  extendedMagLabel.textContent = 'Extended mag';
-  extendedMagRow.append(extendedMagToggle, extendedMagLabel);
-
-  const gripRow = doc.createElement('label');
-  gripRow.className = 'settings-toggle';
-  const gripToggle = doc.createElement('input');
-  gripToggle.type = 'checkbox';
-  const gripLabel = doc.createElement('span');
-  gripLabel.textContent = 'Grip';
-  gripRow.append(gripToggle, gripLabel);
-
-  attachmentsGroup.append(
-    attachmentsTitle,
-    suppressorRow,
-    compensatorRow,
-    opticRow,
-    extendedMagRow,
-    gripRow
-  );
+  const audioSection = doc.createElement('section');
+  audioSection.className = 'settings-section';
+  audioSection.dataset.tab = 'audio';
 
   const audioTitle = doc.createElement('div');
   audioTitle.className = 'settings-subtitle';
-  audioTitle.textContent = 'Audio';
+  audioTitle.textContent = 'Sound';
 
   const audioList = doc.createElement('div');
   audioList.className = 'settings-audio-list';
@@ -255,104 +151,52 @@ export const createSettingsOverlay = (
   appendAudioControl(sfxRow.row, sfxSlider);
   appendAudioControl(uiRow.row, uiSlider);
   appendAudioControl(musicRow.row, musicSlider);
-  audioGroup.append(audioTitle, audioList, muteRow);
+  audioSection.append(audioTitle, audioList, muteRow);
 
-  panel.append(title, group, metricsGroup, fxGroup, attachmentsGroup, audioGroup);
+  const keyboardSection = doc.createElement('section');
+  keyboardSection.className = 'settings-section';
+  keyboardSection.dataset.tab = 'keyboard';
+
+  const keyboardTitle = doc.createElement('div');
+  keyboardTitle.className = 'settings-subtitle';
+  keyboardTitle.textContent = 'Keyboard (Read Only)';
+
+  const keyboardHint = doc.createElement('div');
+  keyboardHint.className = 'settings-hint';
+  keyboardHint.textContent = 'Controls are fixed in this build.';
+
+  const keyboardList = doc.createElement('div');
+  keyboardList.className = 'settings-keyboard-list';
+  for (const binding of KEYBOARD_ROWS) {
+    const row = doc.createElement('div');
+    row.className = 'settings-keyboard-row';
+    const action = doc.createElement('span');
+    action.className = 'settings-keyboard-action';
+    action.textContent = binding.action;
+    const keys = doc.createElement('span');
+    keys.className = 'settings-keyboard-keys';
+    keys.textContent = binding.keys;
+    row.append(action, keys);
+    keyboardList.append(row);
+  }
+  keyboardSection.append(keyboardTitle, keyboardHint, keyboardList);
+
+  content.append(audioSection, keyboardSection);
+  panel.append(title, tabs, content);
   overlay.append(panel);
   host.appendChild(overlay);
 
-  const setSensitivity = (value: number) => {
-    const safeValue = clampSensitivity(Number.isFinite(value) ? value : DEFAULT_SENSITIVITY);
-    input.value = String(safeValue);
-    valueText.textContent = formatSensitivity(safeValue);
+  const setTab = (tab: SettingsTab) => {
+    audioTabButton.dataset.active = tab === 'audio' ? 'true' : 'false';
+    keyboardTabButton.dataset.active = tab === 'keyboard' ? 'true' : 'false';
+    audioSection.dataset.active = tab === 'audio' ? 'true' : 'false';
+    keyboardSection.dataset.active = tab === 'keyboard' ? 'true' : 'false';
+    audioSection.hidden = tab !== 'audio';
+    keyboardSection.hidden = tab !== 'keyboard';
   };
 
-  const getSensitivity = () => Number(input.value);
-
-  input.addEventListener('input', () => {
-    const next = clampSensitivity(getSensitivity());
-    setSensitivity(next);
-    onSensitivityChange?.(next);
-  });
-
-  const setMetricsVisible = (visible: boolean) => {
-    metricsToggle.checked = visible;
-  };
-
-  metricsToggle.addEventListener('change', () => {
-    onShowMetricsChange?.(metricsToggle.checked);
-  });
-
-  let fxSettings = normalizeFxSettings(initialFxSettings ?? DEFAULT_FX_SETTINGS);
-
-  const setFxSettings = (settings: FxSettings) => {
-    fxSettings = normalizeFxSettings(settings);
-    muzzleFlashToggle.checked = fxSettings.muzzleFlash;
-    tracersToggle.checked = fxSettings.tracers;
-    decalsToggle.checked = fxSettings.decals;
-    aimDebugToggle.checked = fxSettings.aimDebug;
-  };
-
-  const emitFxSettings = () => {
-    fxSettings = {
-      muzzleFlash: muzzleFlashToggle.checked,
-      tracers: tracersToggle.checked,
-      decals: decalsToggle.checked,
-      aimDebug: aimDebugToggle.checked
-    };
-    onFxSettingsChange?.(fxSettings);
-  };
-
-  muzzleFlashToggle.addEventListener('change', emitFxSettings);
-  tracersToggle.addEventListener('change', emitFxSettings);
-  decalsToggle.addEventListener('change', emitFxSettings);
-  aimDebugToggle.addEventListener('change', emitFxSettings);
-
-  let loadoutBits = normalizeLoadoutBits(initialLoadoutBits ?? 0);
-
-  const setLoadoutBits = (value: number) => {
-    loadoutBits = normalizeLoadoutBits(value);
-    suppressorToggle.checked = (loadoutBits & LOADOUT_BITS.suppressor) !== 0;
-    compensatorToggle.checked = (loadoutBits & LOADOUT_BITS.compensator) !== 0;
-    opticToggle.checked = (loadoutBits & LOADOUT_BITS.optic) !== 0;
-    extendedMagToggle.checked = (loadoutBits & LOADOUT_BITS.extendedMag) !== 0;
-    gripToggle.checked = (loadoutBits & LOADOUT_BITS.grip) !== 0;
-  };
-
-  const emitLoadoutBits = (nextBits: number) => {
-    const normalized = normalizeLoadoutBits(nextBits);
-    if (normalized === loadoutBits) {
-      return;
-    }
-    loadoutBits = normalized;
-    onLoadoutBitsChange?.(loadoutBits);
-  };
-
-  suppressorToggle.addEventListener('change', () => {
-    emitLoadoutBits(
-      suppressorToggle.checked ? loadoutBits | LOADOUT_BITS.suppressor : loadoutBits & ~LOADOUT_BITS.suppressor
-    );
-  });
-
-  compensatorToggle.addEventListener('change', () => {
-    emitLoadoutBits(
-      compensatorToggle.checked ? loadoutBits | LOADOUT_BITS.compensator : loadoutBits & ~LOADOUT_BITS.compensator
-    );
-  });
-
-  opticToggle.addEventListener('change', () => {
-    emitLoadoutBits(opticToggle.checked ? loadoutBits | LOADOUT_BITS.optic : loadoutBits & ~LOADOUT_BITS.optic);
-  });
-
-  extendedMagToggle.addEventListener('change', () => {
-    emitLoadoutBits(
-      extendedMagToggle.checked ? loadoutBits | LOADOUT_BITS.extendedMag : loadoutBits & ~LOADOUT_BITS.extendedMag
-    );
-  });
-
-  gripToggle.addEventListener('change', () => {
-    emitLoadoutBits(gripToggle.checked ? loadoutBits | LOADOUT_BITS.grip : loadoutBits & ~LOADOUT_BITS.grip);
-  });
+  audioTabButton.addEventListener('click', () => setTab('audio'));
+  keyboardTabButton.addEventListener('click', () => setTab('keyboard'));
 
   let audioSettings = normalizeAudioSettings(initialAudioSettings ?? DEFAULT_AUDIO_SETTINGS);
   const formatAudioValue = (value: number) => `${Math.round(value * 100)}%`;
@@ -400,14 +244,15 @@ export const createSettingsOverlay = (
     setVisible(!isVisible());
   };
 
-  setSensitivity(
-    Number.isFinite(initialSensitivity) && (initialSensitivity ?? 0) > 0
-      ? initialSensitivity
-      : DEFAULT_SENSITIVITY
-  );
-  setMetricsVisible(initialShowMetrics ?? true);
-  setFxSettings(fxSettings);
-  setLoadoutBits(loadoutBits);
+  const setSensitivity = (_value: number) => {
+    // Sensitivity is intentionally no longer configurable from settings.
+  };
+
+  const setMetricsVisible = (_visible: boolean) => {
+    // Metrics visibility is intentionally no longer configurable from settings.
+  };
+
+  setTab('audio');
   setAudioSettings(audioSettings);
 
   const dispose = () => {

@@ -21,6 +21,7 @@ describe('wasm sim wrapper', () => {
     _sim_get_vy: vi.fn(() => -0.75),
     _sim_get_vz: vi.fn(() => 1.25),
     _sim_get_dash_cooldown: vi.fn(() => 0.25),
+    _sim_get_crouched: vi.fn(() => 0),
     _sim_get_shield_cooldown: vi.fn(() => 0.5),
     _sim_get_shield_timer: vi.fn(() => 1.5),
     _sim_get_shockwave_cooldown: vi.fn(() => 0.1)
@@ -31,6 +32,7 @@ describe('wasm sim wrapper', () => {
     const sim = createWasmSim(module, {
       moveSpeed: 7,
       sprintMultiplier: 2,
+      crouchSpeedMultiplier: 0.6,
       accel: 40,
       friction: 6,
       gravity: 20,
@@ -53,6 +55,7 @@ describe('wasm sim wrapper', () => {
       arenaHalfSize: 30,
       playerRadius: 0.4,
       playerHeight: 1.9,
+      crouchHeight: 1.2,
       obstacleMinX: -1,
       obstacleMaxX: 1,
       obstacleMinY: -0.5,
@@ -64,6 +67,7 @@ describe('wasm sim wrapper', () => {
       42,
       7,
       2,
+      0.6,
       40,
       6,
       20,
@@ -86,6 +90,7 @@ describe('wasm sim wrapper', () => {
       30,
       0.4,
       1.9,
+      1.2,
       -1,
       1,
       -0.5,
@@ -96,13 +101,29 @@ describe('wasm sim wrapper', () => {
       { moveX: 1, moveY: -1, sprint: true, jump: true, dash: true, grapple: true, shield: false, shockwave: false },
       0.016
     );
-    expect(module._sim_step).toHaveBeenCalledWith(42, 0.016, 1, -1, 1, 1, 1, 1, 0, 0, 0, 0);
+    expect(module._sim_step).toHaveBeenCalledWith(42, 0.016, 1, -1, 1, 1, 1, 1, 0, 0, 0, 0, 0);
 
     sim.step(
       { moveX: 0, moveY: 0, sprint: false, jump: false, dash: false, grapple: false, shield: true, shockwave: true },
       0.016
     );
-    expect(module._sim_step).toHaveBeenCalledWith(42, 0.016, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0);
+    expect(module._sim_step).toHaveBeenCalledWith(42, 0.016, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0);
+
+    sim.step(
+      {
+        moveX: 0,
+        moveY: 1,
+        sprint: false,
+        jump: false,
+        dash: false,
+        grapple: false,
+        shield: false,
+        shockwave: false,
+        crouch: true
+      },
+      0.016
+    );
+    expect(module._sim_step).toHaveBeenCalledWith(42, 0.016, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0);
 
     sim.step(
       {
@@ -117,10 +138,13 @@ describe('wasm sim wrapper', () => {
       },
       Number.NaN
     );
-    expect(module._sim_step).toHaveBeenCalledWith(42, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    expect(module._sim_step).toHaveBeenCalledWith(42, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
     sim.setState(2, -3, 1, 0.5, -1, 2, 0.2);
-    expect(module._sim_set_state).toHaveBeenCalledWith(42, 2, -3, 1, 0.5, -1, 2, 0.2);
+    expect(module._sim_set_state).toHaveBeenCalledWith(42, 2, -3, 1, 0.5, -1, 2, 0.2, 0);
+
+    sim.setState(2, -3, 1, 0.5, -1, 2, 0.2, true);
+    expect(module._sim_set_state).toHaveBeenCalledWith(42, 2, -3, 1, 0.5, -1, 2, 0.2, 1);
 
     sim.setState(
       Number.NaN,
@@ -131,7 +155,7 @@ describe('wasm sim wrapper', () => {
       Number.NaN,
       Number.NaN
     );
-    expect(module._sim_set_state).toHaveBeenCalledWith(42, 0, 0, 0, 0, 0, 0, 0);
+    expect(module._sim_set_state).toHaveBeenCalledWith(42, 0, 0, 0, 0, 0, 0, 0, 0);
 
     sim.setColliders([
       { id: 9, minX: 1, minY: -2, minZ: 0, maxX: 2, maxY: 3, maxZ: 4, surfaceType: 7.9 },
@@ -150,6 +174,8 @@ describe('wasm sim wrapper', () => {
       velY: -0.75,
       velZ: 1.25,
       dashCooldown: 0.25,
+      crouched: false,
+      eyeHeight: 1.6,
       shieldCooldown: 0.5,
       shieldTimer: 1.5,
       shockwaveCooldown: 0.1
@@ -161,6 +187,7 @@ describe('wasm sim wrapper', () => {
     sim.setConfig({
       moveSpeed: 5,
       sprintMultiplier: 1.5,
+      crouchSpeedMultiplier: SIM_CONFIG.crouchSpeedMultiplier,
       accel: SIM_CONFIG.accel,
       friction: SIM_CONFIG.friction,
       gravity: SIM_CONFIG.gravity,
@@ -183,6 +210,7 @@ describe('wasm sim wrapper', () => {
       arenaHalfSize: SIM_CONFIG.arenaHalfSize,
       playerRadius: SIM_CONFIG.playerRadius,
       playerHeight: SIM_CONFIG.playerHeight,
+      crouchHeight: SIM_CONFIG.crouchHeight,
       obstacleMinX: SIM_CONFIG.obstacleMinX,
       obstacleMaxX: SIM_CONFIG.obstacleMaxX,
       obstacleMinY: SIM_CONFIG.obstacleMinY,
@@ -192,6 +220,7 @@ describe('wasm sim wrapper', () => {
       42,
       5,
       1.5,
+      SIM_CONFIG.crouchSpeedMultiplier,
       SIM_CONFIG.accel,
       SIM_CONFIG.friction,
       SIM_CONFIG.gravity,
@@ -214,6 +243,7 @@ describe('wasm sim wrapper', () => {
       SIM_CONFIG.arenaHalfSize,
       SIM_CONFIG.playerRadius,
       SIM_CONFIG.playerHeight,
+      SIM_CONFIG.crouchHeight,
       SIM_CONFIG.obstacleMinX,
       SIM_CONFIG.obstacleMaxX,
       SIM_CONFIG.obstacleMinY,
@@ -235,6 +265,7 @@ describe('wasm sim wrapper', () => {
       42,
       SIM_CONFIG.moveSpeed,
       SIM_CONFIG.sprintMultiplier,
+      SIM_CONFIG.crouchSpeedMultiplier,
       SIM_CONFIG.accel,
       SIM_CONFIG.friction,
       SIM_CONFIG.gravity,
@@ -257,6 +288,7 @@ describe('wasm sim wrapper', () => {
       SIM_CONFIG.arenaHalfSize,
       SIM_CONFIG.playerRadius,
       SIM_CONFIG.playerHeight,
+      SIM_CONFIG.crouchHeight,
       SIM_CONFIG.obstacleMinX,
       SIM_CONFIG.obstacleMaxX,
       SIM_CONFIG.obstacleMinY,
@@ -291,6 +323,8 @@ describe('wasm sim wrapper', () => {
       velY: 0,
       velZ: 0,
       dashCooldown: 0,
+      crouched: false,
+      eyeHeight: 1.6,
       shieldCooldown: 0,
       shieldTimer: 0,
       shockwaveCooldown: 0

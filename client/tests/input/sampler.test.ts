@@ -35,6 +35,7 @@ describe('input sampler', () => {
     dispatchKey('keydown', 'KeyW');
     dispatchKey('keydown', 'KeyD');
     dispatchKey('keydown', 'ShiftLeft');
+    dispatchKey('keydown', 'KeyC');
     dispatchKey('keydown', 'KeyE');
     dispatchKey('keydown', 'KeyQ');
     dispatchKey('keydown', 'KeyF');
@@ -45,6 +46,7 @@ describe('input sampler', () => {
     expect(sample.moveY).toBe(1);
     expect(sample.moveX).toBe(1);
     expect(sample.sprint).toBe(true);
+    expect(sample.crouch).toBe(true);
     expect(sample.dash).toBe(true);
     expect(sample.grapple).toBe(true);
     expect(sample.shield).toBe(true);
@@ -54,6 +56,7 @@ describe('input sampler', () => {
     dispatchKey('keyup', 'KeyW');
     dispatchKey('keyup', 'KeyD');
     dispatchKey('keyup', 'ShiftLeft');
+    dispatchKey('keyup', 'KeyC');
     dispatchKey('keyup', 'KeyE');
     dispatchKey('keyup', 'KeyQ');
     dispatchKey('keyup', 'KeyF');
@@ -64,6 +67,7 @@ describe('input sampler', () => {
     expect(sample.moveY).toBe(0);
     expect(sample.moveX).toBe(0);
     expect(sample.sprint).toBe(false);
+    expect(sample.crouch).toBe(false);
     expect(sample.dash).toBe(false);
     expect(sample.grapple).toBe(false);
     expect(sample.shield).toBe(false);
@@ -152,6 +156,23 @@ describe('input sampler', () => {
     expect(sampler.sample().moveY).toBe(0);
   });
 
+  it('clears pressed keys when reset is called', () => {
+    const sampler = createInputSampler({ target: window });
+
+    dispatchKey('keydown', 'KeyC');
+    dispatchKey('keydown', 'KeyW');
+    let sample = sampler.sample();
+    expect(sample.crouch).toBe(true);
+    expect(sample.moveY).toBe(1);
+
+    sampler.reset();
+    sample = sampler.sample();
+    expect(sample.crouch).toBe(false);
+    expect(sample.moveY).toBe(0);
+
+    sampler.dispose();
+  });
+
   it('supports primary weapon slot selection', () => {
     const sampler = createInputSampler({ target: window });
 
@@ -228,6 +249,7 @@ describe('input sampler', () => {
       right: ['KeyL'],
       jump: ['KeyU'],
       sprint: ['KeyO'],
+      crouch: ['KeyY'],
       dash: ['KeyP'],
       grapple: ['KeyG'],
       shield: ['KeyH'],
@@ -240,6 +262,7 @@ describe('input sampler', () => {
     dispatchKey('keydown', 'KeyI');
     dispatchKey('keydown', 'KeyL');
     dispatchKey('keydown', 'KeyO');
+    dispatchKey('keydown', 'KeyY');
     dispatchKey('keydown', 'KeyP');
     dispatchKey('keydown', 'KeyG');
     dispatchKey('keydown', 'KeyH');
@@ -250,6 +273,7 @@ describe('input sampler', () => {
     expect(sample.moveY).toBe(1);
     expect(sample.moveX).toBe(1);
     expect(sample.sprint).toBe(true);
+    expect(sample.crouch).toBe(true);
     expect(sample.dash).toBe(true);
     expect(sample.grapple).toBe(true);
     expect(sample.shield).toBe(true);
