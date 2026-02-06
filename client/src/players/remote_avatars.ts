@@ -96,8 +96,9 @@ export interface RemoteAvatarManager {
   dispose: () => void;
 }
 
-const VISUAL_HEIGHT_SCALE = 0.65;
-const BODY_HEIGHT = resolvePlayerHeight(SIM_CONFIG) * VISUAL_HEIGHT_SCALE;
+// Keep third-person avatar height aligned with gameplay collision height so
+// local (first-person) and remote player proportions match.
+const BODY_HEIGHT = resolvePlayerHeight(SIM_CONFIG);
 const BODY_HALF = BODY_HEIGHT / 2;
 const STALE_MS = 8000;
 const NAMEPLATE_WIDTH = 256;
@@ -138,7 +139,9 @@ const HAND_DEFAULT_OFFSET: WeaponOffset = {
   rotation: [0, 0, 0],
   scale: 1
 };
-const MODEL_YAW_OFFSET = 0;
+// Character GLBs are authored facing +Z, while gameplay yaw 0 faces -Y (client -Z).
+// Keep an offset of PI so remote body facing matches authoritative view yaw.
+const MODEL_YAW_OFFSET = Math.PI;
 const BASE_URL = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
 const NORMALIZED_BASE = BASE_URL.endsWith('/') ? BASE_URL : `${BASE_URL}/`;
 const WEAPON_MODEL_ROOT = `${NORMALIZED_BASE}assets/weapons/cc0/kenney_blaster_kit/`;
