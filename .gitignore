@@ -25,3 +25,4 @@ coverage/
 # Misc
 kenney_city-kit-suburban_20
 *.pid
+tmp
