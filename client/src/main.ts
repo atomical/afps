@@ -1616,7 +1616,9 @@ let debugOverlaysVisible = false;
 let scoreboardVisible = false;
 const refreshStatusVisibility = () => {
   status.setVisible(debugOverlaysVisible || reconnecting);
+  status.setMetricsVisible(debugOverlaysVisible || metricsVisible);
   status.element.dataset.reconnect = reconnecting ? 'true' : 'false';
+  status.element.dataset.debug = debugOverlaysVisible ? 'true' : 'false';
 };
 const setDebugOverlaysVisible = (visible: boolean) => {
   debugOverlaysVisible = visible;
@@ -1790,7 +1792,7 @@ if (!signalingUrl) {
     const updateMetrics = () => {
       const now = window.performance.now();
       const snapshotAge = lastSnapshotAt > 0 ? Math.max(0, now - lastSnapshotAt) : null;
-      const rttText = lastRttMs > 0 ? `${Math.round(lastRttMs)}ms` : '--';
+      const pingText = lastRttMs > 0 ? `${Math.round(lastRttMs)}ms` : '--';
       const snapshotText = snapshotAge !== null ? `${Math.round(snapshotAge)}ms` : '--';
       const driftText = lastPredictionError > 0 ? lastPredictionError.toFixed(2) : '0.00';
       const keyframeText = snapshotKeyframeInterval !== null ? `${snapshotKeyframeInterval}` : '--';
@@ -1825,7 +1827,7 @@ if (!signalingUrl) {
       const poolStats = app.getFxPoolStats();
       const poolText = `pool m ${poolStats.muzzleFlashes.active}/${poolStats.muzzleFlashes.free} t ${poolStats.tracers.active}/${poolStats.tracers.free} i ${poolStats.impacts.active}/${poolStats.impacts.free} d ${poolStats.decals.active}/${poolStats.decals.free}`;
       status.setMetrics?.(
-        `rtt ${rttText} · snap ${snapshotText} · drift ${driftText} · kf ${keyframeText} · ev ${eventRateText} · late ${lateText} · drop ${dropText} · ${poolText}`
+        `ping ${pingText} · snap ${snapshotText} · drift ${driftText} · kf ${keyframeText} · ev ${eventRateText} · late ${lateText} · drop ${dropText} · ${poolText}`
       );
     };
 

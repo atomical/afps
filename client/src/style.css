@@ -44,6 +44,10 @@ canvas {
   pointer-events: none;
 }
 
+.status-overlay[data-debug='true'] {
+  top: 74px;
+}
+
 .status-overlay[data-visible='false'] {
   display: none;
 }

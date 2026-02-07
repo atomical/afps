@@ -330,6 +330,8 @@ describe('main entry', () => {
     statusMock.setMetricsVisible.mockReset();
     statusMock.setVisible.mockReset();
     statusMock.dispose.mockReset();
+    statusMock.element.removeAttribute('data-reconnect');
+    statusMock.element.removeAttribute('data-debug');
     hudMock.setLockState.mockReset();
     hudMock.setSensitivity.mockReset();
     hudMock.setVitals.mockReset();
@@ -1785,6 +1787,7 @@ describe('main entry', () => {
 
     expect(statusMock.setMetrics).toHaveBeenCalledWith(expect.stringContaining('kf 7'));
     const lastMetrics = statusMock.setMetrics.mock.calls.at(-1)?.[0] as string;
+    expect(lastMetrics).toEqual(expect.stringContaining('ping '));
     expect(lastMetrics).toEqual(expect.stringContaining('ev '));
     expect(lastMetrics).toEqual(expect.stringContaining('pool '));
   });
@@ -1881,6 +1884,7 @@ describe('main entry', () => {
 
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Backquote' }));
     expect(statusMock.setVisible).toHaveBeenCalledWith(true);
+    expect(statusMock.element.dataset.debug).toBe('true');
     expect(settingsMock.setVisible).not.toHaveBeenCalled();
     expect(hudMock.element.dataset.debug).toBe('true');
     expect(logSpy).toHaveBeenCalledWith('[afps] player coords', {
@@ -1888,6 +1892,25 @@ describe('main entry', () => {
       y: -7.891,
       z: 0.123
     });
+    logSpy.mockRestore();
+  });
+
+  it('forces status metrics visible while debug overlays are open', async () => {
+    envMock.getSignalingUrl.mockReturnValue(undefined);
+    envMock.getSignalingAuthToken.mockReturnValue(undefined);
+    metricsSettingsMock.loadMetricsVisibility.mockReturnValue(false);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await import('../src/main');
+
+    expect(statusMock.setMetricsVisible).toHaveBeenCalledWith(false);
+    statusMock.setMetricsVisible.mockClear();
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Backquote' }));
+    expect(statusMock.setMetricsVisible).toHaveBeenCalledWith(true);
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Backquote' }));
+    expect(statusMock.setMetricsVisible.mock.calls.at(-1)?.[0]).toBe(false);
     logSpy.mockRestore();
   });
 
