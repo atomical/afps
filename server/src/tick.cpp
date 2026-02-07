@@ -649,8 +649,11 @@ void TickLoop::Step() {
 
   std::unordered_map<std::string, std::vector<FxEventData>> fx_events;
   fx_events.reserve(active_ids.size());
+  std::unordered_map<std::string, std::vector<FxEventData>> reliable_decal_events;
+  reliable_decal_events.reserve(active_ids.size());
   for (const auto &connection_id : active_ids) {
     fx_events.emplace(connection_id, std::vector<FxEventData>{});
+    reliable_decal_events.emplace(connection_id, std::vector<FxEventData>{});
   }
   auto emit_fx_all = [&](const FxEventData &event) {
     for (auto &entry : fx_events) {
@@ -661,6 +664,17 @@ void TickLoop::Step() {
     auto iter = fx_events.find(connection_id);
     if (iter != fx_events.end()) {
       iter->second.push_back(event);
+    }
+  };
+  auto emit_reliable_decal_to = [&](const std::string &connection_id, const FxEventData &event) {
+    auto iter = reliable_decal_events.find(connection_id);
+    if (iter != reliable_decal_events.end()) {
+      iter->second.push_back(event);
+    }
+  };
+  auto emit_reliable_decal_all = [&](const FxEventData &event) {
+    for (auto &entry : reliable_decal_events) {
+      entry.second.push_back(event);
     }
   };
   auto to_spawn_fx = [](const TickLoop::PickupState &pickup) {
@@ -1397,14 +1411,17 @@ void TickLoop::Step() {
 	          const double dy = recipient_state_iter->second.y - shooter_pose.y;
 	          const double dz = recipient_state_iter->second.z - shooter_pose.z;
 	          const double dist_sq = dx * dx + dy * dy + dz * dz;
-	          if (dist_sq > cull_sq && recipient_id != event.connection_id) {
-	            continue;
-	          }
 	          ShotTraceFx recipient_trace = trace;
+	          // Keep world-hit data replicated for decal/impact sync, but suppress
+	          // long-distance tracers to control visual noise/bandwidth.
 	          if (dist_sq > cull_sq) {
 	            recipient_trace.show_tracer = false;
 	          }
 	          emit_fx_to(recipient_id, recipient_trace);
+	          if (hit_kind == HitKind::World) {
+	            // Stream world-hit traces reliably so remote decals are authoritative.
+	            emit_reliable_decal_to(recipient_id, recipient_trace);
+	          }
 	        }
 	      }
 
@@ -1576,6 +1593,9 @@ void TickLoop::Step() {
 	        impact_event.normal_oct_y = normal_oct.y;
 	        impact_event.surface_type = surface;
 	        emit_fx_all(impact_event);
+	        if (impact.hit_world) {
+	          emit_reliable_decal_all(impact_event);
+	        }
 
 	        ProjectileRemoveFx remove_event;
 	        remove_event.projectile_id = projectile.id;
@@ -1594,19 +1614,22 @@ void TickLoop::Step() {
 	    return std::visit(
 	        [](const auto &typed) {
 	          using T = std::decay_t<decltype(typed)>;
+	          // Lower values are dropped first when an unreliable FX batch exceeds
+	          // packet budget. Keep world-hit traces late in this list so remote
+	          // clients still receive impact/decal placement data.
 	          if constexpr (std::is_same_v<T, NearMissFx>) return 0;
-	          if constexpr (std::is_same_v<T, ShotTraceFx>) return 1;
-	          if constexpr (std::is_same_v<T, ProjectileImpactFx>) return 2;
-	          if constexpr (std::is_same_v<T, ProjectileSpawnFx>) return 3;
-	          if constexpr (std::is_same_v<T, ProjectileRemoveFx>) return 4;
-	          if constexpr (std::is_same_v<T, ReloadFx>) return 5;
-	          if constexpr (std::is_same_v<T, OverheatFx>) return 6;
-	          if constexpr (std::is_same_v<T, VentFx>) return 7;
-	          if constexpr (std::is_same_v<T, ShotFiredFx>) return 8;
-	          if constexpr (std::is_same_v<T, HitConfirmedFx>) return 9;
-	          if constexpr (std::is_same_v<T, PickupTakenFx>) return 10;
-	          if constexpr (std::is_same_v<T, PickupSpawnedFx>) return 11;
-	          return 1;
+	          if constexpr (std::is_same_v<T, PickupSpawnedFx>) return 1;
+	          if constexpr (std::is_same_v<T, PickupTakenFx>) return 2;
+	          if constexpr (std::is_same_v<T, ReloadFx>) return 3;
+	          if constexpr (std::is_same_v<T, OverheatFx>) return 4;
+	          if constexpr (std::is_same_v<T, VentFx>) return 5;
+	          if constexpr (std::is_same_v<T, ShotFiredFx>) return 6;
+	          if constexpr (std::is_same_v<T, ProjectileSpawnFx>) return 7;
+	          if constexpr (std::is_same_v<T, ProjectileRemoveFx>) return 8;
+	          if constexpr (std::is_same_v<T, ShotTraceFx>) return 9;
+	          if constexpr (std::is_same_v<T, ProjectileImpactFx>) return 10;
+	          if constexpr (std::is_same_v<T, HitConfirmedFx>) return 11;
+	          return 0;
 	        },
 	        event);
 	  };
@@ -1641,6 +1664,41 @@ void TickLoop::Step() {
 	        }
 	      }
 	      events.erase(events.begin() + static_cast<long>(drop_index));
+	    }
+	  }
+
+	  constexpr size_t kMaxReliableDecalEventsPerMessage = 24;
+	  for (const auto &recipient_id : active_ids) {
+	    auto iter = reliable_decal_events.find(recipient_id);
+	    if (iter == reliable_decal_events.end() || iter->second.empty()) {
+	      continue;
+	    }
+	    auto &events = iter->second;
+	    size_t index = 0;
+	    while (index < events.size()) {
+	      size_t count = std::min(kMaxReliableDecalEventsPerMessage, events.size() - index);
+	      bool sent = false;
+	      while (count > 0 && !sent) {
+	        GameEventBatch batch;
+	        batch.server_tick = server_tick_;
+	        batch.events.insert(batch.events.end(),
+	                            events.begin() + static_cast<long>(index),
+	                            events.begin() + static_cast<long>(index + count));
+	        const auto payload = BuildGameEventBatch(batch,
+	                                                 store_.NextServerMessageSeq(recipient_id),
+	                                                 store_.LastClientMessageSeq(recipient_id));
+	        if (payload.size() <= kMaxClientMessageBytes) {
+	          store_.SendReliable(recipient_id, payload);
+	          index += count;
+	          sent = true;
+	        } else {
+	          count /= 2;
+	        }
+	      }
+	      if (!sent) {
+	        // Skip malformed/unencodable entry to avoid stalling the stream.
+	        index += 1;
+	      }
 	    }
 	  }
 

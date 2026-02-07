@@ -988,6 +988,46 @@ describe('webrtc connector', () => {
     vi.useRealTimers();
   });
 
+  it('forwards game events from reliable channel', async () => {
+    vi.useFakeTimers();
+    const signaling = new FakeSignalingClient();
+    const rtcFactory = new FakePeerConnectionFactory();
+    const onGameEvent = vi.fn();
+    const connector = createWebRtcConnector({
+      signaling,
+      rtcFactory,
+      logger: silentLogger,
+      pollIntervalMs: 100,
+      connectTimeoutMs: 1000,
+      timers: createTimers(),
+      onGameEvent
+    });
+
+    const connectPromise = connector.connect();
+    const pc = await waitForPeer(rtcFactory);
+
+    const reliable = new FakeDataChannel('afps_reliable');
+    const unreliable = new FakeDataChannel('afps_unreliable');
+    pc.emitDataChannel(reliable);
+    pc.emitDataChannel(unreliable);
+    reliable.open();
+    unreliable.open();
+    await Promise.resolve();
+    reliable.emitMessage(buildServerHello(signaling.connectionId));
+
+    const session = await connectPromise;
+
+    reliable.emitMessage(buildGameEventHitConfirmed());
+
+    expect(onGameEvent).toHaveBeenCalledWith({
+      type: 'GameEventBatch',
+      serverTick: 0,
+      events: [{ type: 'HitConfirmedFx', targetId: 'target', damage: 5.5, killed: true }]
+    });
+    session.close();
+    vi.useRealTimers();
+  });
+
   it('forwards weapon fx events from unreliable channel', async () => {
     vi.useFakeTimers();
     const signaling = new FakeSignalingClient();

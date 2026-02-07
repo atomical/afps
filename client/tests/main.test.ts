@@ -936,6 +936,159 @@ describe('main entry', () => {
     expect(fire.dirZ()).toBeLessThan(0);
   });
 
+  it('spawns decals for remote world hit traces even when tracer rendering is culled', async () => {
+    connectMock.mockResolvedValue({
+      connectionId: 'conn',
+      serverHello: { serverTickRate: 60, snapshotRate: 20 },
+      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: vi.fn() },
+      nextClientMessageSeq: () => 1,
+      getServerSeqAck: () => 0
+    });
+    envMock.getSignalingUrl.mockReturnValue('https://example.test');
+    envMock.getSignalingAuthToken.mockReturnValue('token');
+
+    await import('../src/main');
+    await flushPromises();
+
+    appInstance.spawnDecalVfx.mockClear();
+    const onGameEvent = connectMock.mock.calls[0]?.[0]?.onGameEvent as
+      | ((event: { type: string; serverTick: number; events: unknown[] }) => void)
+      | undefined;
+    onGameEvent?.({
+      type: 'GameEventBatch',
+      serverTick: 0,
+      events: [
+        {
+          type: 'ShotTraceFx',
+          shooterId: 'other',
+          weaponSlot: 0,
+          shotSeq: 19,
+          dirOctX: 0,
+          dirOctY: 0,
+          hitDistQ: 320,
+          hitKind: 1,
+          surfaceType: 0,
+          normalOctX: 0,
+          normalOctY: 0,
+          showTracer: false,
+          hitPosXQ: 100,
+          hitPosYQ: 0,
+          hitPosZQ: 140
+        }
+      ]
+    });
+    beforeRenderHook?.(0.016, 1000);
+
+    expect(appInstance.spawnDecalVfx).toHaveBeenCalledTimes(1);
+    expect(appInstance.spawnDecalVfx).toHaveBeenCalledWith(
+      expect.objectContaining({
+        surfaceType: 0
+      })
+    );
+  });
+
+  it('forces decals on even if legacy stored FX settings disabled them', async () => {
+    fxSettingsMock.loadFxSettings.mockReturnValue({
+      muzzleFlash: true,
+      tracers: true,
+      decals: false,
+      aimDebug: false
+    });
+    connectMock.mockResolvedValue({
+      connectionId: 'conn',
+      serverHello: { serverTickRate: 60, snapshotRate: 20 },
+      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: vi.fn() },
+      nextClientMessageSeq: () => 1,
+      getServerSeqAck: () => 0
+    });
+    envMock.getSignalingUrl.mockReturnValue('https://example.test');
+    envMock.getSignalingAuthToken.mockReturnValue('token');
+
+    await import('../src/main');
+    await flushPromises();
+
+    appInstance.spawnDecalVfx.mockClear();
+    const onGameEvent = connectMock.mock.calls[0]?.[0]?.onGameEvent as
+      | ((event: { type: string; serverTick: number; events: unknown[] }) => void)
+      | undefined;
+    onGameEvent?.({
+      type: 'GameEventBatch',
+      serverTick: 0,
+      events: [
+        {
+          type: 'ShotTraceFx',
+          shooterId: 'other',
+          weaponSlot: 0,
+          shotSeq: 21,
+          dirOctX: 0,
+          dirOctY: 0,
+          hitDistQ: 320,
+          hitKind: 1,
+          surfaceType: 0,
+          normalOctX: 0,
+          normalOctY: 0,
+          showTracer: false,
+          hitPosXQ: 120,
+          hitPosYQ: 0,
+          hitPosZQ: 145
+        }
+      ]
+    });
+    beforeRenderHook?.(0.016, 1000);
+
+    expect(appInstance.spawnDecalVfx).toHaveBeenCalledTimes(1);
+  });
+
+  it('deduplicates repeated shot trace world hits across batches', async () => {
+    connectMock.mockResolvedValue({
+      connectionId: 'conn',
+      serverHello: { serverTickRate: 60, snapshotRate: 20 },
+      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: vi.fn() },
+      nextClientMessageSeq: () => 1,
+      getServerSeqAck: () => 0
+    });
+    envMock.getSignalingUrl.mockReturnValue('https://example.test');
+    envMock.getSignalingAuthToken.mockReturnValue('token');
+
+    await import('../src/main');
+    await flushPromises();
+
+    appInstance.spawnDecalVfx.mockClear();
+    const onGameEvent = connectMock.mock.calls[0]?.[0]?.onGameEvent as
+      | ((event: { type: string; serverTick: number; events: unknown[] }) => void)
+      | undefined;
+    const repeatedTrace = {
+      type: 'ShotTraceFx',
+      shooterId: 'other',
+      weaponSlot: 0,
+      shotSeq: 88,
+      dirOctX: 0,
+      dirOctY: 0,
+      hitDistQ: 320,
+      hitKind: 1,
+      surfaceType: 0,
+      normalOctX: 0,
+      normalOctY: 0,
+      showTracer: false,
+      hitPosXQ: 140,
+      hitPosYQ: 0,
+      hitPosZQ: 145
+    };
+    onGameEvent?.({
+      type: 'GameEventBatch',
+      serverTick: 0,
+      events: [repeatedTrace]
+    });
+    beforeRenderHook?.(0.016, 1000);
+    onGameEvent?.({
+      type: 'GameEventBatch',
+      serverTick: 0,
+      events: [repeatedTrace]
+    });
+
+    expect(appInstance.spawnDecalVfx).toHaveBeenCalledTimes(1);
+  });
+
   it('uses a larger impact effect for grenade launcher projectile explosions', async () => {
     connectMock.mockResolvedValue({
       connectionId: 'conn',
@@ -994,6 +1147,63 @@ describe('main entry', () => {
         ttl: 0.32
       })
     );
+  });
+
+  it('shows explosion overlay when local player is hit by grenade projectile', async () => {
+    connectMock.mockResolvedValue({
+      connectionId: 'conn',
+      serverHello: { serverTickRate: 60, snapshotRate: 20 },
+      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: vi.fn() },
+      nextClientMessageSeq: () => 1,
+      getServerSeqAck: () => 0
+    });
+    envMock.getSignalingUrl.mockReturnValue('https://example.test');
+    envMock.getSignalingAuthToken.mockReturnValue('token');
+
+    await import('../src/main');
+    await flushPromises();
+
+    const onGameEvent = connectMock.mock.calls[0]?.[0]?.onGameEvent as
+      | ((event: { type: string; serverTick: number; events: unknown[] }) => void)
+      | undefined;
+    onGameEvent?.({
+      type: 'GameEventBatch',
+      serverTick: 0,
+      events: [
+        {
+          type: 'ProjectileSpawnFx',
+          shooterId: 'other',
+          weaponSlot: 1,
+          shotSeq: 3,
+          projectileId: 9001,
+          posXQ: 0,
+          posYQ: 0,
+          posZQ: 0,
+          velXQ: 0,
+          velYQ: 0,
+          velZQ: 100,
+          ttlQ: 60
+        },
+        {
+          type: 'ProjectileImpactFx',
+          projectileId: 9001,
+          hitWorld: false,
+          targetId: 'conn',
+          posXQ: 0,
+          posYQ: 0,
+          posZQ: 0,
+          normalOctX: 0,
+          normalOctY: 0,
+          surfaceType: 0
+        }
+      ]
+    });
+    beforeRenderHook?.(0.016, 1000);
+
+    const overlays = Array.from(document.querySelectorAll('.explosion-overlay')) as HTMLDivElement[];
+    const overlay = overlays.at(-1) ?? null;
+    expect(overlay).toBeTruthy();
+    expect(overlay?.dataset.visible).toBe('true');
   });
 
   it('shows keyframe interval in metrics before snapshots arrive', async () => {

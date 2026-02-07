@@ -216,6 +216,13 @@ export const createWebRtcConnector = ({
         if (profile) {
           onPlayerProfile?.(profile);
         }
+        return;
+      }
+      if (envelope.header.msgType === MessageType.GameEvent) {
+        const gameEvent = parseGameEventPayload(envelope.payload);
+        if (gameEvent) {
+          onGameEvent?.(gameEvent);
+        }
       }
     };
 

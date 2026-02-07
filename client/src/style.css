@@ -88,6 +88,28 @@ canvas {
   border-color: rgba(160, 160, 160, 0.4);
 }
 
+.explosion-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 55;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.explosion-overlay[data-visible='false'] {
+  display: none;
+}
+
+.explosion-overlay-frame {
+  width: min(86vw, 1100px);
+  max-height: min(86vh, 900px);
+  object-fit: contain;
+  image-rendering: auto;
+  filter: drop-shadow(0 0 28px rgba(255, 168, 85, 0.55));
+}
+
 .status-overlay[data-reconnect='true'] {
   top: 50%;
   left: 50%;

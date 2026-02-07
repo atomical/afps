@@ -87,9 +87,23 @@ const PROJECTILE_IMPACT_SIZE_DEFAULT = 0.5;
 const PROJECTILE_IMPACT_TTL_DEFAULT = 0.16;
 const GRENADE_PROJECTILE_IMPACT_SIZE = 1.35;
 const GRENADE_PROJECTILE_IMPACT_TTL = 0.32;
+const GRENADE_HIT_EXPLOSION_FRAME_STEP_MS = 50;
 const SKY_DECAL_FADE_SECONDS = 3;
 const SKY_DECAL_HEIGHT_METERS = 8;
 const SKY_DECAL_VERTICAL_DELTA_METERS = 1;
+const FX_DEDUP_TTL_TICKS = 600;
+const FX_DEDUP_MAX_ENTRIES = 4096;
+const GRENADE_HIT_EXPLOSION_FRAME_URLS = [
+  new URL('../../tmp/Explosion/explosion00.png', import.meta.url).href,
+  new URL('../../tmp/Explosion/explosion01.png', import.meta.url).href,
+  new URL('../../tmp/Explosion/explosion02.png', import.meta.url).href,
+  new URL('../../tmp/Explosion/explosion03.png', import.meta.url).href,
+  new URL('../../tmp/Explosion/explosion04.png', import.meta.url).href,
+  new URL('../../tmp/Explosion/explosion05.png', import.meta.url).href,
+  new URL('../../tmp/Explosion/explosion06.png', import.meta.url).href,
+  new URL('../../tmp/Explosion/explosion07.png', import.meta.url).href,
+  new URL('../../tmp/Explosion/explosion08.png', import.meta.url).href
+];
 
 type Vec3 = { x: number; y: number; z: number };
 type TraceWorldHitInput = {
@@ -109,6 +123,50 @@ const normalizeVec = (v: Vec3): Vec3 => {
     return { x: 0, y: 0, z: -1 };
   }
   return { x: v.x / len, y: v.y / len, z: v.z / len };
+};
+
+const createGrenadeHitExplosionOverlay = (doc: Document, win: Window) => {
+  const host = doc.getElementById('app') ?? doc.body;
+  const overlay = doc.createElement('div');
+  overlay.className = 'explosion-overlay';
+  overlay.dataset.visible = 'false';
+  const frame = doc.createElement('img');
+  frame.className = 'explosion-overlay-frame';
+  frame.alt = '';
+  frame.decoding = 'async';
+  frame.src = GRENADE_HIT_EXPLOSION_FRAME_URLS[0] ?? '';
+  overlay.appendChild(frame);
+  host.appendChild(overlay);
+
+  let frameTimer: number | null = null;
+  const clearFrameTimer = () => {
+    if (frameTimer !== null) {
+      win.clearTimeout(frameTimer);
+      frameTimer = null;
+    }
+  };
+
+  const trigger = () => {
+    if (GRENADE_HIT_EXPLOSION_FRAME_URLS.length === 0) {
+      return;
+    }
+    clearFrameTimer();
+    overlay.dataset.visible = 'true';
+    let frameIndex = 0;
+    const advance = () => {
+      frame.src = GRENADE_HIT_EXPLOSION_FRAME_URLS[frameIndex] ?? GRENADE_HIT_EXPLOSION_FRAME_URLS[0];
+      frameIndex += 1;
+      if (frameIndex >= GRENADE_HIT_EXPLOSION_FRAME_URLS.length) {
+        overlay.dataset.visible = 'false';
+        frameTimer = null;
+        return;
+      }
+      frameTimer = win.setTimeout(advance, GRENADE_HIT_EXPLOSION_FRAME_STEP_MS);
+    };
+    advance();
+  };
+
+  return { trigger };
 };
 
 const isFiniteVec3 = (v: Vec3) => Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z);
@@ -178,7 +236,10 @@ const createWorldSurfaceProjector = (
     if (!scene) {
       return [] as THREE.Intersection[];
     }
-    const staticRoots = scene.children.filter((child) => isStaticSurfaceObject(child));
+    const sceneChildren = Array.isArray((scene as { children?: unknown }).children)
+      ? ((scene as { children: THREE.Object3D[] }).children as THREE.Object3D[])
+      : [];
+    const staticRoots = sceneChildren.filter((child) => isStaticSurfaceObject(child));
     if (staticRoots.length === 0) {
       return [] as THREE.Intersection[];
     }
@@ -360,7 +421,10 @@ const savedMetricsVisible = loadMetricsVisibility(localStorageRef);
 let metricsVisible = savedMetricsVisible;
 const savedAudioSettings = loadAudioSettings(localStorageRef);
 const savedFxSettings = loadFxSettings(localStorageRef);
-let fxSettings = savedFxSettings;
+let fxSettings = { ...savedFxSettings, decals: true };
+if (savedFxSettings.decals !== fxSettings.decals) {
+  saveFxSettings(fxSettings, localStorageRef);
+}
 let localLoadoutBits = loadLoadoutBits(localStorageRef);
 const audio = createAudioManager({ settings: savedAudioSettings });
 void audio.preload({
@@ -665,6 +729,7 @@ app.setBeforeRender((deltaSeconds, nowMs) => {
 });
 const status = createStatusOverlay(document);
 status.setMetricsVisible(metricsVisible);
+const grenadeHitExplosionOverlay = createGrenadeHitExplosionOverlay(document, window);
 const hud = createHudOverlay(document);
 const hudStore = createHudStore(hud);
 const scoreboard = createScoreboardOverlay(document);
@@ -790,9 +855,10 @@ const settings = createSettingsOverlay(document, {
     saveAudioSettings(next, localStorageRef);
   },
   onFxSettingsChange: (next) => {
-    fxSettings = next;
-    saveFxSettings(next, localStorageRef);
-    remoteAvatars.setAimDebugEnabled(next.aimDebug);
+    const enforced = { ...next, decals: true };
+    fxSettings = enforced;
+    saveFxSettings(enforced, localStorageRef);
+    remoteAvatars.setAimDebugEnabled(enforced.aimDebug);
   },
   onLoadoutBitsChange: (nextBits) => {
     localLoadoutBits = nextBits;
@@ -1051,6 +1117,38 @@ if (!signalingUrl) {
     let lastEventReceived = 0;
     let lastEventRateText = '--';
     const projectileWeaponSlotById = new Map<number, number>();
+    const seenShotTraceByKey = new Map<string, number>();
+    const seenProjectileImpactById = new Map<number, number>();
+    const pruneSeenFx = (serverTick: number) => {
+      if (!Number.isFinite(serverTick) || serverTick < 0) {
+        return;
+      }
+      const minTick = serverTick - FX_DEDUP_TTL_TICKS;
+      for (const [key, tick] of seenShotTraceByKey.entries()) {
+        if (tick < minTick) {
+          seenShotTraceByKey.delete(key);
+        }
+      }
+      for (const [key, tick] of seenProjectileImpactById.entries()) {
+        if (tick < minTick) {
+          seenProjectileImpactById.delete(key);
+        }
+      }
+      while (seenShotTraceByKey.size > FX_DEDUP_MAX_ENTRIES) {
+        const first = seenShotTraceByKey.keys().next().value as string | undefined;
+        if (first === undefined) {
+          break;
+        }
+        seenShotTraceByKey.delete(first);
+      }
+      while (seenProjectileImpactById.size > FX_DEDUP_MAX_ENTRIES) {
+        const first = seenProjectileImpactById.keys().next().value as number | undefined;
+        if (first === undefined) {
+          break;
+        }
+        seenProjectileImpactById.delete(first);
+      }
+    };
 
     const updateMetrics = () => {
       const now = window.performance.now();
@@ -1245,13 +1343,23 @@ if (!signalingUrl) {
     const dot = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) =>
       a.x * b.x + a.y * b.y + a.z * b.z;
 
-    const normalize = (v: { x: number; y: number; z: number }) => {
-      const len = Math.hypot(v.x, v.y, v.z);
-      if (!Number.isFinite(len) || len <= 1e-8) {
-        return { x: 0, y: 0, z: -1 };
+const normalize = (v: { x: number; y: number; z: number }) => {
+  const len = Math.hypot(v.x, v.y, v.z);
+  if (!Number.isFinite(len) || len <= 1e-8) {
+    return { x: 0, y: 0, z: -1 };
       }
-      return { x: v.x / len, y: v.y / len, z: v.z / len };
-    };
+  return { x: v.x / len, y: v.y / len, z: v.z / len };
+};
+
+const shouldDebugFx = () =>
+  Boolean((window as unknown as { __afpsDebugFx?: unknown }).__afpsDebugFx);
+
+const debugFxLog = (...args: unknown[]) => {
+  if (!shouldDebugFx()) {
+    return;
+  }
+  console.log('[afps][fx]', ...args);
+};
 
     const makeOrthonormalBasis = (forward: { x: number; y: number; z: number }) => {
       const fwd = normalize(forward);
@@ -1379,6 +1487,7 @@ if (!signalingUrl) {
     };
 
     const processGameEventBatch = (batch: GameEventBatch) => {
+      pruneSeenFx(batch.serverTick);
       const traceByShot = new Map<
         string,
         {
@@ -1483,6 +1592,13 @@ if (!signalingUrl) {
             break;
           }
           case 'ProjectileImpactFx': {
+            if (seenProjectileImpactById.has(event.projectileId)) {
+              debugFxLog('projectile-impact-duplicate', { projectileId: event.projectileId });
+              projectileWeaponSlotById.delete(event.projectileId);
+              app.removeProjectileVfx(event.projectileId);
+              break;
+            }
+            seenProjectileImpactById.set(event.projectileId, batch.serverTick);
             const impactPosServer = {
               x: dequantizeI16(event.posXQ, PROJECTILE_POS_STEP_METERS),
               y: dequantizeI16(event.posYQ, PROJECTILE_POS_STEP_METERS),
@@ -1494,6 +1610,8 @@ if (!signalingUrl) {
             const projectileWeapon =
               projectileWeaponSlot !== undefined ? resolveWeaponForSlot(projectileWeaponSlot) : null;
             const isGrenadeExplosion = isGrenadeLauncherWeapon(projectileWeapon);
+            const hitLocalPlayer =
+              Boolean(localConnectionId) && Boolean(event.targetId) && event.targetId === localConnectionId;
             audio.playPositional('impact', impactPos, { group: 'sfx', volume: 0.5 });
             app.spawnImpactVfx({
               position: impactPos,
@@ -1510,6 +1628,9 @@ if (!signalingUrl) {
                 surfaceType: event.surfaceType,
                 seed: event.projectileId >>> 0
               });
+            }
+            if (isGrenadeExplosion && hitLocalPlayer) {
+              grenadeHitExplosionOverlay.trigger();
             }
             projectileWeaponSlotById.delete(event.projectileId);
             app.removeProjectileVfx(event.projectileId);
@@ -1606,6 +1727,13 @@ if (!signalingUrl) {
               projectileMuzzle?.muzzlePos ??
               (snapshotAim?.origin && dir ? advance(snapshotAim.origin, dir, MUZZLE_FORWARD_OFFSET) : snapshotAim?.muzzle) ??
               resolveSnapshotPosition(event.shooterId);
+            if (weapon.kind === 'hitscan' && !trace) {
+              debugFxLog('shot-fired-without-trace', {
+                shooterId: event.shooterId,
+                shotSeq: event.shotSeq,
+                weaponId: weapon.id
+              });
+            }
             if (event.dryFire) {
               if (muzzlePos) {
                 audio.playPositional(weapon.sounds.dryFire, muzzlePos, { group: 'sfx', volume: 0.55 });
@@ -1666,11 +1794,18 @@ if (!signalingUrl) {
           }
           case 'ShotTraceFx': {
             const traceKey = `${event.shooterId}:${event.shotSeq}`;
+            if (seenShotTraceByKey.has(traceKey)) {
+              debugFxLog('shot-trace-duplicate', { traceKey, shooterId: event.shooterId, shotSeq: event.shotSeq });
+              break;
+            }
+            seenShotTraceByKey.set(traceKey, batch.serverTick);
             const trace = traceByShot.get(traceKey);
             if (!trace) {
+              debugFxLog('shot-trace-missing', { traceKey, shooterId: event.shooterId, shotSeq: event.shotSeq });
               break;
             }
             if (trace.hitKind === 0) {
+              debugFxLog('shot-trace-no-hit', { traceKey, shooterId: event.shooterId, shotSeq: event.shotSeq });
               break;
             }
             const seed = (hashString(event.shooterId) ^ (event.shotSeq >>> 0)) >>> 0;
@@ -1678,6 +1813,14 @@ if (!signalingUrl) {
             const fallbackImpactPos = trace.hitPos;
             const impactPos = projectedWorldHit?.position ?? fallbackImpactPos;
             const impactNormal = projectedWorldHit?.normal ?? trace.normal;
+            debugFxLog('shot-trace-impact', {
+              traceKey,
+              shooterId: event.shooterId,
+              shotSeq: event.shotSeq,
+              hitKind: trace.hitKind,
+              surfaceType: trace.surfaceType,
+              usedProjectedHit: projectedWorldHit !== null
+            });
             app.spawnImpactVfx({
               position: impactPos,
               normal: impactNormal,
@@ -1701,6 +1844,13 @@ if (!signalingUrl) {
                 surfaceType: trace.surfaceType,
                 seed,
                 ttl: decalTtl
+              });
+              debugFxLog('shot-trace-decal', {
+                traceKey,
+                shooterId: event.shooterId,
+                shotSeq: event.shotSeq,
+                surfaceType: trace.surfaceType,
+                decalTtl: decalTtl ?? null
               });
             }
             break;
@@ -1731,6 +1881,13 @@ if (!signalingUrl) {
     const onGameEvent = (batch: GameEventBatch) => {
       const now = window.performance.now();
       lastServerActivityAt = now;
+      if (shouldDebugFx()) {
+        const counts = new Map<string, number>();
+        for (const event of batch.events) {
+          counts.set(event.type, (counts.get(event.type) ?? 0) + 1);
+        }
+        debugFxLog('batch', { serverTick: batch.serverTick, counts: Object.fromEntries(counts.entries()) });
+      }
       const immediate = queue.push(batch, now, app.getRenderTick());
       for (const dueBatch of immediate) {
         processGameEventBatch(dueBatch);
