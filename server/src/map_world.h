@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "sim/sim.h"
@@ -28,6 +29,19 @@ struct GeneratedMapWorld {
   std::vector<PickupSpawn> pickups;
 };
 
-GeneratedMapWorld GenerateMapWorld(const afps::sim::SimConfig &config, uint32_t seed, int tick_rate);
+enum class MapWorldMode : uint8_t {
+  Legacy = 0,
+  Static = 1,
+};
+
+struct MapWorldOptions {
+  MapWorldMode mode = MapWorldMode::Legacy;
+  std::string static_manifest_path;
+};
+
+GeneratedMapWorld GenerateMapWorld(const afps::sim::SimConfig &config,
+                                   uint32_t seed,
+                                   int tick_rate,
+                                   const MapWorldOptions &options = {});
 
 }  // namespace afps::world

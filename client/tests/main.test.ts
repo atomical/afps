@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as flatbuffers from 'flatbuffers';
+import * as THREE from 'three';
 import { LOADOUT_BITS } from '../src/weapons/loadout';
 import { decodeEnvelope, MessageType } from '../src/net/protocol';
 import { FireWeaponRequest } from '../src/net/fbs/afps/protocol/fire-weapon-request';
@@ -11,6 +12,7 @@ const createInputSenderMock = vi.fn();
 const sceneMock = {
   add: vi.fn(),
   remove: vi.fn(),
+  children: [] as unknown[],
   position: { x: 0, y: 0, z: 0, set: vi.fn() },
   rotation: { x: 0, y: 0, z: 0 }
 };
@@ -321,6 +323,7 @@ describe('main entry', () => {
     beforeRenderHook = null;
     sceneMock.add.mockReset();
     sceneMock.remove.mockReset();
+    sceneMock.children = [];
     statusMock.setState.mockReset();
     statusMock.setDetail.mockReset();
     statusMock.setMetrics.mockReset();
@@ -1089,6 +1092,379 @@ describe('main entry', () => {
     expect(appInstance.spawnDecalVfx).toHaveBeenCalledTimes(1);
   });
 
+  it('projects miss traces onto static surfaces for decal recovery', async () => {
+    connectMock.mockResolvedValue({
+      connectionId: 'conn',
+      serverHello: { serverTickRate: 60, snapshotRate: 20 },
+      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: vi.fn() },
+      nextClientMessageSeq: () => 1,
+      getServerSeqAck: () => 0
+    });
+    envMock.getSignalingUrl.mockReturnValue('https://example.test');
+    envMock.getSignalingAuthToken.mockReturnValue('token');
+
+    const staticRoot = new THREE.Object3D();
+    staticRoot.userData.afpsStaticSurface = true;
+    sceneMock.children = [staticRoot];
+
+    const raycastSpy = vi
+      .spyOn(THREE.Raycaster.prototype, 'intersectObjects')
+      .mockImplementation(function () {
+        const origin = this.ray.origin.clone();
+        const dir = this.ray.direction.clone();
+        const point = origin.clone().addScaledVector(dir, 2);
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
+        mesh.userData.afpsStaticSurface = true;
+        mesh.updateMatrixWorld(true);
+        return [
+          {
+            distance: 2,
+            point,
+            object: mesh,
+            face: { normal: new THREE.Vector3(0, 0, 1) }
+          } as unknown as THREE.Intersection
+        ];
+      });
+
+    try {
+      await import('../src/main');
+      await flushPromises();
+
+      appInstance.spawnDecalVfx.mockClear();
+      const onGameEvent = connectMock.mock.calls[0]?.[0]?.onGameEvent as
+        | ((event: { type: string; serverTick: number; events: unknown[] }) => void)
+        | undefined;
+      onGameEvent?.({
+        type: 'GameEventBatch',
+        serverTick: 0,
+        events: [
+          {
+            type: 'ShotTraceFx',
+            shooterId: 'other',
+            weaponSlot: 0,
+            shotSeq: 121,
+            dirOctX: 0,
+            dirOctY: 0,
+            hitDistQ: 480,
+            hitKind: 0,
+            surfaceType: 0,
+            normalOctX: 0,
+            normalOctY: 0,
+            showTracer: false,
+            hitPosXQ: 120,
+            hitPosYQ: 0,
+            hitPosZQ: 140
+          }
+        ]
+      });
+      beforeRenderHook?.(0.016, 1000);
+
+      expect(appInstance.spawnDecalVfx).toHaveBeenCalledTimes(1);
+    } finally {
+      raycastSpy.mockRestore();
+    }
+  });
+
+  it('projects miss traces with bounds fallback when mesh ray intersections are unavailable', async () => {
+    connectMock.mockResolvedValue({
+      connectionId: 'conn',
+      serverHello: { serverTickRate: 60, snapshotRate: 20 },
+      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: vi.fn() },
+      nextClientMessageSeq: () => 1,
+      getServerSeqAck: () => 0
+    });
+    envMock.getSignalingUrl.mockReturnValue('https://example.test');
+    envMock.getSignalingAuthToken.mockReturnValue('token');
+
+    const staticRoot = new THREE.Object3D();
+    staticRoot.userData.afpsStaticSurface = true;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(200, 200, 200), new THREE.MeshBasicMaterial());
+    mesh.userData.afpsStaticSurface = true;
+    mesh.position.set(0, 0, 0);
+    staticRoot.add(mesh);
+    staticRoot.updateMatrixWorld(true);
+    sceneMock.children = [staticRoot];
+
+    const raycastSpy = vi
+      .spyOn(THREE.Raycaster.prototype, 'intersectObjects')
+      .mockReturnValue([]);
+
+    try {
+      await import('../src/main');
+      await flushPromises();
+
+      const worldSurface = (window as unknown as {
+        __afpsWorldSurface?: {
+          raycastStaticSurface: (
+            origin: { x: number; y: number; z: number },
+            dir: { x: number; y: number; z: number },
+            maxDistance?: number
+          ) => { position: { x: number; y: number; z: number } } | null;
+        };
+      }).__afpsWorldSurface;
+      expect(worldSurface).toBeDefined();
+      const hit = worldSurface!.raycastStaticSurface(
+        { x: 0, y: 0, z: 150 },
+        { x: 0, y: 0, z: -1 },
+        400
+      );
+      expect(hit).not.toBeNull();
+    } finally {
+      raycastSpy.mockRestore();
+    }
+  });
+
+  it('prefers wall-aligned projection for world hits with roof-biased hints at close range', async () => {
+    connectMock.mockResolvedValue({
+      connectionId: 'conn',
+      serverHello: { serverTickRate: 60, snapshotRate: 20 },
+      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: vi.fn() },
+      nextClientMessageSeq: () => 1,
+      getServerSeqAck: () => 0
+    });
+    envMock.getSignalingUrl.mockReturnValue('https://example.test');
+    envMock.getSignalingAuthToken.mockReturnValue('token');
+
+    const staticRoot = new THREE.Object3D();
+    staticRoot.userData.afpsStaticSurface = true;
+    sceneMock.children = [staticRoot];
+
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
+    mesh.userData.afpsStaticSurface = true;
+    mesh.updateMatrixWorld(true);
+
+    const raycastSpy = vi
+      .spyOn(THREE.Raycaster.prototype, 'intersectObjects')
+      .mockImplementation(function () {
+        const origin = this.ray.origin.clone();
+        const dir = this.ray.direction.clone();
+        if (Math.abs(dir.x) > 0.9 && Math.abs(dir.y) < 0.2 && Math.abs(dir.z) < 0.2) {
+          const point = new THREE.Vector3(origin.x + dir.x * 0.6, 0.9, -6.0);
+          return [
+            {
+              distance: 0.6,
+              point,
+              object: mesh,
+              face: { normal: new THREE.Vector3(1, 0, 0) }
+            } as unknown as THREE.Intersection
+          ];
+        }
+        const point = origin.clone().addScaledVector(dir, 1.0);
+        point.y = 3.4;
+        return [
+          {
+            distance: 1.0,
+            point,
+            object: mesh,
+            face: { normal: new THREE.Vector3(0, 1, 0) }
+          } as unknown as THREE.Intersection
+        ];
+      });
+
+    try {
+      await import('../src/main');
+      await flushPromises();
+
+      const worldSurface = (window as unknown as {
+        __afpsWorldSurface?: {
+          projectTraceWorldHit: (trace: {
+            dir: { x: number; y: number; z: number };
+            normal: { x: number; y: number; z: number };
+            hitKind?: number;
+            hitDistance: number;
+            hitPos: { x: number; y: number; z: number };
+            muzzlePos: { x: number; y: number; z: number } | null;
+          }) => { position: { x: number; y: number; z: number }; normal: { x: number; y: number; z: number } } | null;
+        };
+      }).__afpsWorldSurface;
+      expect(worldSurface).toBeDefined();
+
+      const projected = worldSurface!.projectTraceWorldHit({
+        dir: { x: 0, y: 0, z: -1 },
+        normal: { x: 1, y: 0, z: 0 },
+        hitKind: 1,
+        hitDistance: 6,
+        hitPos: { x: 0, y: 3.2, z: -6 },
+        muzzlePos: { x: 0, y: 1.6, z: 0 }
+      });
+
+      expect(projected).not.toBeNull();
+      expect(projected!.position.y).toBeLessThan(2.0);
+      expect(Math.abs(projected!.normal.y)).toBeLessThan(0.25);
+    } finally {
+      raycastSpy.mockRestore();
+    }
+  });
+
+  it('accepts deep static-surface ancestry when projecting world hits', async () => {
+    connectMock.mockResolvedValue({
+      connectionId: 'conn',
+      serverHello: { serverTickRate: 60, snapshotRate: 20 },
+      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: vi.fn() },
+      nextClientMessageSeq: () => 1,
+      getServerSeqAck: () => 0
+    });
+    envMock.getSignalingUrl.mockReturnValue('https://example.test');
+    envMock.getSignalingAuthToken.mockReturnValue('token');
+
+    const staticRoot = new THREE.Object3D();
+    staticRoot.userData.afpsStaticSurface = true;
+    let parent: THREE.Object3D = staticRoot;
+    for (let i = 0; i < 24; i += 1) {
+      const branch = new THREE.Object3D();
+      parent.add(branch);
+      parent = branch;
+    }
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
+    parent.add(mesh);
+    staticRoot.updateMatrixWorld(true);
+    sceneMock.children = [staticRoot];
+
+    const raycastSpy = vi
+      .spyOn(THREE.Raycaster.prototype, 'intersectObjects')
+      .mockImplementation(function () {
+        const origin = this.ray.origin.clone();
+        const dir = this.ray.direction.clone();
+        const point = origin.clone().addScaledVector(dir, 1.0);
+        return [
+          {
+            distance: 1.0,
+            point,
+            object: mesh,
+            face: { normal: new THREE.Vector3(0, 0, 1) }
+          } as unknown as THREE.Intersection
+        ];
+      });
+
+    try {
+      await import('../src/main');
+      await flushPromises();
+
+      const worldSurface = (window as unknown as {
+        __afpsWorldSurface?: {
+          projectTraceWorldHit: (trace: {
+            dir: { x: number; y: number; z: number };
+            normal: { x: number; y: number; z: number };
+            hitKind?: number;
+            hitDistance: number;
+            hitPos: { x: number; y: number; z: number };
+            muzzlePos: { x: number; y: number; z: number } | null;
+          }) => { position: { x: number; y: number; z: number }; normal: { x: number; y: number; z: number } } | null;
+        };
+      }).__afpsWorldSurface;
+      expect(worldSurface).toBeDefined();
+
+      const projected = worldSurface!.projectTraceWorldHit({
+        dir: { x: 0, y: 0, z: -1 },
+        normal: { x: 0, y: 0, z: 1 },
+        hitKind: 1,
+        hitDistance: 6,
+        hitPos: { x: 0, y: 1.6, z: -6 },
+        muzzlePos: { x: 0, y: 1.6, z: 0 }
+      });
+
+      expect(projected).not.toBeNull();
+    } finally {
+      raycastSpy.mockRestore();
+    }
+  });
+
+  it('records projection telemetry for trace hits', async () => {
+    connectMock.mockResolvedValue({
+      connectionId: 'conn',
+      serverHello: { serverTickRate: 60, snapshotRate: 20 },
+      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: vi.fn() },
+      nextClientMessageSeq: () => 1,
+      getServerSeqAck: () => 0
+    });
+    envMock.getSignalingUrl.mockReturnValue('https://example.test');
+    envMock.getSignalingAuthToken.mockReturnValue('token');
+
+    const staticRoot = new THREE.Object3D();
+    staticRoot.userData.afpsStaticSurface = true;
+    sceneMock.children = [staticRoot];
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
+    mesh.userData.afpsStaticSurface = true;
+    mesh.updateMatrixWorld(true);
+
+    const raycastSpy = vi
+      .spyOn(THREE.Raycaster.prototype, 'intersectObjects')
+      .mockImplementation(function () {
+        const origin = this.ray.origin.clone();
+        const dir = this.ray.direction.clone();
+        const point = origin.clone().addScaledVector(dir, 1.0);
+        return [
+          {
+            distance: 1.0,
+            point,
+            object: mesh,
+            face: { normal: new THREE.Vector3(0, 0, 1) }
+          } as unknown as THREE.Intersection
+        ];
+      });
+
+    try {
+      await import('../src/main');
+      await flushPromises();
+
+      const worldSurface = (window as unknown as {
+        __afpsWorldSurface?: {
+          projectTraceWorldHit: (trace: {
+            dir: { x: number; y: number; z: number };
+            normal: { x: number; y: number; z: number };
+            hitKind?: number;
+            hitDistance: number;
+            hitPos: { x: number; y: number; z: number };
+            muzzlePos: { x: number; y: number; z: number } | null;
+          }) => { position: { x: number; y: number; z: number }; normal: { x: number; y: number; z: number } } | null;
+        };
+        __afpsProjectionTelemetry?: {
+          clear: () => void;
+          getLast: () =>
+            | {
+                mode?: string;
+                status?: string;
+                selected?: { source?: string };
+              }
+            | null;
+        };
+      }).__afpsWorldSurface;
+      const telemetry = (window as unknown as {
+        __afpsProjectionTelemetry?: {
+          clear: () => void;
+          getLast: () =>
+            | {
+                mode?: string;
+                status?: string;
+                selected?: { source?: string };
+              }
+            | null;
+        };
+      }).__afpsProjectionTelemetry;
+      expect(worldSurface).toBeDefined();
+      expect(telemetry).toBeDefined();
+      telemetry?.clear();
+
+      const projected = worldSurface!.projectTraceWorldHit({
+        dir: { x: 0, y: 0, z: -1 },
+        normal: { x: 0, y: 0, z: 1 },
+        hitKind: 1,
+        hitDistance: 6,
+        hitPos: { x: 0, y: 1.6, z: -6 },
+        muzzlePos: { x: 0, y: 1.6, z: 0 }
+      });
+
+      expect(projected).not.toBeNull();
+      const last = telemetry?.getLast() ?? null;
+      expect(last).toBeTruthy();
+      expect(last?.mode).toBe('trace');
+      expect(last?.status).toBe('projected');
+      expect(last?.selected?.source).toBe('mesh');
+    } finally {
+      raycastSpy.mockRestore();
+    }
+  });
+
   it('uses a larger impact effect for grenade launcher projectile explosions', async () => {
     connectMock.mockResolvedValue({
       connectionId: 'conn',
@@ -1147,6 +1523,93 @@ describe('main entry', () => {
         ttl: 0.32
       })
     );
+  });
+
+  it('projects projectile world-hit decals onto wall-aligned static surfaces', async () => {
+    connectMock.mockResolvedValue({
+      connectionId: 'conn',
+      serverHello: { serverTickRate: 60, snapshotRate: 20 },
+      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: vi.fn() },
+      nextClientMessageSeq: () => 1,
+      getServerSeqAck: () => 0
+    });
+    envMock.getSignalingUrl.mockReturnValue('https://example.test');
+    envMock.getSignalingAuthToken.mockReturnValue('token');
+
+    const staticRoot = new THREE.Object3D();
+    staticRoot.userData.afpsStaticSurface = true;
+    sceneMock.children = [staticRoot];
+
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
+    mesh.userData.afpsStaticSurface = true;
+    mesh.updateMatrixWorld(true);
+
+    const raycastSpy = vi
+      .spyOn(THREE.Raycaster.prototype, 'intersectObjects')
+      .mockImplementation(function () {
+        const origin = this.ray.origin.clone();
+        const dir = this.ray.direction.clone();
+        if (Math.abs(dir.x) > 0.9 && Math.abs(dir.y) < 0.2 && Math.abs(dir.z) < 0.2) {
+          const point = new THREE.Vector3(origin.x + dir.x * 0.65, 0.95, -6.0);
+          return [
+            {
+              distance: 0.65,
+              point,
+              object: mesh,
+              face: { normal: new THREE.Vector3(1, 0, 0) }
+            } as unknown as THREE.Intersection
+          ];
+        }
+        const point = origin.clone().addScaledVector(dir, 1.0);
+        point.y = 3.4;
+        return [
+          {
+            distance: 1.0,
+            point,
+            object: mesh,
+            face: { normal: new THREE.Vector3(0, 1, 0) }
+          } as unknown as THREE.Intersection
+        ];
+      });
+
+    try {
+      await import('../src/main');
+      await flushPromises();
+
+      appInstance.spawnDecalVfx.mockClear();
+      const onGameEvent = connectMock.mock.calls[0]?.[0]?.onGameEvent as
+        | ((event: { type: string; serverTick: number; events: unknown[] }) => void)
+        | undefined;
+      onGameEvent?.({
+        type: 'GameEventBatch',
+        serverTick: 0,
+        events: [
+          {
+            type: 'ProjectileImpactFx',
+            projectileId: 999,
+            hitWorld: true,
+            targetId: '',
+            posXQ: 0,
+            posYQ: 340,
+            posZQ: -600,
+            normalOctX: 32767,
+            normalOctY: 0,
+            surfaceType: 0
+          }
+        ]
+      });
+      beforeRenderHook?.(0.016, 1000);
+
+      expect(appInstance.spawnDecalVfx).toHaveBeenCalledTimes(1);
+      const decalCall = appInstance.spawnDecalVfx.mock.calls[0]?.[0] as
+        | { position?: { x: number; y: number; z: number }; normal?: { x: number; y: number; z: number } }
+        | undefined;
+      expect(decalCall).toBeDefined();
+      expect(decalCall?.position?.y ?? 999).toBeLessThan(2.1);
+      expect(Math.abs(decalCall?.normal?.y ?? 1)).toBeLessThan(0.3);
+    } finally {
+      raycastSpy.mockRestore();
+    }
   });
 
   it('shows explosion overlay when local player is hit by grenade projectile', async () => {

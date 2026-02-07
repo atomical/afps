@@ -9,6 +9,7 @@ let gridHelpers: unknown[] = [];
 const env = import.meta.env as Record<string, string | undefined>;
 const originalDebug = env.VITE_DEBUG_RETRO_URBAN_BOUNDS;
 const originalGrid = env.VITE_DEBUG_RETRO_URBAN_GRID;
+const originalManifestUrl = env.VITE_MAP_MANIFEST_URL;
 
 const makeScene = () => {
   const added: unknown[] = [];
@@ -80,11 +81,13 @@ describe('retro urban map loader', () => {
     gridHelpers = [];
     env.VITE_DEBUG_RETRO_URBAN_BOUNDS = originalDebug;
     env.VITE_DEBUG_RETRO_URBAN_GRID = originalGrid;
+    env.VITE_MAP_MANIFEST_URL = originalManifestUrl;
   });
 
   it('loads assets and adds them to the scene', async () => {
     mode = 'ok';
     const placements = [
+      { file: 'building-type-a.glb', position: [0, 0, 0], randomYaw: true },
       { file: 'road-asphalt-center.glb', position: [0, 0, 0] },
       { file: 'detail-bench.glb', position: [1, 0, 1], randomYaw: true },
       { file: 'detail-bench.glb', position: [2, 0, 1], rotation: [0, 0.25, 0], scale: 1 }
@@ -97,14 +100,15 @@ describe('retro urban map loader', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { scene, added } = makeScene();
 
-    await loadRetroUrbanMap(scene);
+    const loaded = await loadRetroUrbanMap(scene);
 
     expect(fetchMock).toHaveBeenCalled();
-    expect(loadCalls).toHaveLength(2);
+    expect(loadCalls).toHaveLength(3);
     expect(added.length).toBe(placements.length);
     const rotations = added.map((entry) => (entry as { rotation: { y: number } }).rotation.y);
     expect(rotations).toContain(1);
     expect(rotations).toContain(0.25);
+    expect(loaded.colliders.length).toBeGreaterThan(0);
     expect(warnSpy).not.toHaveBeenCalled();
     warnSpy.mockRestore();
   });
@@ -127,6 +131,22 @@ describe('retro urban map loader', () => {
 
     expect(added.length).toBe(placements.length * 2);
     expect(boxHelpers).toHaveLength(placements.length);
+  });
+
+  it('supports overriding static manifest URL from env', async () => {
+    mode = 'ok';
+    env.VITE_MAP_MANIFEST_URL = '/assets/environments/generated/advanced_map.json';
+    const placements = [{ file: 'road-asphalt-center.glb', position: [0, 0, 0] }];
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ version: 1, placements })
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { scene } = makeScene();
+
+    await loadRetroUrbanMap(scene);
+
+    expect(fetchMock).toHaveBeenCalledWith('/assets/environments/generated/advanced_map.json');
   });
 
   it('adds debug grid when enabled', async () => {

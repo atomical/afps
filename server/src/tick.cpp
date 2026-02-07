@@ -535,11 +535,16 @@ void LogSpawnState(const std::string &connection_id,
 }
 }  // namespace
 
-TickLoop::TickLoop(SignalingStore &store, int tick_rate, int snapshot_keyframe_interval, uint32_t map_seed)
+TickLoop::TickLoop(SignalingStore &store,
+                   int tick_rate,
+                   int snapshot_keyframe_interval,
+                   uint32_t map_seed,
+                   const afps::world::MapWorldOptions &map_options)
     : store_(store),
       accumulator_(tick_rate),
       snapshot_keyframe_interval_(snapshot_keyframe_interval),
-      map_seed_(map_seed) {
+      map_seed_(map_seed),
+      map_options_(map_options) {
   pose_history_limit_ = std::max(1, accumulator_.tick_rate() * 2);
   std::string weapon_error;
   weapon_config_ = afps::weapons::LoadWeaponConfig(afps::weapons::ResolveWeaponConfigPath(),
@@ -547,7 +552,7 @@ TickLoop::TickLoop(SignalingStore &store, int tick_rate, int snapshot_keyframe_i
   if (!weapon_error.empty()) {
     std::cerr << "[warn] " << weapon_error << "\n";
   }
-  const auto generated = afps::world::GenerateMapWorld(sim_config_, map_seed_, accumulator_.tick_rate());
+  const auto generated = afps::world::GenerateMapWorld(sim_config_, map_seed_, accumulator_.tick_rate(), map_options_);
   collision_world_ = generated.collision_world;
   pickups_.clear();
   pickups_.reserve(generated.pickups.size());

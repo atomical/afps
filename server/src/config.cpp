@@ -154,6 +154,18 @@ ParseResult ParseArgs(int argc, const char *const *argv) {
           result.config.map_seed = parsed;
         }
       }
+    } else if (arg == "--map-mode") {
+      auto value = require_value("--map-mode");
+      if (!value.empty()) {
+        result.config.map_mode = value;
+      }
+    } else if (arg == "--map-manifest") {
+      auto value = require_value("--map-manifest");
+      if (!value.empty()) {
+        result.config.map_manifest_path = value;
+      }
+    } else if (arg == "--dump-map-signature") {
+      result.config.dump_map_signature = true;
     } else if (arg == "--character-manifest") {
       auto value = require_value("--character-manifest");
       if (!value.empty()) {
@@ -169,7 +181,8 @@ ParseResult ParseArgs(int argc, const char *const *argv) {
 
 std::vector<std::string> ValidateConfig(const ServerConfig &config) {
   std::vector<std::string> errors;
-  if (config.use_https) {
+  const bool runtime_mode = !config.dump_map_signature;
+  if (runtime_mode && config.use_https) {
     if (config.cert_path.empty()) {
       errors.push_back("Missing --cert path");
     }
@@ -177,7 +190,7 @@ std::vector<std::string> ValidateConfig(const ServerConfig &config) {
       errors.push_back("Missing --key path");
     }
   }
-  if (config.auth_token.empty()) {
+  if (runtime_mode && config.auth_token.empty()) {
     errors.push_back("Missing --auth-token value");
   }
   if (config.snapshot_keyframe_interval < 0) {
@@ -185,6 +198,12 @@ std::vector<std::string> ValidateConfig(const ServerConfig &config) {
   }
   if (!config.turn_secret.empty() && config.turn_ttl_seconds <= 0) {
     errors.push_back("TURN TTL must be > 0 when --turn-secret is set");
+  }
+  if (!(config.map_mode == "legacy" || config.map_mode == "static")) {
+    errors.push_back("Map mode must be one of: legacy, static");
+  }
+  if (config.map_mode == "static" && config.map_manifest_path.empty()) {
+    errors.push_back("Static map mode requires --map-manifest <path>");
   }
   return errors;
 }

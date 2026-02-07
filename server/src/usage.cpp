@@ -18,6 +18,9 @@ std::string UsageText(const char *argv0) {
   out << "  --turn-ttl <seconds> TURN REST credential TTL (default 3600)\n";
   out << "  --snapshot-keyframe-interval <n> Keyframe interval in snapshots (default 5, 0=all)\n";
   out << "  --map-seed <n> Deterministic procedural map seed (default 0)\n";
+  out << "  --map-mode <legacy|static> Authoritative map mode (default legacy)\n";
+  out << "  --map-manifest <path> Static map manifest JSON path (required for --map-mode static)\n";
+  out << "  --dump-map-signature Print deterministic map collider/pickup signature JSON and exit\n";
   out << "  --character-manifest <path> Character manifest JSON for allowlisting character ids\n";
   out << "  --http          Disable TLS (local development only)\n";
   out << "  -h, --help      Show this help text\n";

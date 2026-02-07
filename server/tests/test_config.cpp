@@ -26,7 +26,9 @@ TEST_CASE("ParseArgs parses required flags") {
       "--snapshot-keyframe-interval",
       "3",
       "--map-seed",
-      "42"};
+      "42",
+      "--map-mode",
+      "legacy"};
   const int argc = static_cast<int>(sizeof(argv) / sizeof(argv[0]));
 
   const auto result = ParseArgs(argc, argv);
@@ -44,6 +46,7 @@ TEST_CASE("ParseArgs parses required flags") {
   CHECK(result.config.turn_ttl_seconds == 600);
   CHECK(result.config.snapshot_keyframe_interval == 3);
   CHECK(result.config.map_seed == 42u);
+  CHECK(result.config.map_mode == "legacy");
   CHECK(result.config.use_https);
 }
 
@@ -121,4 +124,61 @@ TEST_CASE("ParseArgs accepts --character-manifest") {
 
   CHECK(result.errors.empty());
   CHECK(result.config.character_manifest_path == "manifest.json");
+}
+
+TEST_CASE("ParseArgs accepts static map mode + manifest") {
+  const char *argv[] = {
+      "afps_server",
+      "--map-mode",
+      "static",
+      "--map-manifest",
+      "map.json",
+      "--auth-token",
+      "secret"};
+  const int argc = static_cast<int>(sizeof(argv) / sizeof(argv[0]));
+
+  const auto result = ParseArgs(argc, argv);
+
+  CHECK(result.errors.empty());
+  CHECK(result.config.map_mode == "static");
+  CHECK(result.config.map_manifest_path == "map.json");
+}
+
+TEST_CASE("ParseArgs accepts --dump-map-signature") {
+  const char *argv[] = {
+      "afps_server",
+      "--dump-map-signature",
+      "--map-mode",
+      "legacy"};
+  const int argc = static_cast<int>(sizeof(argv) / sizeof(argv[0]));
+
+  const auto result = ParseArgs(argc, argv);
+
+  CHECK(result.errors.empty());
+  CHECK(result.config.dump_map_signature == true);
+}
+
+TEST_CASE("ValidateConfig requires static manifest path in static mode") {
+  ServerConfig config;
+  config.use_https = false;
+  config.auth_token = "secret";
+  config.map_mode = "static";
+  config.map_manifest_path.clear();
+
+  const auto errors = ValidateConfig(config);
+
+  CHECK(errors.size() == 1);
+  CHECK(errors[0].find("--map-manifest") != std::string::npos);
+}
+
+TEST_CASE("ValidateConfig skips auth and TLS requirements for map signature dump mode") {
+  ServerConfig config;
+  config.use_https = true;
+  config.auth_token.clear();
+  config.dump_map_signature = true;
+  config.map_mode = "legacy";
+
+  const auto errors = ValidateConfig(config);
+
+  CHECK(errors.empty());
 }

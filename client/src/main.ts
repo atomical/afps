@@ -111,11 +111,42 @@ type Vec3 = { x: number; y: number; z: number };
 type TraceWorldHitInput = {
   dir: Vec3;
   normal: Vec3;
+  hitKind?: number;
   hitDistance: number;
   hitPos: Vec3;
   muzzlePos: Vec3 | null;
 };
 type TraceWorldHitResult = { position: Vec3; normal: Vec3 };
+type ImpactWorldHitInput = { position: Vec3; normal: Vec3 };
+type StaticSurfaceHitSource = 'mesh' | 'bounds';
+type ProjectionTelemetryCandidate = {
+  score: number;
+  source: StaticSurfaceHitSource;
+  objectName: string | null;
+  objectUuid: string | null;
+  position: Vec3;
+  normal: Vec3;
+  normalDot?: number;
+};
+type ProjectionTelemetryEvent = {
+  mode: 'trace' | 'impact';
+  status: 'projected' | 'no_candidates' | 'invalid_input';
+  reason?: string;
+  candidateCount: number;
+  alignedCount?: number;
+  requiredAlignment?: number;
+  selected?: ProjectionTelemetryCandidate;
+  input: {
+    hitKind?: number;
+    hitDistance?: number;
+    hitPos?: Vec3;
+    muzzlePos?: Vec3 | null;
+    dir?: Vec3;
+    position?: Vec3;
+    normal: Vec3;
+  };
+  timestampMs: number;
+};
 
 const dotVec = (a: Vec3, b: Vec3) => a.x * b.x + a.y * b.y + a.z * b.z;
 
@@ -248,25 +279,50 @@ const createKillFeedOverlay = (doc: Document, win: Window) => {
 const isFiniteVec3 = (v: Vec3) => Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z);
 
 const createWorldSurfaceProjector = (
-  getSceneAndCamera: () => { scene: THREE.Scene | null; camera: THREE.Camera | null }
+  getSceneAndCamera: () => { scene: THREE.Scene | null; camera: THREE.Camera | null },
+  onProjectionTelemetry?: (event: ProjectionTelemetryEvent) => void
 ) => {
+  type StaticSurfaceRaycastHit = TraceWorldHitResult & {
+    distance: number;
+    source: StaticSurfaceHitSource;
+    objectName: string | null;
+    objectUuid: string | null;
+  };
   const raycaster = new THREE.Raycaster();
   const rayOrigin = new THREE.Vector3();
   const rayDir = new THREE.Vector3();
+  const boxHitPoint = new THREE.Vector3();
+  const boxWorld = new THREE.Box3();
+  const boxWorldCenter = new THREE.Vector3();
+  const axisNormal = new THREE.Vector3();
+  const toHitVec = new THREE.Vector3();
   const WORLD_SURFACE_RAY_MAX_METERS = 160;
   const WORLD_SURFACE_RAY_EXTRA_METERS = 24;
   const WORLD_SURFACE_DIRECT_BACKTRACK_METERS = 0.35;
+  const WORLD_SURFACE_SECONDARY_BACKTRACK_METERS = 1.1;
   const WORLD_SURFACE_DIRECT_MARGIN_METERS = 0.5;
+  const WORLD_SURFACE_NORMAL_PROBE_OFFSET_METERS = 0.65;
+  const WORLD_SURFACE_NORMAL_PROBE_RANGE_METERS = 5.0;
+  const WORLD_SURFACE_IMPACT_PROBE_OFFSET_METERS = 0.65;
+  const WORLD_SURFACE_IMPACT_PROBE_RANGE_METERS = 5.0;
+  const emitProjectionTelemetry = (event: ProjectionTelemetryEvent) => {
+    if (onProjectionTelemetry) {
+      onProjectionTelemetry(event);
+    }
+  };
 
   const isStaticSurfaceObject = (object: THREE.Object3D | null | undefined) => {
     let current: THREE.Object3D | null = object ?? null;
-    let depth = 0;
-    while (current && depth < 16) {
+    const visited = new Set<THREE.Object3D>();
+    while (current) {
+      if (visited.has(current)) {
+        break;
+      }
+      visited.add(current);
       if ((current.userData as { afpsStaticSurface?: unknown } | undefined)?.afpsStaticSurface === true) {
         return true;
       }
       current = current.parent;
-      depth += 1;
     }
     return false;
   };
@@ -274,7 +330,7 @@ const createWorldSurfaceProjector = (
   const toRayHit = (
     hit: THREE.Intersection,
     dir: Vec3
-  ): (TraceWorldHitResult & { distance: number }) | null => {
+  ): StaticSurfaceRaycastHit | null => {
     const hitObject = hit.object as (THREE.Object3D & { isMesh?: boolean }) | null | undefined;
     if (!hitObject || hitObject.isMesh !== true) {
       return null;
@@ -300,7 +356,10 @@ const createWorldSurfaceProjector = (
     return {
       position: { x: point.x, y: point.y, z: point.z },
       normal,
-      distance: hit.distance
+      distance: hit.distance,
+      source: 'mesh',
+      objectName: typeof hitObject.name === 'string' && hitObject.name.length > 0 ? hitObject.name : null,
+      objectUuid: typeof hitObject.uuid === 'string' && hitObject.uuid.length > 0 ? hitObject.uuid : null
     };
   };
 
@@ -316,7 +375,8 @@ const createWorldSurfaceProjector = (
       ? ((scene as { children: THREE.Object3D[] }).children as THREE.Object3D[])
       : [];
     const staticRoots = sceneChildren.filter((child) => isStaticSurfaceObject(child));
-    if (staticRoots.length === 0) {
+    const primaryTargets = staticRoots.length > 0 ? staticRoots : sceneChildren;
+    if (primaryTargets.length === 0) {
       return [] as THREE.Intersection[];
     }
     rayOrigin.set(origin.x, origin.y, origin.z);
@@ -334,17 +394,161 @@ const createWorldSurfaceProjector = (
     }
     raycaster.set(rayOrigin, rayDir);
     try {
-      return raycaster.intersectObjects(staticRoots, true);
+      const primaryHits = raycaster.intersectObjects(primaryTargets, true);
+      if (primaryHits.length > 0 || primaryTargets === sceneChildren) {
+        return primaryHits;
+      }
+      return raycaster.intersectObjects(sceneChildren, true);
     } catch {
       return [] as THREE.Intersection[];
     }
   };
 
-  const raycastStaticSurface = (
+  const raycastStaticSurfaceBoundsFallback = (
+    origin: Vec3,
+    dir: Vec3,
+    maxDistance: number
+  ): StaticSurfaceRaycastHit | null => {
+    const { scene } = getSceneAndCamera();
+    if (!scene) {
+      return null;
+    }
+    const sceneChildren = Array.isArray((scene as { children?: unknown }).children)
+      ? ((scene as { children: THREE.Object3D[] }).children as THREE.Object3D[])
+      : [];
+    const staticRoots = sceneChildren.filter((child) => isStaticSurfaceObject(child));
+    if (staticRoots.length === 0) {
+      return null;
+    }
+    const safeDir = normalizeVec(dir);
+    rayOrigin.set(origin.x, origin.y, origin.z);
+    rayDir.set(safeDir.x, safeDir.y, safeDir.z);
+    if (rayDir.lengthSq() <= 1e-8) {
+      return null;
+    }
+    rayDir.normalize();
+    const ray = raycaster.ray;
+    ray.origin.copy(rayOrigin);
+    ray.direction.copy(rayDir);
+    let bestDistance = Number.POSITIVE_INFINITY;
+    let bestPosition: Vec3 | null = null;
+    let bestNormal: Vec3 | null = null;
+    let bestObjectName: string | null = null;
+    let bestObjectUuid: string | null = null;
+    const maxDistanceSq = maxDistance * maxDistance;
+    const BOX_FACE_EPS = 1e-3;
+    for (const root of staticRoots) {
+      root.traverse((node) => {
+        const mesh = node as THREE.Mesh | null;
+        if (!mesh || mesh.isMesh !== true || !isStaticSurfaceObject(mesh)) {
+          return;
+        }
+        const geometry = mesh.geometry as THREE.BufferGeometry | undefined;
+        if (!geometry) {
+          return;
+        }
+        if (geometry.boundingBox === null) {
+          geometry.computeBoundingBox();
+        }
+        const localBox = geometry.boundingBox;
+        if (!localBox) {
+          return;
+        }
+        boxWorld.copy(localBox).applyMatrix4(mesh.matrixWorld);
+        const minX = boxWorld.min.x;
+        const maxX = boxWorld.max.x;
+        const minY = boxWorld.min.y;
+        const maxY = boxWorld.max.y;
+        const minZ = boxWorld.min.z;
+        const maxZ = boxWorld.max.z;
+        if (!(maxX > minX && maxY > minY && maxZ > minZ)) {
+          return;
+        }
+        const hit = ray.intersectBox(boxWorld, boxHitPoint);
+        if (!hit) {
+          return;
+        }
+        toHitVec.subVectors(hit, ray.origin);
+        const distanceSq = toHitVec.lengthSq();
+        if (!Number.isFinite(distanceSq) || distanceSq > maxDistanceSq) {
+          return;
+        }
+        const distance = Math.sqrt(distanceSq);
+        if (!Number.isFinite(distance) || distance < 0 || distance >= bestDistance) {
+          return;
+        }
+        axisNormal.set(0, 0, 0);
+        const dxMin = Math.abs(hit.x - minX);
+        const dxMax = Math.abs(hit.x - maxX);
+        const dyMin = Math.abs(hit.y - minY);
+        const dyMax = Math.abs(hit.y - maxY);
+        const dzMin = Math.abs(hit.z - minZ);
+        const dzMax = Math.abs(hit.z - maxZ);
+        let axis = 'x';
+        let sign = dxMin <= dxMax ? -1 : 1;
+        let bestAxisDelta = Math.min(dxMin, dxMax);
+        const yDelta = Math.min(dyMin, dyMax);
+        if (yDelta < bestAxisDelta) {
+          axis = 'y';
+          sign = dyMin <= dyMax ? -1 : 1;
+          bestAxisDelta = yDelta;
+        }
+        const zDelta = Math.min(dzMin, dzMax);
+        if (zDelta < bestAxisDelta) {
+          axis = 'z';
+          sign = dzMin <= dzMax ? -1 : 1;
+          bestAxisDelta = zDelta;
+        }
+        if (bestAxisDelta > BOX_FACE_EPS) {
+          boxWorld.getCenter(boxWorldCenter);
+          axisNormal.subVectors(hit, boxWorldCenter);
+          if (Math.abs(axisNormal.x) >= Math.abs(axisNormal.y) && Math.abs(axisNormal.x) >= Math.abs(axisNormal.z)) {
+            axis = 'x';
+            sign = axisNormal.x >= 0 ? 1 : -1;
+          } else if (Math.abs(axisNormal.y) >= Math.abs(axisNormal.x) && Math.abs(axisNormal.y) >= Math.abs(axisNormal.z)) {
+            axis = 'y';
+            sign = axisNormal.y >= 0 ? 1 : -1;
+          } else {
+            axis = 'z';
+            sign = axisNormal.z >= 0 ? 1 : -1;
+          }
+        }
+        if (axis === 'x') {
+          axisNormal.set(sign, 0, 0);
+        } else if (axis === 'y') {
+          axisNormal.set(0, sign, 0);
+        } else {
+          axisNormal.set(0, 0, sign);
+        }
+        let normal = normalizeVec({ x: axisNormal.x, y: axisNormal.y, z: axisNormal.z });
+        if (dotVec(normal, safeDir) > 0) {
+          normal = { x: -normal.x, y: -normal.y, z: -normal.z };
+        }
+        bestDistance = distance;
+        bestPosition = { x: hit.x, y: hit.y, z: hit.z };
+        bestNormal = normal;
+        bestObjectName = typeof mesh.name === 'string' && mesh.name.length > 0 ? mesh.name : null;
+        bestObjectUuid = typeof mesh.uuid === 'string' && mesh.uuid.length > 0 ? mesh.uuid : null;
+      });
+    }
+    if (bestPosition && bestNormal) {
+      return {
+        position: bestPosition,
+        normal: bestNormal,
+        distance: bestDistance,
+        source: 'bounds',
+        objectName: bestObjectName,
+        objectUuid: bestObjectUuid
+      };
+    }
+    return null;
+  };
+
+  const raycastStaticSurfaceDetailed = (
     origin: Vec3,
     dir: Vec3,
     maxDistance = WORLD_SURFACE_RAY_MAX_METERS
-  ): (TraceWorldHitResult & { distance: number }) | null => {
+  ): StaticSurfaceRaycastHit | null => {
     const safeDir = normalizeVec(dir);
     const hits = castIntersections(origin, safeDir, maxDistance);
     for (const hit of hits) {
@@ -353,11 +557,41 @@ const createWorldSurfaceProjector = (
         return parsed;
       }
     }
-    return null;
+    return raycastStaticSurfaceBoundsFallback(origin, safeDir, maxDistance);
+  };
+  const raycastStaticSurface = (
+    origin: Vec3,
+    dir: Vec3,
+    maxDistance = WORLD_SURFACE_RAY_MAX_METERS
+  ): (TraceWorldHitResult & { distance: number }) | null => {
+    const hit = raycastStaticSurfaceDetailed(origin, dir, maxDistance);
+    if (!hit) {
+      return null;
+    }
+    return {
+      position: hit.position,
+      normal: hit.normal,
+      distance: hit.distance
+    };
   };
 
   const projectTraceWorldHit = (trace: TraceWorldHitInput): TraceWorldHitResult | null => {
     if (!trace.muzzlePos || !isFiniteVec3(trace.muzzlePos)) {
+      emitProjectionTelemetry({
+        mode: 'trace',
+        status: 'invalid_input',
+        reason: 'missing_muzzle_pos',
+        candidateCount: 0,
+        input: {
+          hitKind: trace.hitKind,
+          hitDistance: trace.hitDistance,
+          hitPos: trace.hitPos,
+          muzzlePos: trace.muzzlePos,
+          dir: trace.dir,
+          normal: trace.normal
+        },
+        timestampMs: Date.now()
+      });
       return null;
     }
     const muzzle = trace.muzzlePos;
@@ -367,12 +601,31 @@ const createWorldSurfaceProjector = (
         ? Math.min(WORLD_SURFACE_RAY_MAX_METERS, trace.hitDistance + WORLD_SURFACE_RAY_EXTRA_METERS)
         : WORLD_SURFACE_RAY_MAX_METERS;
     if (!Number.isFinite(maxDistance) || maxDistance <= 0) {
+      emitProjectionTelemetry({
+        mode: 'trace',
+        status: 'invalid_input',
+        reason: 'invalid_max_distance',
+        candidateCount: 0,
+        input: {
+          hitKind: trace.hitKind,
+          hitDistance: trace.hitDistance,
+          hitPos: trace.hitPos,
+          muzzlePos: trace.muzzlePos,
+          dir: trace.dir,
+          normal: trace.normal
+        },
+        timestampMs: Date.now()
+      });
       return null;
     }
 
-    const directCandidates: Array<{ score: number; position: Vec3; normal: Vec3 }> = [];
+    const directCandidates: Array<ProjectionTelemetryCandidate> = [];
+    const hasServerHit = Math.floor(trace.hitKind ?? 0) === 1;
+    const serverNormalRaw = normalizeVec(trace.normal);
+    const serverNormalLen = Math.hypot(trace.normal.x, trace.normal.y, trace.normal.z);
+    const useServerNormal = hasServerHit && Number.isFinite(serverNormalLen) && serverNormalLen > 0.3;
     const addDirectCandidate = (origin: Vec3, rayDir: Vec3, far: number) => {
-      const hit = raycastStaticSurface(origin, rayDir, far);
+      const hit = raycastStaticSurfaceDetailed(origin, rayDir, far);
       if (!hit) {
         return;
       }
@@ -391,12 +644,22 @@ const createWorldSurfaceProjector = (
       }
       const hasServerDepth = Number.isFinite(trace.hitDistance) && trace.hitDistance > 0;
       const depthError = hasServerDepth ? Math.abs(along - trace.hitDistance) : 0;
+      const depthWeight = hasServerHit ? 1.0 : 0.08;
       const behindPenalty = along < 0 ? Math.abs(along) * 12 : 0;
-      const score = Math.max(0, along) + depthError * 0.08 + behindPenalty;
+      let normalPenalty = 0;
+      if (useServerNormal) {
+        const dot = Math.max(-1, Math.min(1, dotVec(hit.normal, serverNormalRaw)));
+        // For authoritative world hits, reject projection candidates with flipped/out-of-plane normals.
+        normalPenalty = (1 - dot) * 2.0;
+      }
+      const score = Math.max(0, along) + depthError * depthWeight + behindPenalty + normalPenalty;
       directCandidates.push({
         score,
         position: hit.position,
-        normal: hit.normal
+        normal: hit.normal,
+        source: hit.source,
+        objectName: hit.objectName,
+        objectUuid: hit.objectUuid
       });
     };
 
@@ -409,6 +672,15 @@ const createWorldSurfaceProjector = (
       },
       dir,
       maxDistance + WORLD_SURFACE_DIRECT_BACKTRACK_METERS
+    );
+    addDirectCandidate(
+      {
+        x: muzzle.x - dir.x * WORLD_SURFACE_SECONDARY_BACKTRACK_METERS,
+        y: muzzle.y - dir.y * WORLD_SURFACE_SECONDARY_BACKTRACK_METERS,
+        z: muzzle.z - dir.z * WORLD_SURFACE_SECONDARY_BACKTRACK_METERS
+      },
+      dir,
+      maxDistance + WORLD_SURFACE_SECONDARY_BACKTRACK_METERS
     );
     if (isFiniteVec3(trace.hitPos)) {
       const snapProbeRange = 1.4;
@@ -431,21 +703,257 @@ const createWorldSurfaceProjector = (
         dir,
         snapProbeRange
       );
+      if (useServerNormal) {
+        const probeNormal = serverNormalRaw;
+        const probeFar = WORLD_SURFACE_NORMAL_PROBE_RANGE_METERS;
+        const probeOffset = WORLD_SURFACE_NORMAL_PROBE_OFFSET_METERS;
+        addDirectCandidate(
+          {
+            x: trace.hitPos.x + probeNormal.x * probeOffset,
+            y: trace.hitPos.y + probeNormal.y * probeOffset,
+            z: trace.hitPos.z + probeNormal.z * probeOffset
+          },
+          { x: -probeNormal.x, y: -probeNormal.y, z: -probeNormal.z },
+          probeFar
+        );
+        addDirectCandidate(
+          {
+            x: trace.hitPos.x - probeNormal.x * probeOffset,
+            y: trace.hitPos.y - probeNormal.y * probeOffset,
+            z: trace.hitPos.z - probeNormal.z * probeOffset
+          },
+          { x: probeNormal.x, y: probeNormal.y, z: probeNormal.z },
+          probeFar
+        );
+      }
     }
 
     if (directCandidates.length > 0) {
       directCandidates.sort((a, b) => a.score - b.score);
       const best = directCandidates[0]!;
+      emitProjectionTelemetry({
+        mode: 'trace',
+        status: 'projected',
+        candidateCount: directCandidates.length,
+        selected: best,
+        input: {
+          hitKind: trace.hitKind,
+          hitDistance: trace.hitDistance,
+          hitPos: trace.hitPos,
+          muzzlePos: trace.muzzlePos,
+          dir: trace.dir,
+          normal: trace.normal
+        },
+        timestampMs: Date.now()
+      });
       return {
         position: best.position,
         normal: best.normal
       };
     }
+    emitProjectionTelemetry({
+      mode: 'trace',
+      status: 'no_candidates',
+      reason: 'no_surface_hit',
+      candidateCount: 0,
+      input: {
+        hitKind: trace.hitKind,
+        hitDistance: trace.hitDistance,
+        hitPos: trace.hitPos,
+        muzzlePos: trace.muzzlePos,
+        dir: trace.dir,
+        normal: trace.normal
+      },
+      timestampMs: Date.now()
+    });
     return null;
+  };
+
+  const projectImpactWorldHit = (impact: ImpactWorldHitInput): TraceWorldHitResult | null => {
+    if (!isFiniteVec3(impact.position) || !isFiniteVec3(impact.normal)) {
+      emitProjectionTelemetry({
+        mode: 'impact',
+        status: 'invalid_input',
+        reason: 'invalid_impact_input',
+        candidateCount: 0,
+        input: {
+          position: impact.position,
+          normal: impact.normal
+        },
+        timestampMs: Date.now()
+      });
+      return null;
+    }
+    const inputNormal = normalizeVec(impact.normal);
+    const inputNormalLen = Math.hypot(impact.normal.x, impact.normal.y, impact.normal.z);
+    if (!Number.isFinite(inputNormalLen) || inputNormalLen <= 1e-8) {
+      emitProjectionTelemetry({
+        mode: 'impact',
+        status: 'invalid_input',
+        reason: 'invalid_impact_normal',
+        candidateCount: 0,
+        input: {
+          position: impact.position,
+          normal: impact.normal
+        },
+        timestampMs: Date.now()
+      });
+      return null;
+    }
+
+    const candidates: Array<ProjectionTelemetryCandidate> = [];
+    const addCandidate = (origin: Vec3, rayDir: Vec3, range: number, extraPenalty = 0) => {
+      const hit = raycastStaticSurfaceDetailed(origin, rayDir, range);
+      if (!hit) {
+        return;
+      }
+      const dx = hit.position.x - impact.position.x;
+      const dy = hit.position.y - impact.position.y;
+      const dz = hit.position.z - impact.position.z;
+      const distanceFromHint = Math.hypot(dx, dy, dz);
+      const normalDot = Math.max(-1, Math.min(1, dotVec(hit.normal, inputNormal)));
+      const normalPenalty = (1 - normalDot) * 2.4;
+      const normalYGap = Math.abs(hit.normal.y) - Math.abs(inputNormal.y);
+      const upFacingMismatchPenalty = normalYGap > 0.3 ? normalYGap * 2.4 : 0;
+      const score = distanceFromHint + normalPenalty + upFacingMismatchPenalty + extraPenalty;
+      candidates.push({
+        score,
+        position: hit.position,
+        normal: hit.normal,
+        normalDot,
+        source: hit.source,
+        objectName: hit.objectName,
+        objectUuid: hit.objectUuid
+      });
+    };
+
+    const probeOffset = WORLD_SURFACE_IMPACT_PROBE_OFFSET_METERS;
+    const probeRange = WORLD_SURFACE_IMPACT_PROBE_RANGE_METERS;
+    const verticalOffsets = [0, -0.4, -0.9, -1.4, -2.0, -2.6, 0.45];
+    for (const yOffset of verticalOffsets) {
+      const shifted = {
+        x: impact.position.x,
+        y: impact.position.y + yOffset,
+        z: impact.position.z
+      };
+      const heightPenalty = Math.abs(yOffset) * 0.06;
+      addCandidate(
+        {
+          x: shifted.x + inputNormal.x * probeOffset,
+          y: shifted.y + inputNormal.y * probeOffset,
+          z: shifted.z + inputNormal.z * probeOffset
+        },
+        { x: -inputNormal.x, y: -inputNormal.y, z: -inputNormal.z },
+        probeRange + Math.abs(yOffset) * 0.45,
+        heightPenalty
+      );
+      addCandidate(
+        {
+          x: shifted.x - inputNormal.x * probeOffset,
+          y: shifted.y - inputNormal.y * probeOffset,
+          z: shifted.z - inputNormal.z * probeOffset
+        },
+        { x: inputNormal.x, y: inputNormal.y, z: inputNormal.z },
+        probeRange + Math.abs(yOffset) * 0.45,
+        heightPenalty
+      );
+      addCandidate(
+        shifted,
+        { x: -inputNormal.x, y: -inputNormal.y, z: -inputNormal.z },
+        probeRange + Math.abs(yOffset) * 0.45,
+        heightPenalty
+      );
+    }
+
+    const slantedProbeDirs = [0.4, 0.9, 1.6]
+      .map((down) => normalizeVec({ x: -inputNormal.x, y: -down, z: -inputNormal.z }))
+      .filter((dir) => isFiniteVec3(dir));
+    for (const rayDir of slantedProbeDirs) {
+      addCandidate(impact.position, rayDir, probeRange + 2.5, 0.1);
+      addCandidate(
+        {
+          x: impact.position.x + inputNormal.x * probeOffset,
+          y: impact.position.y + inputNormal.y * probeOffset,
+          z: impact.position.z + inputNormal.z * probeOffset
+        },
+        rayDir,
+        probeRange + 2.5,
+        0.1
+      );
+    }
+
+    const tangent = normalizeVec({ x: -inputNormal.z, y: 0, z: inputNormal.x });
+    const angledProbeDirs = [-0.65, -0.35, 0.35, 0.65]
+      .map((blend) =>
+        normalizeVec({
+          x: -inputNormal.x + tangent.x * blend,
+          y: -Math.abs(inputNormal.y) * 0.2,
+          z: -inputNormal.z + tangent.z * blend
+        })
+      )
+      .filter((dir) => isFiniteVec3(dir));
+    for (const rayDir of angledProbeDirs) {
+      addCandidate(impact.position, rayDir, probeRange + 2.0, 0.08);
+      addCandidate(
+        {
+          x: impact.position.x + inputNormal.x * probeOffset,
+          y: impact.position.y + inputNormal.y * probeOffset,
+          z: impact.position.z + inputNormal.z * probeOffset
+        },
+        rayDir,
+        probeRange + 2.0,
+        0.08
+      );
+      addCandidate(
+        {
+          x: impact.position.x - inputNormal.x * probeOffset,
+          y: impact.position.y - inputNormal.y * probeOffset,
+          z: impact.position.z - inputNormal.z * probeOffset
+        },
+        rayDir,
+        probeRange + 2.0,
+        0.08
+      );
+    }
+
+    if (candidates.length === 0) {
+      emitProjectionTelemetry({
+        mode: 'impact',
+        status: 'no_candidates',
+        reason: 'no_surface_hit',
+        candidateCount: 0,
+        input: {
+          position: impact.position,
+          normal: impact.normal
+        },
+        timestampMs: Date.now()
+      });
+      return null;
+    }
+    const requiredAlignment = Math.abs(inputNormal.y) < 0.4 ? 0.6 : 0.45;
+    const aligned = candidates.filter((candidate) => (candidate.normalDot ?? -1) >= requiredAlignment);
+    const scored = aligned.length > 0 ? aligned : candidates;
+    scored.sort((a, b) => a.score - b.score);
+    const best = scored[0]!;
+    emitProjectionTelemetry({
+      mode: 'impact',
+      status: 'projected',
+      candidateCount: candidates.length,
+      alignedCount: aligned.length,
+      requiredAlignment,
+      selected: best,
+      input: {
+        position: impact.position,
+        normal: impact.normal
+      },
+      timestampMs: Date.now()
+    });
+    return { position: best.position, normal: best.normal };
   };
 
   return {
     projectTraceWorldHit,
+    projectImpactWorldHit,
     raycastStaticSurface
   };
 };
@@ -490,6 +998,47 @@ const ensureStorage = (storage?: Storage) => {
 
 const localStorageRef =
   typeof window !== 'undefined' ? ensureStorage(window.localStorage) : ensureStorage(undefined);
+const PROJECTION_TELEMETRY_HISTORY_LIMIT = 120;
+const projectionTelemetryHistory: ProjectionTelemetryEvent[] = [];
+let projectionTelemetryEnabled = false;
+if (typeof window !== 'undefined') {
+  const query = new URLSearchParams(window.location.search);
+  projectionTelemetryEnabled =
+    query.get('projectionDebug') === '1' || localStorageRef.getItem('afps.debug.projection') === '1';
+}
+const recordProjectionTelemetry = (event: ProjectionTelemetryEvent) => {
+  projectionTelemetryHistory.push(event);
+  if (projectionTelemetryHistory.length > PROJECTION_TELEMETRY_HISTORY_LIMIT) {
+    projectionTelemetryHistory.splice(0, projectionTelemetryHistory.length - PROJECTION_TELEMETRY_HISTORY_LIMIT);
+  }
+  if (projectionTelemetryEnabled) {
+    console.debug(`[afps] projection ${event.mode}`, event);
+  }
+};
+if (typeof window !== 'undefined') {
+  (
+    window as unknown as {
+      __afpsProjectionTelemetry?: {
+        enabled: () => boolean;
+        setEnabled: (enabled: boolean) => void;
+        getLast: () => ProjectionTelemetryEvent | null;
+        getHistory: () => ProjectionTelemetryEvent[];
+        clear: () => void;
+      };
+    }
+  ).__afpsProjectionTelemetry = {
+    enabled: () => projectionTelemetryEnabled,
+    setEnabled: (enabled: boolean) => {
+      projectionTelemetryEnabled = enabled === true;
+      localStorageRef.setItem('afps.debug.projection', projectionTelemetryEnabled ? '1' : '0');
+    },
+    getLast: () => projectionTelemetryHistory[projectionTelemetryHistory.length - 1] ?? null,
+    getHistory: () => projectionTelemetryHistory.slice(),
+    clear: () => {
+      projectionTelemetryHistory.length = 0;
+    }
+  };
+}
 
 const savedSensitivity = loadSensitivity(localStorageRef);
 const lookSensitivity = savedSensitivity ?? getLookSensitivity();
@@ -537,9 +1086,10 @@ const worldSurfaceProjector = createWorldSurfaceProjector(() => {
   const scene = app.state.scene as THREE.Scene;
   const camera = (app.state.camera as unknown as THREE.Camera | null) ?? null;
   return { scene, camera };
-});
+}, recordProjectionTelemetry);
 (window as unknown as { __afpsWorldSurface?: unknown }).__afpsWorldSurface = {
   projectTraceWorldHit: (trace: TraceWorldHitInput) => worldSurfaceProjector.projectTraceWorldHit(trace),
+  projectImpactWorldHit: (impact: ImpactWorldHitInput) => worldSurfaceProjector.projectImpactWorldHit(impact),
   raycastStaticSurface: (origin: Vec3, dir: Vec3, maxDistance?: number) =>
     worldSurfaceProjector.raycastStaticSurface(origin, dir, maxDistance),
   getPlayerPose: () => app.getPlayerPose()
@@ -1510,6 +2060,7 @@ const debugFxLog = (...args: unknown[]) => {
       });
     };
     const projectTraceWorldHit = worldSurfaceProjector.projectTraceWorldHit;
+    const projectImpactWorldHit = worldSurfaceProjector.projectImpactWorldHit;
 
     const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
@@ -1589,6 +2140,7 @@ const debugFxLog = (...args: unknown[]) => {
           muzzlePos: { x: number; y: number; z: number } | null;
         }
       >();
+      const projectedWorldHitByShot = new Map<string, TraceWorldHitResult>();
       const projectileMuzzleByShot = new Map<
         string,
         {
@@ -1610,7 +2162,8 @@ const debugFxLog = (...args: unknown[]) => {
           const muzzlePos =
             resolveMuzzlePosFromTraceServer(dirServer, hitPosServer, hitDistance) ??
             resolveMuzzlePos(event.shooterId, dirServer);
-          traceByShot.set(`${event.shooterId}:${event.shotSeq}`, {
+          const traceKey = `${event.shooterId}:${event.shotSeq}`;
+          const traceData = {
             dirServer,
             dir: swapYZ(dirServer),
             hitPos: swapYZ(hitPosServer),
@@ -1620,7 +2173,14 @@ const debugFxLog = (...args: unknown[]) => {
             surfaceType: event.surfaceType,
             showTracer: event.showTracer,
             muzzlePos
-          });
+          };
+          traceByShot.set(traceKey, traceData);
+          if (traceData.hitKind !== 2) {
+            const projected = projectTraceWorldHit(traceData);
+            if (projected) {
+              projectedWorldHitByShot.set(traceKey, projected);
+            }
+          }
         } else if (event.type === 'ProjectileSpawnFx') {
           projectileWeaponSlotById.set(event.projectileId, resolveWeaponSlot(event.weaponSlot));
           const originServer = {
@@ -1737,9 +2297,12 @@ const debugFxLog = (...args: unknown[]) => {
               ttl: isGrenadeExplosion ? GRENADE_PROJECTILE_IMPACT_TTL : PROJECTILE_IMPACT_TTL_DEFAULT
             });
             if (fxSettings.decals && event.hitWorld) {
+              const projectedImpact = projectImpactWorldHit({ position: impactPos, normal });
+              const decalPos = projectedImpact?.position ?? impactPos;
+              const decalNormal = projectedImpact?.normal ?? normal;
               app.spawnDecalVfx({
-                position: impactPos,
-                normal,
+                position: decalPos,
+                normal: decalNormal,
                 surfaceType: event.surfaceType,
                 seed: event.projectileId >>> 0
               });
@@ -1883,7 +2446,19 @@ const debugFxLog = (...args: unknown[]) => {
                 app.spawnMuzzleFlashVfx({ position: muzzlePos, dir, seed, size });
               }
               if (weapon.kind === 'hitscan' && trace && trace.showTracer && muzzlePos && fxSettings.tracers) {
-                const hitDistance = trace.hitDistance > 0 ? trace.hitDistance : weapon.range;
+                let hitDistance = trace.hitDistance > 0 ? trace.hitDistance : weapon.range;
+                if (trace.hitKind === 0) {
+                  const projectedHit = projectedWorldHitByShot.get(traceKey);
+                  if (projectedHit && trace.muzzlePos) {
+                    const dx = projectedHit.position.x - trace.muzzlePos.x;
+                    const dy = projectedHit.position.y - trace.muzzlePos.y;
+                    const dz = projectedHit.position.z - trace.muzzlePos.z;
+                    const projectedDistance = Math.hypot(dx, dy, dz);
+                    if (Number.isFinite(projectedDistance) && projectedDistance > 0) {
+                      hitDistance = projectedDistance;
+                    }
+                  }
+                }
                 let length = Math.max(0, hitDistance - MUZZLE_FORWARD_OFFSET);
                 if (hasSuppressor) {
                   length *= 0.7;
@@ -1919,12 +2494,13 @@ const debugFxLog = (...args: unknown[]) => {
               debugFxLog('shot-trace-missing', { traceKey, shooterId: event.shooterId, shotSeq: event.shotSeq });
               break;
             }
-            if (trace.hitKind === 0) {
+            const projectedWorldHit =
+              projectedWorldHitByShot.get(traceKey) ?? (trace.hitKind !== 2 ? projectTraceWorldHit(trace) : null);
+            if (trace.hitKind === 0 && !projectedWorldHit) {
               debugFxLog('shot-trace-no-hit', { traceKey, shooterId: event.shooterId, shotSeq: event.shotSeq });
               break;
             }
             const seed = (hashString(event.shooterId) ^ (event.shotSeq >>> 0)) >>> 0;
-            const projectedWorldHit = trace.hitKind === 1 ? projectTraceWorldHit(trace) : null;
             const fallbackImpactPos = trace.hitPos;
             const impactPos = projectedWorldHit?.position ?? fallbackImpactPos;
             const impactNormal = projectedWorldHit?.normal ?? trace.normal;
@@ -1942,7 +2518,7 @@ const debugFxLog = (...args: unknown[]) => {
               surfaceType: trace.surfaceType,
               seed
             });
-            if (fxSettings.decals && trace.hitKind === 1) {
+            if (fxSettings.decals && (trace.hitKind === 1 || (trace.hitKind === 0 && projectedWorldHit !== null))) {
               let decalTtl: number | undefined;
               if (!projectedWorldHit) {
                 const firedDownward = trace.dir.y < -0.05;

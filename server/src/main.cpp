@@ -2,6 +2,7 @@
 #include "character_manifest.h"
 #include "config.h"
 #include "health.h"
+#include "map_world.h"
 #include "rate_limiter.h"
 #include "security_headers.h"
 #include "tick.h"
@@ -16,20 +17,190 @@
 #include <rtc/rtc.hpp>
 #endif
 
+#include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <cstdint>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <random>
+#include <sstream>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace {
 constexpr size_t kMaxPayloadBytes = 32 * 1024;
 constexpr size_t kMaxRequestIdBytes = 64;
+constexpr int kMapSignatureTickRate = 60;
 const char *kTooLargeJson = "{\"error\":\"payload_too_large\"}";
 const char *kRateLimitedJson = "{\"error\":\"rate_limited\"}";
 const char *kNotFoundJson = "{\"error\":\"not_found\"}";
 const char *kRequestIdHeader = "X-Request-Id";
+constexpr uint64_t kFnvOffsetBasis = 1469598103934665603ull;
+constexpr uint64_t kFnvPrime = 1099511628211ull;
+
+int64_t QuantizeCenti(double value) {
+  if (!std::isfinite(value)) {
+    return 0;
+  }
+  return static_cast<int64_t>(std::llround(value * 100.0));
+}
+
+uint64_t HashByte(uint64_t hash, uint8_t value) {
+  const uint64_t mixed = hash ^ static_cast<uint64_t>(value);
+  return mixed * kFnvPrime;
+}
+
+uint64_t HashString(uint64_t hash, const std::string &value) {
+  for (char ch : value) {
+    hash = HashByte(hash, static_cast<uint8_t>(ch));
+  }
+  return hash;
+}
+
+std::string HashToHex(uint64_t hash) {
+  std::ostringstream out;
+  out << std::hex << std::setw(16) << std::setfill('0') << hash;
+  return out.str();
+}
+
+struct ColliderRow {
+  int64_t min_x = 0;
+  int64_t max_x = 0;
+  int64_t min_y = 0;
+  int64_t max_y = 0;
+  int64_t min_z = 0;
+  int64_t max_z = 0;
+  int64_t surface_type = 0;
+};
+
+struct PickupRow {
+  int64_t kind = 0;
+  int64_t pos_x = 0;
+  int64_t pos_y = 0;
+  int64_t pos_z = 0;
+  int64_t radius = 0;
+  int64_t weapon_slot = 0;
+  int64_t amount = 0;
+  int64_t respawn_ticks = 0;
+};
+
+std::vector<ColliderRow> BuildColliderRows(const afps::sim::CollisionWorld &world) {
+  std::vector<ColliderRow> rows;
+  rows.reserve(world.colliders.size());
+  for (const auto &collider : world.colliders) {
+    rows.push_back({
+        QuantizeCenti(collider.min_x),
+        QuantizeCenti(collider.max_x),
+        QuantizeCenti(collider.min_y),
+        QuantizeCenti(collider.max_y),
+        QuantizeCenti(collider.min_z),
+        QuantizeCenti(collider.max_z),
+        static_cast<int64_t>(collider.surface_type),
+    });
+  }
+  std::sort(rows.begin(), rows.end(), [](const ColliderRow &a, const ColliderRow &b) {
+    return std::tie(a.min_x, a.max_x, a.min_y, a.max_y, a.min_z, a.max_z, a.surface_type) <
+           std::tie(b.min_x, b.max_x, b.min_y, b.max_y, b.min_z, b.max_z, b.surface_type);
+  });
+  return rows;
+}
+
+std::string ComputeColliderHash(const std::vector<ColliderRow> &rows) {
+  std::ostringstream canonical;
+  for (const auto &row : rows) {
+    canonical << row.min_x << "," << row.max_x << "," << row.min_y << "," << row.max_y << ","
+              << row.min_z << "," << row.max_z << "," << row.surface_type << ";";
+  }
+  const uint64_t hash = HashString(kFnvOffsetBasis, canonical.str());
+  return HashToHex(hash);
+}
+
+std::vector<PickupRow> BuildPickupRows(const std::vector<afps::world::PickupSpawn> &pickups) {
+  std::vector<PickupRow> rows;
+  rows.reserve(pickups.size());
+  for (const auto &pickup : pickups) {
+    rows.push_back({
+        static_cast<int64_t>(pickup.kind),
+        QuantizeCenti(pickup.position.x),
+        QuantizeCenti(pickup.position.y),
+        QuantizeCenti(pickup.position.z),
+        QuantizeCenti(pickup.radius),
+        static_cast<int64_t>(pickup.weapon_slot),
+        static_cast<int64_t>(pickup.amount),
+        static_cast<int64_t>(pickup.respawn_ticks),
+    });
+  }
+  std::sort(rows.begin(), rows.end(), [](const PickupRow &a, const PickupRow &b) {
+    return std::tie(a.kind, a.pos_x, a.pos_y, a.pos_z, a.radius, a.weapon_slot, a.amount,
+                    a.respawn_ticks) <
+           std::tie(b.kind, b.pos_x, b.pos_y, b.pos_z, b.radius, b.weapon_slot, b.amount,
+                    b.respawn_ticks);
+  });
+  return rows;
+}
+
+std::string ComputePickupHash(const std::vector<PickupRow> &rows) {
+  std::ostringstream canonical;
+  for (const auto &row : rows) {
+    canonical << row.kind << "," << row.pos_x << "," << row.pos_y << "," << row.pos_z << ","
+              << row.radius << "," << row.weapon_slot << "," << row.amount << ","
+              << row.respawn_ticks << ";";
+  }
+  const uint64_t hash = HashString(kFnvOffsetBasis, canonical.str());
+  return HashToHex(hash);
+}
+
+afps::world::MapWorldOptions BuildMapOptions(const ServerConfig &config) {
+  afps::world::MapWorldOptions options;
+  if (config.map_mode == "static") {
+    options.mode = afps::world::MapWorldMode::Static;
+    options.static_manifest_path = config.map_manifest_path;
+  } else {
+    options.mode = afps::world::MapWorldMode::Legacy;
+    options.static_manifest_path.clear();
+  }
+  return options;
+}
+
+int DumpMapSignature(const ServerConfig &config) {
+  const auto options = BuildMapOptions(config);
+  const auto generated =
+      afps::world::GenerateMapWorld(afps::sim::kDefaultSimConfig, config.map_seed,
+                                    kMapSignatureTickRate, options);
+  const auto collider_rows = BuildColliderRows(generated.collision_world);
+  const auto pickup_rows = BuildPickupRows(generated.pickups);
+  std::ostringstream out;
+  out << "{\"seed\":" << generated.seed << ",\"mode\":\"" << config.map_mode
+      << "\",\"colliderCount\":" << generated.collision_world.colliders.size()
+      << ",\"pickupCount\":" << generated.pickups.size()
+      << ",\"colliderHash\":\"" << ComputeColliderHash(collider_rows)
+      << "\",\"pickupHash\":\"" << ComputePickupHash(pickup_rows) << "\""
+      << ",\"colliderRows\":[";
+  for (size_t i = 0; i < collider_rows.size(); ++i) {
+    const auto &row = collider_rows[i];
+    if (i > 0) {
+      out << ",";
+    }
+    out << "[" << row.min_x << "," << row.max_x << "," << row.min_y << "," << row.max_y << ","
+        << row.min_z << "," << row.max_z << "," << row.surface_type << "]";
+  }
+  out << "],\"pickupRows\":[";
+  for (size_t i = 0; i < pickup_rows.size(); ++i) {
+    const auto &row = pickup_rows[i];
+    if (i > 0) {
+      out << ",";
+    }
+    out << "[" << row.kind << "," << row.pos_x << "," << row.pos_y << "," << row.pos_z << ","
+        << row.radius << "," << row.weapon_slot << "," << row.amount << "," << row.respawn_ticks
+        << "]";
+  }
+  out << "]}";
+  std::cout << out.str() << "\n";
+  return 0;
+}
 
 bool IsValidRequestIdChar(char ch) {
   return std::isalnum(static_cast<unsigned char>(ch)) || ch == '-' || ch == '_';
@@ -148,7 +319,7 @@ int main(int argc, char **argv) {
   auto config_errors = ValidateConfig(parse.config);
   parse.errors.insert(parse.errors.end(), config_errors.begin(), config_errors.end());
 
-  if (!parse.config.show_help && parse.config.use_https) {
+  if (!parse.config.show_help && !parse.config.dump_map_signature && parse.config.use_https) {
     if (!parse.config.cert_path.empty() && !std::filesystem::exists(parse.config.cert_path)) {
       parse.errors.push_back("Certificate file not found: " + parse.config.cert_path);
     }
@@ -163,6 +334,10 @@ int main(int argc, char **argv) {
     }
     std::cout << UsageText(argv[0]);
     return parse.errors.empty() ? 0 : 1;
+  }
+
+  if (parse.config.dump_map_signature) {
+    return DumpMapSignature(parse.config);
   }
 
   RateLimiter limiter(40.0, 20.0);
@@ -198,8 +373,9 @@ int main(int argc, char **argv) {
     }
   }
   SignalingStore signaling_store(signaling_config);
+  afps::world::MapWorldOptions map_options = BuildMapOptions(parse.config);
   TickLoop tick_loop(signaling_store, kServerTickRate,
-                     parse.config.snapshot_keyframe_interval, parse.config.map_seed);
+                     parse.config.snapshot_keyframe_interval, parse.config.map_seed, map_options);
   tick_loop.Start();
 #endif
 

@@ -2,9 +2,11 @@ import type { AabbCollider } from '../world/collision';
 import { sanitizeColliders } from '../world/collision';
 import type { Object3DLike, SceneLike, Vector3Like } from '../types';
 import {
+  buildStaticWorldFromPlacements,
   generateProceduralRetroUrbanMap,
   PROCEDURAL_MAP_CONSTANTS,
   type DoorSide,
+  type ProceduralGeneratorType,
   type ProceduralRetroUrbanMap,
   type RetroMapBuilding,
   type RetroMapPickupSpawn,
@@ -18,11 +20,13 @@ type LegacyManifest = {
   placements: Placement[];
   colliders: AabbCollider[];
   pickupSpawns: RetroMapPickupSpawn[];
+  debug?: unknown;
 };
 
 export interface LoadRetroUrbanMapOptions {
   seed?: number;
   procedural?: boolean;
+  generator?: ProceduralGeneratorType;
   arenaHalfSize?: number;
   tickRate?: number;
 }
@@ -38,7 +42,7 @@ export interface LoadedRetroUrbanMap {
 }
 
 const ASSET_ROOT = '/assets/environments/cc0/kenney_city_kit_suburban_20/glb/';
-const MANIFEST_URL = '/assets/environments/cc0/kenney_city_kit_suburban_20/map.json';
+const DEFAULT_MANIFEST_URL = '/assets/environments/cc0/kenney_city_kit_suburban_20/map.json';
 const DEFAULT_YAW_CHOICES = [0, Math.PI / 2, Math.PI, (Math.PI * 3) / 2];
 const DEBUG_BOUNDS_FLAG = 'VITE_DEBUG_RETRO_URBAN_BOUNDS';
 const DEBUG_GRID_FLAG = 'VITE_DEBUG_RETRO_URBAN_GRID';
@@ -46,9 +50,14 @@ const DEBUG_COLLIDERS_FLAG = 'VITE_DEBUG_COLLIDERS';
 const DEBUG_INTERIORS_FLAG = 'VITE_DEBUG_INTERIORS';
 const ENABLE_INTERIORS_FLAG = 'VITE_ENABLE_INTERIORS';
 const PROCEDURAL_FLAG = 'VITE_PROCEDURAL_MAP';
+const PROCEDURAL_GENERATOR_FLAG = 'VITE_PROCEDURAL_GENERATOR';
 const MAP_SEED_FLAG = 'VITE_MAP_SEED';
+const MAP_MANIFEST_URL_FLAG = 'VITE_MAP_MANIFEST_URL';
+const DEBUG_ROAD_GRAPH_FLAG = 'VITE_DEBUG_ROAD_GRAPH';
+const DEBUG_MAP_JSON_FLAG = 'VITE_DEBUG_MAP_JSON';
 const DEBUG_BOUNDS_COLOR = 0x22ffcc;
 const DEBUG_COLLIDER_COLOR = 0xff7755;
+const DEBUG_ROAD_GRAPH_COLOR = 0x15c9a6;
 const DEBUG_GRID_SIZE = 40;
 const DEBUG_GRID_DIVISIONS = 10;
 const DEBUG_GRID_COLOR_MAJOR = 0x335577;
@@ -64,7 +73,8 @@ const templateCache = new Map<string, Promise<GltfLike | null>>();
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
-const toNumber = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+const toNumber = (value: unknown) =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null;
 const toBoolean = (value: unknown) => (typeof value === 'boolean' ? value : null);
 
 const parseSeed = (value: unknown): number | null => {
@@ -119,7 +129,10 @@ const parsePlacement = (value: unknown): Placement | null => {
   const roadMask = toNumber(value.roadMask);
   const cellX = toNumber(value.cellX);
   const cellY = toNumber(value.cellY);
-  const kind = value.kind === 'road' || value.kind === 'building' || value.kind === 'prop' ? value.kind : undefined;
+  const kind =
+    value.kind === 'road' || value.kind === 'building' || value.kind === 'prop'
+      ? value.kind
+      : undefined;
   const doorSide = parseDoorSide(value.doorSide);
 
   const placement: Placement = { file, position };
@@ -170,7 +183,7 @@ const normalizeYawChoices = (value: unknown): number[] | null => {
 };
 
 const createRng = (seed: number) => {
-  let state = (seed >>> 0) || 1;
+  let state = seed >>> 0 || 1;
   return () => {
     state ^= state << 13;
     state ^= state >>> 17;
@@ -191,12 +204,16 @@ const applyRandomYaw = (placements: Placement[], seed: number, yawChoices: numbe
     }
     const index = Math.floor(rand() * yawChoices.length);
     const yaw = yawChoices[Math.min(Math.max(index, 0), yawChoices.length - 1)]!;
-    return { ...placement, rotation: [0, yaw, 0] };
+    return { ...placement, rotation: [0, yaw, 0] as [number, number, number] };
   });
 };
 
 const applyTransform = (
-  object: { position: Vector3Like; rotation: { x: number; y: number; z: number }; scale?: Vector3Like },
+  object: {
+    position: Vector3Like;
+    rotation: { x: number; y: number; z: number };
+    scale?: Vector3Like;
+  },
   placement: Placement
 ) => {
   object.position.set(
@@ -285,7 +302,11 @@ const buildLegacyFallbackPlacements = (): Placement[] => {
   const tile = 4;
 
   for (let x = -2; x <= 2; x += 1) {
-    placements.push({ file: 'roads/road-straight.glb', position: [x * tile, 0, 0], rotation: [0, Math.PI / 2, 0] });
+    placements.push({
+      file: 'roads/road-straight.glb',
+      position: [x * tile, 0, 0],
+      rotation: [0, Math.PI / 2, 0]
+    });
     if (x !== 0) {
       placements.push({ file: 'roads/road-straight.glb', position: [0, 0, x * tile] });
     }
@@ -294,9 +315,17 @@ const buildLegacyFallbackPlacements = (): Placement[] => {
   placements.push(
     { file: 'roads/road-crossroad.glb', position: [0, 0, 0] },
     { file: 'roads/road-bend.glb', position: [-2 * tile, 0, 2 * tile] },
-    { file: 'roads/road-bend.glb', position: [2 * tile, 0, 2 * tile], rotation: [0, Math.PI / 2, 0] },
+    {
+      file: 'roads/road-bend.glb',
+      position: [2 * tile, 0, 2 * tile],
+      rotation: [0, Math.PI / 2, 0]
+    },
     { file: 'roads/road-bend.glb', position: [2 * tile, 0, -2 * tile], rotation: [0, Math.PI, 0] },
-    { file: 'roads/road-bend.glb', position: [-2 * tile, 0, -2 * tile], rotation: [0, -Math.PI / 2, 0] }
+    {
+      file: 'roads/road-bend.glb',
+      position: [-2 * tile, 0, -2 * tile],
+      rotation: [0, -Math.PI / 2, 0]
+    }
   );
 
   placements.push(
@@ -315,13 +344,14 @@ const buildLegacyFallbackPlacements = (): Placement[] => {
   return placements;
 };
 
-const loadLegacyManifest = async (): Promise<LegacyManifest> => {
+const loadLegacyManifest = async (tickRate: number): Promise<LegacyManifest> => {
   const fallback = buildLegacyFallbackPlacements();
+  const manifestUrl = resolveManifestUrl();
   if (typeof fetch !== 'function') {
     return { seed: 0, placements: fallback, colliders: [], pickupSpawns: [] };
   }
   try {
-    const response = await fetch(MANIFEST_URL);
+    const response = await fetch(manifestUrl);
     if (!response.ok) {
       console.warn(`suburban manifest fetch failed: ${response.status}`);
       return { seed: 0, placements: fallback, colliders: [], pickupSpawns: [] };
@@ -338,11 +368,13 @@ const loadLegacyManifest = async (): Promise<LegacyManifest> => {
     }
     const seed = parseSeed(data.seed) ?? 0;
     const yawChoices = normalizeYawChoices(data.yawChoices) ?? DEFAULT_YAW_CHOICES;
+    const normalizedPlacements = applyRandomYaw(placements, seed, yawChoices);
+    const staticWorld = buildStaticWorldFromPlacements(normalizedPlacements, tickRate);
     return {
       seed,
-      placements: applyRandomYaw(placements, seed, yawChoices),
-      colliders: [],
-      pickupSpawns: []
+      placements: normalizedPlacements,
+      colliders: staticWorld.colliders,
+      pickupSpawns: staticWorld.pickupSpawns
     };
   } catch (error) {
     console.warn('suburban manifest load failed', error);
@@ -357,6 +389,14 @@ const shouldUseProcedural = (options: LoadRetroUrbanMapOptions) => {
   return (import.meta.env?.[PROCEDURAL_FLAG] ?? '') === 'true';
 };
 
+const resolveGenerator = (options: LoadRetroUrbanMapOptions): ProceduralGeneratorType => {
+  if (options.generator === 'advanced' || options.generator === 'legacy') {
+    return options.generator;
+  }
+  const env = (import.meta.env?.[PROCEDURAL_GENERATOR_FLAG] ?? '').trim().toLowerCase();
+  return env === 'advanced' ? 'advanced' : 'legacy';
+};
+
 const resolveSeed = (options: LoadRetroUrbanMapOptions) => {
   if (Number.isFinite(options.seed)) {
     return Math.floor(options.seed!) >>> 0;
@@ -365,8 +405,18 @@ const resolveSeed = (options: LoadRetroUrbanMapOptions) => {
   return envSeed ?? 0;
 };
 
-const isProceduralBuilding = (entry: Placement): entry is Placement & { doorSide: DoorSide; cellX: number; cellY: number } =>
-  entry.kind === 'building' && !!entry.doorSide && Number.isFinite(entry.cellX) && Number.isFinite(entry.cellY);
+const resolveManifestUrl = () => {
+  const raw = (import.meta.env?.[MAP_MANIFEST_URL_FLAG] ?? '').trim();
+  return raw.length > 0 ? raw : DEFAULT_MANIFEST_URL;
+};
+
+const isProceduralBuilding = (
+  entry: Placement
+): entry is Placement & { doorSide: DoorSide; cellX: number; cellY: number } =>
+  entry.kind === 'building' &&
+  !!entry.doorSide &&
+  Number.isFinite(entry.cellX) &&
+  Number.isFinite(entry.cellY);
 
 const addInteriorMeshes = async (
   scene: SceneLike,
@@ -482,15 +532,22 @@ const addInteriorMeshes = async (
   }
 };
 
-const addColliderDebugMeshes = async (scene: SceneLike, colliders: AabbCollider[], added: Object3DLike[]) => {
+const addColliderDebugMeshes = async (
+  scene: SceneLike,
+  colliders: AabbCollider[],
+  added: Object3DLike[]
+) => {
   if (colliders.length === 0) {
     return;
   }
   try {
     const three = await import('three');
     const materialCtor =
-      (three as unknown as { MeshBasicMaterial?: new (params: { color: number; wireframe?: boolean }) => unknown })
-        .MeshBasicMaterial ?? three.MeshStandardMaterial;
+      (
+        three as unknown as {
+          MeshBasicMaterial?: new (params: { color: number; wireframe?: boolean }) => unknown;
+        }
+      ).MeshBasicMaterial ?? three.MeshStandardMaterial;
     for (const collider of colliders) {
       const width = collider.maxX - collider.minX;
       const depth = collider.maxY - collider.minY;
@@ -516,7 +573,14 @@ const addColliderDebugMeshes = async (scene: SceneLike, colliders: AabbCollider[
 };
 
 const getTemplate = (
-  loader: { load: (url: string, onLoad: (gltf: GltfLike) => void, onProgress?: unknown, onError?: (error: unknown) => void) => void },
+  loader: {
+    load: (
+      url: string,
+      onLoad: (gltf: GltfLike) => void,
+      onProgress?: unknown,
+      onError?: (error: unknown) => void
+    ) => void;
+  },
   url: string
 ) => {
   if (templateCache.has(url)) {
@@ -538,25 +602,105 @@ const getTemplate = (
   return pending;
 };
 
-const maybeSetMapStats = (stats: { total: number; loaded: number; failed: number; complete: boolean; seed: number }) => {
+const maybeSetMapStats = (stats: {
+  total: number;
+  loaded: number;
+  failed: number;
+  complete: boolean;
+  seed: number;
+}) => {
   (globalThis as unknown as { __afpsMapStats?: unknown }).__afpsMapStats = stats;
+};
+
+const maybeSetMapDebug = (debug: unknown) => {
+  (globalThis as unknown as { __afpsMapDebug?: unknown }).__afpsMapDebug = debug;
+};
+
+const addRoadGraphDebug = async (scene: SceneLike, debugData: unknown, added: Object3DLike[]) => {
+  if (!isRecord(debugData)) {
+    return;
+  }
+  const graph = isRecord(debugData.graph) ? debugData.graph : null;
+  const edges = graph && Array.isArray(graph.edges) ? graph.edges : null;
+  const width = toNumber(debugData.width);
+  const height = toNumber(debugData.height);
+  if (!edges || width === null || height === null) {
+    return;
+  }
+
+  try {
+    const three = await import('three');
+    const centerX = Math.floor(width / 2);
+    const centerY = Math.floor(height / 2);
+    const points: number[] = [];
+    for (const edgeEntry of edges) {
+      if (!isRecord(edgeEntry) || !Array.isArray(edgeEntry.cells) || edgeEntry.cells.length < 2) {
+        continue;
+      }
+      for (let i = 1; i < edgeEntry.cells.length; i += 1) {
+        const a = edgeEntry.cells[i - 1];
+        const b = edgeEntry.cells[i];
+        if (!Array.isArray(a) || !Array.isArray(b) || a.length < 2 || b.length < 2) {
+          continue;
+        }
+        const ax = toNumber(a[0]);
+        const ay = toNumber(a[1]);
+        const bx = toNumber(b[0]);
+        const by = toNumber(b[1]);
+        if (ax === null || ay === null || bx === null || by === null) {
+          continue;
+        }
+        points.push(
+          (ax - centerX) * PROCEDURAL_MAP_CONSTANTS.tileSize * MAP_SCALE,
+          0.12,
+          (ay - centerY) * PROCEDURAL_MAP_CONSTANTS.tileSize * MAP_SCALE
+        );
+        points.push(
+          (bx - centerX) * PROCEDURAL_MAP_CONSTANTS.tileSize * MAP_SCALE,
+          0.12,
+          (by - centerY) * PROCEDURAL_MAP_CONSTANTS.tileSize * MAP_SCALE
+        );
+      }
+    }
+    if (points.length < 6) {
+      return;
+    }
+    const geometry = new three.BufferGeometry();
+    geometry.setAttribute('position', new three.Float32BufferAttribute(points, 3));
+    const material = new three.LineBasicMaterial({ color: DEBUG_ROAD_GRAPH_COLOR });
+    const lines = new three.LineSegments(geometry, material);
+    scene.add(lines as unknown as Object3DLike);
+    added.push(lines as unknown as Object3DLike);
+  } catch (error) {
+    console.warn('suburban road-graph debug skipped', error);
+  }
 };
 
 const toProceduralManifest = (data: ProceduralRetroUrbanMap): LegacyManifest => ({
   seed: data.seed,
   placements: data.placements,
   colliders: data.colliders,
-  pickupSpawns: data.pickupSpawns
+  pickupSpawns: data.pickupSpawns,
+  debug: data.debug
 });
 
-export const loadRetroUrbanMap = async (scene: SceneLike, options: LoadRetroUrbanMapOptions = {}): Promise<LoadedRetroUrbanMap> => {
+export const loadRetroUrbanMap = async (
+  scene: SceneLike,
+  options: LoadRetroUrbanMapOptions = {}
+): Promise<LoadedRetroUrbanMap> => {
+  const tickRate =
+    Number.isFinite(options.tickRate) && options.tickRate! > 0 ? options.tickRate! : 60;
   const seed = resolveSeed(options);
   const procedural = shouldUseProcedural(options);
+  const generator = resolveGenerator(options);
   const debugBounds = (import.meta.env?.[DEBUG_BOUNDS_FLAG] ?? '') === 'true';
   const debugGrid = (import.meta.env?.[DEBUG_GRID_FLAG] ?? '') === 'true';
   const debugColliders = (import.meta.env?.[DEBUG_COLLIDERS_FLAG] ?? '') === 'true';
   const debugInteriors = (import.meta.env?.[DEBUG_INTERIORS_FLAG] ?? '') === 'true';
-  const enableInteriors = debugInteriors || (import.meta.env?.[ENABLE_INTERIORS_FLAG] ?? '') === 'true';
+  const debugRoadGraph = (import.meta.env?.[DEBUG_ROAD_GRAPH_FLAG] ?? '') === 'true';
+  const debugMapJson = (import.meta.env?.[DEBUG_MAP_JSON_FLAG] ?? '') === 'true';
+  const enableInteriors =
+    debugInteriors || (import.meta.env?.[ENABLE_INTERIORS_FLAG] ?? '') === 'true';
   const added: Object3DLike[] = [];
 
   try {
@@ -566,14 +710,35 @@ export const loadRetroUrbanMap = async (scene: SceneLike, options: LoadRetroUrba
       ? toProceduralManifest(
           generateProceduralRetroUrbanMap({
             seed,
+            generator,
             arenaHalfSize: options.arenaHalfSize,
-            tickRate: options.tickRate
+            tickRate
           })
         )
-      : await loadLegacyManifest();
+      : await loadLegacyManifest(tickRate);
+
+    maybeSetMapDebug(manifest.debug);
+    if (
+      procedural &&
+      generator === 'advanced' &&
+      isRecord(manifest.debug) &&
+      isRecord(manifest.debug.stats)
+    ) {
+      const stats = manifest.debug.stats as { attempt?: unknown; score?: unknown };
+      const attempt = toNumber(stats.attempt) ?? 0;
+      const score = toNumber(stats.score) ?? 0;
+      console.info(
+        `[afps] advanced suburban map seed=${seed} attempt=${attempt} score=${score.toFixed(2)}`
+      );
+    }
+    if (debugMapJson && manifest.debug !== undefined) {
+      console.info('[afps] map debug json', JSON.stringify(manifest.debug));
+    }
 
     let BoxHelper: null | (new (object: object, color: number) => object) = null;
-    let GridHelper: null | (new (size: number, divisions: number, color1: number, color2: number) => object) = null;
+    let GridHelper:
+      | null
+      | (new (size: number, divisions: number, color1: number, color2: number) => object) = null;
     if (debugBounds || debugGrid) {
       const three = await import('three');
       if (debugBounds) {
@@ -644,6 +809,10 @@ export const loadRetroUrbanMap = async (scene: SceneLike, options: LoadRetroUrba
       await addInteriorMeshes(scene, manifest.placements, added, debugInteriors);
     }
 
+    if (procedural && debugRoadGraph && manifest.debug !== undefined) {
+      await addRoadGraphDebug(scene, manifest.debug, added);
+    }
+
     const colliders = sanitizeColliders(manifest.colliders);
     if (debugColliders) {
       await addColliderDebugMeshes(scene, colliders, added);
@@ -675,6 +844,7 @@ export const loadRetroUrbanMap = async (scene: SceneLike, options: LoadRetroUrba
     console.warn('suburban map load skipped', error);
     const stats = { total: 0, loaded: 0, failed: 0, complete: true, seed: seed >>> 0 };
     maybeSetMapStats(stats);
+    maybeSetMapDebug(undefined);
     return {
       seed: seed >>> 0,
       colliders: [],

@@ -37,7 +37,11 @@ private:
 
 class TickLoop {
 public:
-  TickLoop(SignalingStore &store, int tick_rate, int snapshot_keyframe_interval, uint32_t map_seed = 0);
+  TickLoop(SignalingStore &store,
+           int tick_rate,
+           int snapshot_keyframe_interval,
+           uint32_t map_seed = 0,
+           const afps::world::MapWorldOptions &map_options = {});
   ~TickLoop();
 
   void Start();
@@ -85,6 +89,7 @@ private:
   std::unordered_set<std::string> pickup_sync_sent_;
   int next_projectile_id_ = 1;
   uint32_t map_seed_ = 0;
+  afps::world::MapWorldOptions map_options_{};
   afps::sim::CollisionWorld collision_world_;
   afps::sim::SimConfig sim_config_ = afps::sim::kDefaultSimConfig;
   afps::weapons::WeaponConfig weapon_config_ = afps::weapons::BuildDefaultWeaponConfig();

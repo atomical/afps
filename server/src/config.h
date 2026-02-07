@@ -18,6 +18,9 @@ struct ServerConfig {
   int turn_ttl_seconds = 3600;
   int snapshot_keyframe_interval = kSnapshotKeyframeInterval;
   uint32_t map_seed = 0;
+  std::string map_mode = "legacy";
+  std::string map_manifest_path;
+  bool dump_map_signature = false;
   std::string character_manifest_path;
   bool use_https = true;
   bool show_help = false;

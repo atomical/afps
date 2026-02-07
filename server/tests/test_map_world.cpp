@@ -3,6 +3,7 @@
 #include "map_world.h"
 
 #include <algorithm>
+#include <filesystem>
 
 TEST_CASE("GenerateMapWorld is deterministic for seed") {
   const auto config = afps::sim::kDefaultSimConfig;
@@ -93,4 +94,19 @@ TEST_CASE("GenerateMapWorld keeps center road spawnable") {
     const bool overlaps_spawn = overlaps_x && overlaps_y;
     CHECK_FALSE(overlaps_spawn);
   }
+}
+
+TEST_CASE("GenerateMapWorld static mode loads colliders from manifest") {
+  const auto config = afps::sim::kDefaultSimConfig;
+  const std::filesystem::path test_file = __FILE__;
+  const std::filesystem::path root = test_file.parent_path().parent_path().parent_path();
+  const std::filesystem::path manifest =
+      root / "client/public/assets/environments/cc0/kenney_city_kit_suburban_20/map.json";
+  afps::world::MapWorldOptions options;
+  options.mode = afps::world::MapWorldMode::Static;
+  options.static_manifest_path = manifest.string();
+
+  const auto generated = afps::world::GenerateMapWorld(config, 0u, 60, options);
+  CHECK(generated.collision_world.colliders.size() > 0);
+  CHECK(generated.pickups.size() >= 6);
 }

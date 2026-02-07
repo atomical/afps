@@ -8,6 +8,7 @@ Living spec: `docs/LIVING_SPEC.md`.
 - Network stack overview: `docs/NETWORK_STACK.md`
 - Protocol reference: `docs/PROTOCOL.md`
 - Netcode flow: `docs/NETCODE.md`
+- Advanced suburban map generation: `docs/ADVANCED_SUBURBAN_GENERATOR.md`
 
 ## Controls
 
@@ -38,7 +39,20 @@ VITE_SIGNALING_URL=http://localhost:8443 VITE_SIGNALING_AUTH_TOKEN=devtoken npm 
 Optional map/debug flags:
 
 ```bash
-VITE_PROCEDURAL_MAP=true VITE_DEBUG_COLLIDERS=true VITE_DEBUG_INTERIORS=true npm run dev
+VITE_PROCEDURAL_MAP=true \
+VITE_PROCEDURAL_GENERATOR=advanced \
+VITE_DEBUG_COLLIDERS=true \
+VITE_DEBUG_INTERIORS=true \
+VITE_DEBUG_ROAD_GRAPH=true \
+npm run dev
+```
+
+For static map manifests (including generated advanced maps), override the manifest URL:
+
+```bash
+VITE_PROCEDURAL_MAP=false \
+VITE_MAP_MANIFEST_URL=/assets/environments/generated/advanced_map.json \
+npm run dev
 ```
 
 To run server + client together (HTTP signaling, default):
@@ -53,8 +67,35 @@ Map mode/seed with `run_dev.sh`:
 # Procedural map (default), shared seed on server+client:
 ./tools/run_dev.sh --procedural --map-seed 1337
 
+# Advanced suburban (parity-safe): generates a static manifest and uses it on client+server:
+./tools/run_dev.sh --advanced-generator --map-seed 1337
+
+# Procedural + legacy generator:
+./tools/run_dev.sh --procedural --legacy-generator --map-seed 1337
+
 # Static client map manifest:
 ./tools/run_dev.sh --static
+```
+
+Map parity matrix check (legacy, static manifest, advanced-generator manifest):
+
+```bash
+node tools/check_map_parity.mjs
+```
+
+CI also runs this as a dedicated required job (`map-parity`) in `.github/workflows/ci.yml`.
+
+Full test suite:
+
+```bash
+# strict (default): coverage threshold failures fail the suite
+./tools/run_all_tests.sh
+
+# optional: if coverage gate fails, rerun client unit tests without coverage
+CLIENT_COVERAGE_MODE=optional ./tools/run_all_tests.sh
+
+# off: skip coverage-gated unit run and execute unit tests without coverage
+CLIENT_COVERAGE_MODE=off ./tools/run_all_tests.sh
 ```
 
 To enable the WASM sim (requires Emscripten):

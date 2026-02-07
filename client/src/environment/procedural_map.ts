@@ -1,5 +1,11 @@
 import { SIM_CONFIG } from '../sim/config';
 import type { AabbCollider } from '../world/collision';
+import {
+  DEFAULT_ADVANCED_SUBURBAN_CONFIG,
+  generateAdvancedSuburbanMap,
+  mergeAdvancedSuburbanConfig,
+  type MapGenConfig
+} from './advanced_suburban_generator';
 
 export type DoorSide = 'north' | 'east' | 'south' | 'west';
 export type PickupKind = 'health' | 'weapon';
@@ -32,6 +38,7 @@ export interface RetroMapBuilding {
   file: string;
   rotationY: number;
   position: [number, number, number];
+  scale?: number;
 }
 
 export interface RetroMapPickupSpawn {
@@ -54,12 +61,23 @@ export interface ProceduralRetroUrbanMap {
   gridRadius: number;
   tileSize: number;
   mapScale: number;
+  debug?: unknown;
 }
+
+export interface StaticMapWorld {
+  buildings: RetroMapBuilding[];
+  colliders: AabbCollider[];
+  pickupSpawns: RetroMapPickupSpawn[];
+}
+
+export type ProceduralGeneratorType = 'legacy' | 'advanced';
 
 export interface ProceduralMapOptions {
   seed?: number;
   arenaHalfSize?: number;
   tickRate?: number;
+  generator?: ProceduralGeneratorType;
+  advancedConfig?: Partial<MapGenConfig>;
 }
 
 const TILE_SIZE = 4;
@@ -75,7 +93,6 @@ const ROOF_THICKNESS = 0.2;
 const PICKUP_HEIGHT = 0.2;
 const PICKUP_RADIUS = 1.2;
 const HALF_PI = Math.PI / 2;
-const ROOF_SURFACE = 0;
 const WALL_SURFACE = 1;
 
 const ROAD_NORTH = 1 << 0;
@@ -107,6 +124,10 @@ const BUILDING_FILES = [
   'building-type-u.glb'
 ];
 
+const BUILDING_FILE_RE = /^building-type-[a-u]\.glb$/i;
+
+const isBuildingFile = (file: string) => BUILDING_FILE_RE.test(file);
+
 export interface BuildingColliderPart {
   minX: number;
   maxX: number;
@@ -130,9 +151,18 @@ const createColliderProfile = (parts: readonly BuildingColliderPart[]): Building
       maxZ: Number.isFinite(part.maxZ) ? Math.max(0.4, part.maxZ) : WALL_HEIGHT
     }))
     .filter((part) => part.maxX > part.minX && part.maxY > part.minY);
-  const fallback = normalized.length > 0
-    ? normalized
-    : [{ minX: -ROOM_HALF, maxX: ROOM_HALF, minY: -ROOM_HALF, maxY: ROOM_HALF, maxZ: WALL_HEIGHT }];
+  const fallback =
+    normalized.length > 0
+      ? normalized
+      : [
+          {
+            minX: -ROOM_HALF,
+            maxX: ROOM_HALF,
+            minY: -ROOM_HALF,
+            maxY: ROOM_HALF,
+            maxZ: WALL_HEIGHT
+          }
+        ];
   const bounds = fallback.reduce(
     (acc, part) => ({
       minX: Math.min(acc.minX, part.minX),
@@ -155,7 +185,9 @@ const createColliderProfile = (parts: readonly BuildingColliderPart[]): Building
 const BUILDING_COLLIDER_PROFILES = new Map<string, BuildingColliderProfile>([
   [
     'building-type-a.glb',
-    createColliderProfile([{ minX: -1.625, maxX: 1.625, minY: -1.2852, maxY: 1.2852, maxZ: 2.0839 }])
+    createColliderProfile([
+      { minX: -1.625, maxX: 1.625, minY: -1.2852, maxY: 1.2852, maxZ: 2.0839 }
+    ])
   ],
   [
     'building-type-b.glb',
@@ -166,11 +198,15 @@ const BUILDING_COLLIDER_PROFILES = new Map<string, BuildingColliderProfile>([
   ],
   [
     'building-type-c.glb',
-    createColliderProfile([{ minX: -1.608, maxX: 1.608, minY: -1.2852, maxY: 1.2852, maxZ: 2.5839 }])
+    createColliderProfile([
+      { minX: -1.608, maxX: 1.608, minY: -1.2852, maxY: 1.2852, maxZ: 2.5839 }
+    ])
   ],
   [
     'building-type-d.glb',
-    createColliderProfile([{ minX: -2.1955, maxX: 2.1955, minY: -1.285, maxY: 1.285, maxZ: 3.0938 }])
+    createColliderProfile([
+      { minX: -2.1955, maxX: 2.1955, minY: -1.285, maxY: 1.285, maxZ: 3.0938 }
+    ])
   ],
   [
     'building-type-e.glb',
@@ -178,7 +214,9 @@ const BUILDING_COLLIDER_PROFILES = new Map<string, BuildingColliderProfile>([
   ],
   [
     'building-type-f.glb',
-    createColliderProfile([{ minX: -1.785, maxX: 1.785, minY: -1.7574, maxY: 1.7574, maxZ: 2.8438 }])
+    createColliderProfile([
+      { minX: -1.785, maxX: 1.785, minY: -1.7574, maxY: 1.7574, maxZ: 2.8438 }
+    ])
   ],
   [
     'building-type-g.glb',
@@ -197,7 +235,9 @@ const BUILDING_COLLIDER_PROFILES = new Map<string, BuildingColliderProfile>([
   ],
   [
     'building-type-j.glb',
-    createColliderProfile([{ minX: -1.7125, maxX: 1.7125, minY: -1.145, maxY: 1.145, maxZ: 2.5938 }])
+    createColliderProfile([
+      { minX: -1.7125, maxX: 1.7125, minY: -1.145, maxY: 1.145, maxZ: 2.5938 }
+    ])
   ],
   [
     'building-type-k.glb',
@@ -213,11 +253,15 @@ const BUILDING_COLLIDER_PROFILES = new Map<string, BuildingColliderProfile>([
   ],
   [
     'building-type-n.glb',
-    createColliderProfile([{ minX: -2.2303, maxX: 2.2303, minY: -1.7224, maxY: 1.7224, maxZ: 2.8438 }])
+    createColliderProfile([
+      { minX: -2.2303, maxX: 2.2303, minY: -1.7224, maxY: 1.7224, maxZ: 2.8438 }
+    ])
   ],
   [
     'building-type-o.glb',
-    createColliderProfile([{ minX: -1.5875, maxX: 1.5875, minY: -1.285, maxY: 1.285, maxZ: 2.8438 }])
+    createColliderProfile([
+      { minX: -1.5875, maxX: 1.5875, minY: -1.285, maxY: 1.285, maxZ: 2.8438 }
+    ])
   ],
   [
     'building-type-p.glb',
@@ -233,7 +277,9 @@ const BUILDING_COLLIDER_PROFILES = new Map<string, BuildingColliderProfile>([
   ],
   [
     'building-type-s.glb',
-    createColliderProfile([{ minX: -1.7575, maxX: 1.7575, minY: -1.358, maxY: 1.358, maxZ: 2.8438 }])
+    createColliderProfile([
+      { minX: -1.7575, maxX: 1.7575, minY: -1.358, maxY: 1.358, maxZ: 2.8438 }
+    ])
   ],
   [
     'building-type-t.glb',
@@ -241,7 +287,9 @@ const BUILDING_COLLIDER_PROFILES = new Map<string, BuildingColliderProfile>([
   ],
   [
     'building-type-u.glb',
-    createColliderProfile([{ minX: -1.785, maxX: 1.785, minY: -1.3587, maxY: 1.3587, maxZ: 2.8438 }])
+    createColliderProfile([
+      { minX: -1.785, maxX: 1.785, minY: -1.3587, maxY: 1.3587, maxZ: 2.8438 }
+    ])
   ]
 ]);
 
@@ -260,7 +308,7 @@ class XorShift32 {
 
   constructor(seed: number) {
     const safeSeed = Number.isFinite(seed) ? Math.floor(seed) : 0;
-    this.state = (safeSeed >>> 0) || 1;
+    this.state = safeSeed >>> 0 || 1;
   }
 
   nextU32() {
@@ -320,14 +368,23 @@ const distanceToRoadAlongDir = (
   return Number.POSITIVE_INFINITY;
 };
 
-const resolveDoorSide = (roads: Set<string>, gridRadius: number, cellX: number, cellY: number, seed: number): DoorSide => {
+const resolveDoorSide = (
+  roads: Set<string>,
+  gridRadius: number,
+  cellX: number,
+  cellY: number,
+  seed: number
+): DoorSide => {
   const candidates: Array<{ side: DoorSide; dist: number }> = [
     { side: 'north', dist: distanceToRoadAlongDir(roads, gridRadius, cellX, cellY, 0, 1) },
     { side: 'east', dist: distanceToRoadAlongDir(roads, gridRadius, cellX, cellY, 1, 0) },
     { side: 'south', dist: distanceToRoadAlongDir(roads, gridRadius, cellX, cellY, 0, -1) },
     { side: 'west', dist: distanceToRoadAlongDir(roads, gridRadius, cellX, cellY, -1, 0) }
   ];
-  const bestDist = candidates.reduce((best, entry) => Math.min(best, entry.dist), Number.POSITIVE_INFINITY);
+  const bestDist = candidates.reduce(
+    (best, entry) => Math.min(best, entry.dist),
+    Number.POSITIVE_INFINITY
+  );
   if (!Number.isFinite(bestDist)) {
     return 'south';
   }
@@ -365,7 +422,9 @@ const resolveRoadAsset = (mask: number): { file: string; rotationY: number } => 
 
   const bits = countBits(mask);
   if (bits === 3) {
-    const missing = [ROAD_NORTH, ROAD_EAST, ROAD_SOUTH, ROAD_WEST].find((bit) => (mask & bit) === 0) ?? ROAD_SOUTH;
+    const missing =
+      [ROAD_NORTH, ROAD_EAST, ROAD_SOUTH, ROAD_WEST].find((bit) => (mask & bit) === 0) ??
+      ROAD_SOUTH;
     if (missing === ROAD_NORTH) return { file: 'roads/road-intersection.glb', rotationY: Math.PI };
     if (missing === ROAD_EAST) return { file: 'roads/road-intersection.glb', rotationY: -HALF_PI };
     if (missing === ROAD_SOUTH) return { file: 'roads/road-intersection.glb', rotationY: 0 };
@@ -410,6 +469,25 @@ const resolveBuildingRotation = (doorSide: DoorSide) => {
   return -HALF_PI;
 };
 
+export const resolveDoorSideFromRotation = (rotationY: number): DoorSide => {
+  const raw = Number.isFinite(rotationY) ? rotationY : 0;
+  let yaw = raw % (Math.PI * 2);
+  if (yaw < 0) {
+    yaw += Math.PI * 2;
+  }
+  const quarterTurns = Math.round(yaw / HALF_PI) & 3;
+  if (quarterTurns === 0) {
+    return 'south';
+  }
+  if (quarterTurns === 1) {
+    return 'west';
+  }
+  if (quarterTurns === 2) {
+    return 'north';
+  }
+  return 'east';
+};
+
 const rotatePointByDoorSide = (x: number, y: number, doorSide: DoorSide): [number, number] => {
   if (doorSide === 'west') {
     return [-y, x];
@@ -423,7 +501,10 @@ const rotatePointByDoorSide = (x: number, y: number, doorSide: DoorSide): [numbe
   return [x, y];
 };
 
-const rotatePartByDoorSide = (part: BuildingColliderPart, doorSide: DoorSide): BuildingColliderPart => {
+const rotatePartByDoorSide = (
+  part: BuildingColliderPart,
+  doorSide: DoorSide
+): BuildingColliderPart => {
   if (doorSide === 'south') {
     return { ...part };
   }
@@ -452,6 +533,17 @@ const rotatePartByDoorSide = (part: BuildingColliderPart, doorSide: DoorSide): B
   };
 };
 
+const scaleColliderPart = (part: BuildingColliderPart, scale: number): BuildingColliderPart => {
+  const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  return {
+    minX: part.minX * safeScale,
+    maxX: part.maxX * safeScale,
+    minY: part.minY * safeScale,
+    maxY: part.maxY * safeScale,
+    maxZ: Math.max(0.4, part.maxZ * safeScale)
+  };
+};
+
 const addCollider = (
   colliders: AabbCollider[],
   nextId: number,
@@ -476,14 +568,38 @@ const addCollider = (
   return nextId + 1;
 };
 
-const appendBuildingColliders = (colliders: AabbCollider[], nextId: number, building: RetroMapBuilding) => {
+const appendBuildingColliders = (
+  colliders: AabbCollider[],
+  nextId: number,
+  building: RetroMapBuilding
+) => {
   const cx = building.cellX * TILE_SIZE * MAP_SCALE;
   const cy = building.cellY * TILE_SIZE * MAP_SCALE;
-  const profile = getBuildingColliderProfile(building.file);
+  return appendBuildingCollidersAtCenter(
+    colliders,
+    nextId,
+    cx,
+    cy,
+    building.file,
+    building.doorSide,
+    building.scale ?? 1
+  );
+};
+
+export const appendBuildingCollidersAtCenter = (
+  colliders: AabbCollider[],
+  nextId: number,
+  cx: number,
+  cy: number,
+  file: string,
+  doorSide: DoorSide,
+  scale = 1
+) => {
+  const profile = getBuildingColliderProfile(file);
   let id = nextId;
 
   for (const rawPart of profile.parts) {
-    const part = rotatePartByDoorSide(rawPart, building.doorSide);
+    const part = rotatePartByDoorSide(scaleColliderPart(rawPart, scale), doorSide);
     id = addCollider(
       colliders,
       id,
@@ -492,7 +608,7 @@ const appendBuildingColliders = (colliders: AabbCollider[], nextId: number, buil
       cy + part.minY,
       cy + part.maxY,
       0,
-      part.maxZ,
+      Math.max(0.4, part.maxZ),
       WALL_SURFACE
     );
   }
@@ -502,24 +618,280 @@ const appendBuildingColliders = (colliders: AabbCollider[], nextId: number, buil
 const resolvePickupPosition = (building: RetroMapBuilding): [number, number, number] => {
   const cx = building.cellX * TILE_SIZE * MAP_SCALE;
   const cy = building.cellY * TILE_SIZE * MAP_SCALE;
-  const bounds = rotatePartByDoorSide(getBuildingColliderProfile(building.file).bounds, building.doorSide);
+  const bounds = rotatePartByDoorSide(
+    scaleColliderPart(getBuildingColliderProfile(building.file).bounds, building.scale ?? 1),
+    building.doorSide
+  );
+  return resolvePickupPositionFromCenter(cx, cy, building.doorSide, bounds);
+};
+
+const resolvePickupPositionFromCenter = (
+  cx: number,
+  cy: number,
+  doorSide: DoorSide,
+  bounds: BuildingColliderPart
+): [number, number, number] => {
   const offset = PICKUP_RADIUS + 0.35;
   let x = cx;
   let y = cy;
-  if (building.doorSide === 'north') y += bounds.maxY + offset;
-  else if (building.doorSide === 'east') x += bounds.maxX + offset;
-  else if (building.doorSide === 'south') y += bounds.minY - offset;
+  if (doorSide === 'north') y += bounds.maxY + offset;
+  else if (doorSide === 'east') x += bounds.maxX + offset;
+  else if (doorSide === 'south') y += bounds.minY - offset;
   else x += bounds.minX - offset;
   return [x, y, PICKUP_HEIGHT];
 };
 
-export const generateProceduralRetroUrbanMap = (options: ProceduralMapOptions = {}): ProceduralRetroUrbanMap => {
-  const seed = Number.isFinite(options.seed) ? (Math.floor(options.seed!) >>> 0) : 0;
+const quantizePickupRespawns = (pickupSpawns: RetroMapPickupSpawn[], tickRate: number) => {
+  const pickupTickQuant = Math.max(1, Math.round(tickRate));
+  for (const pickup of pickupSpawns) {
+    pickup.respawnSeconds = Math.max(
+      1,
+      Math.round(pickup.respawnSeconds * pickupTickQuant) / pickupTickQuant
+    );
+  }
+};
+
+const buildPickupSpawns = (
+  buildings: RetroMapBuilding[],
+  tickRate: number
+): RetroMapPickupSpawn[] => {
+  const pickupSpawns: RetroMapPickupSpawn[] = [];
+  let pickupId = 1;
+  let healthCount = 0;
+  for (let i = 0; i < buildings.length && healthCount < 4; i += 1) {
+    pickupSpawns.push({
+      id: pickupId++,
+      kind: 'health',
+      position: resolvePickupPosition(buildings[i]!),
+      radius: PICKUP_RADIUS,
+      weaponSlot: 0,
+      amount: 25,
+      respawnSeconds: 10
+    });
+    healthCount += 1;
+  }
+
+  let weaponCount = 0;
+  for (let i = 0; i < buildings.length && weaponCount < 2; i += 1) {
+    const index = buildings.length - 1 - i;
+    pickupSpawns.push({
+      id: pickupId++,
+      kind: 'weapon',
+      position: resolvePickupPosition(buildings[index]!),
+      radius: PICKUP_RADIUS,
+      weaponSlot: weaponCount % 2,
+      amount: 0,
+      respawnSeconds: 15
+    });
+    weaponCount += 1;
+  }
+
+  const fallbackPositions: Array<[number, number, number]> = [
+    [-6, -6, PICKUP_HEIGHT],
+    [6, -6, PICKUP_HEIGHT],
+    [-6, 6, PICKUP_HEIGHT],
+    [6, 6, PICKUP_HEIGHT],
+    [0, -8, PICKUP_HEIGHT],
+    [0, 8, PICKUP_HEIGHT]
+  ];
+
+  for (let i = healthCount; i < 4; i += 1) {
+    pickupSpawns.push({
+      id: pickupId++,
+      kind: 'health',
+      position: fallbackPositions[i % fallbackPositions.length]!,
+      radius: PICKUP_RADIUS,
+      weaponSlot: 0,
+      amount: 25,
+      respawnSeconds: 10
+    });
+  }
+
+  for (let i = weaponCount; i < 2; i += 1) {
+    pickupSpawns.push({
+      id: pickupId++,
+      kind: 'weapon',
+      position: fallbackPositions[(i + 4) % fallbackPositions.length]!,
+      radius: PICKUP_RADIUS,
+      weaponSlot: i % 2,
+      amount: 0,
+      respawnSeconds: 15
+    });
+  }
+
+  quantizePickupRespawns(pickupSpawns, tickRate);
+  return pickupSpawns;
+};
+
+const buildPickupSpawnsFromWorld = (
+  buildings: RetroMapBuilding[],
+  tickRate: number
+): RetroMapPickupSpawn[] => {
+  const pickupSpawns: RetroMapPickupSpawn[] = [];
+  let pickupId = 1;
+  let healthCount = 0;
+  for (let i = 0; i < buildings.length && healthCount < 4; i += 1) {
+    const building = buildings[i]!;
+    const cx = building.position[0] * MAP_SCALE;
+    const cy = building.position[2] * MAP_SCALE;
+    const bounds = rotatePartByDoorSide(
+      scaleColliderPart(getBuildingColliderProfile(building.file).bounds, building.scale ?? 1),
+      building.doorSide
+    );
+    pickupSpawns.push({
+      id: pickupId++,
+      kind: 'health',
+      position: resolvePickupPositionFromCenter(cx, cy, building.doorSide, bounds),
+      radius: PICKUP_RADIUS,
+      weaponSlot: 0,
+      amount: 25,
+      respawnSeconds: 10
+    });
+    healthCount += 1;
+  }
+
+  let weaponCount = 0;
+  for (let i = 0; i < buildings.length && weaponCount < 2; i += 1) {
+    const index = buildings.length - 1 - i;
+    const building = buildings[index]!;
+    const cx = building.position[0] * MAP_SCALE;
+    const cy = building.position[2] * MAP_SCALE;
+    const bounds = rotatePartByDoorSide(
+      scaleColliderPart(getBuildingColliderProfile(building.file).bounds, building.scale ?? 1),
+      building.doorSide
+    );
+    pickupSpawns.push({
+      id: pickupId++,
+      kind: 'weapon',
+      position: resolvePickupPositionFromCenter(cx, cy, building.doorSide, bounds),
+      radius: PICKUP_RADIUS,
+      weaponSlot: weaponCount % 2,
+      amount: 0,
+      respawnSeconds: 15
+    });
+    weaponCount += 1;
+  }
+
+  const fallbackPositions: Array<[number, number, number]> = [
+    [-6, -6, PICKUP_HEIGHT],
+    [6, -6, PICKUP_HEIGHT],
+    [-6, 6, PICKUP_HEIGHT],
+    [6, 6, PICKUP_HEIGHT],
+    [0, -8, PICKUP_HEIGHT],
+    [0, 8, PICKUP_HEIGHT]
+  ];
+
+  for (let i = healthCount; i < 4; i += 1) {
+    pickupSpawns.push({
+      id: pickupId++,
+      kind: 'health',
+      position: fallbackPositions[i % fallbackPositions.length]!,
+      radius: PICKUP_RADIUS,
+      weaponSlot: 0,
+      amount: 25,
+      respawnSeconds: 10
+    });
+  }
+
+  for (let i = weaponCount; i < 2; i += 1) {
+    pickupSpawns.push({
+      id: pickupId++,
+      kind: 'weapon',
+      position: fallbackPositions[(i + 4) % fallbackPositions.length]!,
+      radius: PICKUP_RADIUS,
+      weaponSlot: i % 2,
+      amount: 0,
+      respawnSeconds: 15
+    });
+  }
+
+  quantizePickupRespawns(pickupSpawns, tickRate);
+  return pickupSpawns;
+};
+
+export const buildStaticWorldFromPlacements = (
+  placements: readonly RetroMapPlacement[],
+  tickRate: number
+): StaticMapWorld => {
+  const safeTickRate = Number.isFinite(tickRate) && tickRate > 0 ? tickRate : 60;
+  const buildings: RetroMapBuilding[] = [];
+  for (const placement of placements) {
+    if (!isBuildingFile(placement.file)) {
+      continue;
+    }
+    const yaw = placement.rotation?.[1] ?? 0;
+    buildings.push({
+      cellX: 0,
+      cellY: 0,
+      doorSide: resolveDoorSideFromRotation(yaw),
+      file: placement.file,
+      rotationY: yaw,
+      position: [placement.position[0], placement.position[1], placement.position[2]],
+      scale:
+        Number.isFinite(placement.scale) && (placement.scale ?? 0) > 0
+          ? placement.scale
+          : 1
+    });
+  }
+
+  const sortedBuildings = [...buildings].sort((a, b) => {
+    const ax = a.position[0] * MAP_SCALE;
+    const ay = a.position[2] * MAP_SCALE;
+    const bx = b.position[0] * MAP_SCALE;
+    const by = b.position[2] * MAP_SCALE;
+    const da = ax * ax + ay * ay;
+    const db = bx * bx + by * by;
+    if (da !== db) {
+      return da - db;
+    }
+    if (ax !== bx) {
+      return ax - bx;
+    }
+    if (ay !== by) {
+      return ay - by;
+    }
+    if (a.file !== b.file) {
+      return a.file < b.file ? -1 : 1;
+    }
+    if (a.doorSide !== b.doorSide) {
+      return a.doorSide < b.doorSide ? -1 : 1;
+    }
+    return (a.scale ?? 1) - (b.scale ?? 1);
+  });
+
+  const colliders: AabbCollider[] = [];
+  let nextColliderId = 1;
+  for (const building of sortedBuildings) {
+    const cx = building.position[0] * MAP_SCALE;
+    const cy = building.position[2] * MAP_SCALE;
+    nextColliderId = appendBuildingCollidersAtCenter(
+      colliders,
+      nextColliderId,
+      cx,
+      cy,
+      building.file,
+      building.doorSide,
+      building.scale ?? 1
+    );
+  }
+
+  return {
+    buildings: sortedBuildings,
+    colliders,
+    pickupSpawns: buildPickupSpawnsFromWorld(sortedBuildings, safeTickRate)
+  };
+};
+
+const generateLegacyProceduralRetroUrbanMap = (
+  options: ProceduralMapOptions = {}
+): ProceduralRetroUrbanMap => {
+  const seed = Number.isFinite(options.seed) ? Math.floor(options.seed!) >>> 0 : 0;
   const arenaHalfSize =
     Number.isFinite(options.arenaHalfSize) && options.arenaHalfSize! > 0
       ? options.arenaHalfSize!
       : SIM_CONFIG.arenaHalfSize;
-  const tickRate = Number.isFinite(options.tickRate) && options.tickRate! > 0 ? options.tickRate! : 60;
+  const tickRate =
+    Number.isFinite(options.tickRate) && options.tickRate! > 0 ? options.tickRate! : 60;
 
   let gridRadius = Math.floor(arenaHalfSize / (TILE_SIZE * MAP_SCALE));
   gridRadius = Math.max(2, Math.min(gridRadius, 12));
@@ -621,69 +993,7 @@ export const generateProceduralRetroUrbanMap = (options: ProceduralMapOptions = 
     nextColliderId = appendBuildingColliders(colliders, nextColliderId, building);
   }
 
-  const pickupSpawns: RetroMapPickupSpawn[] = [];
-  let pickupId = 1;
-  let healthCount = 0;
-  for (let i = 0; i < buildings.length && healthCount < 4; i += 1) {
-    pickupSpawns.push({
-      id: pickupId++,
-      kind: 'health',
-      position: resolvePickupPosition(buildings[i]!),
-      radius: PICKUP_RADIUS,
-      weaponSlot: 0,
-      amount: 25,
-      respawnSeconds: 10
-    });
-    healthCount += 1;
-  }
-
-  let weaponCount = 0;
-  for (let i = 0; i < buildings.length && weaponCount < 2; i += 1) {
-    const index = buildings.length - 1 - i;
-    pickupSpawns.push({
-      id: pickupId++,
-      kind: 'weapon',
-      position: resolvePickupPosition(buildings[index]!),
-      radius: PICKUP_RADIUS,
-      weaponSlot: weaponCount % 2,
-      amount: 0,
-      respawnSeconds: 15
-    });
-    weaponCount += 1;
-  }
-
-  const fallbackPositions: Array<[number, number, number]> = [
-    [-6, -6, PICKUP_HEIGHT],
-    [6, -6, PICKUP_HEIGHT],
-    [-6, 6, PICKUP_HEIGHT],
-    [6, 6, PICKUP_HEIGHT],
-    [0, -8, PICKUP_HEIGHT],
-    [0, 8, PICKUP_HEIGHT]
-  ];
-
-  for (let i = healthCount; i < 4; i += 1) {
-    pickupSpawns.push({
-      id: pickupId++,
-      kind: 'health',
-      position: fallbackPositions[i % fallbackPositions.length]!,
-      radius: PICKUP_RADIUS,
-      weaponSlot: 0,
-      amount: 25,
-      respawnSeconds: 10
-    });
-  }
-
-  for (let i = weaponCount; i < 2; i += 1) {
-    pickupSpawns.push({
-      id: pickupId++,
-      kind: 'weapon',
-      position: fallbackPositions[(i + 4) % fallbackPositions.length]!,
-      radius: PICKUP_RADIUS,
-      weaponSlot: i % 2,
-      amount: 0,
-      respawnSeconds: 15
-    });
-  }
+  const pickupSpawns = buildPickupSpawns(buildings, tickRate);
 
   const maybeTreeCells = buildings.filter((_entry, index) => index % 3 === 0).slice(0, 18);
   for (let i = 0; i < maybeTreeCells.length; i += 1) {
@@ -702,11 +1012,6 @@ export const generateProceduralRetroUrbanMap = (options: ProceduralMapOptions = 
     });
   }
 
-  const pickupTickQuant = Math.max(1, Math.round(tickRate));
-  for (const pickup of pickupSpawns) {
-    pickup.respawnSeconds = Math.max(1, Math.round(pickup.respawnSeconds * pickupTickQuant) / pickupTickQuant);
-  }
-
   return {
     seed,
     placements,
@@ -718,6 +1023,98 @@ export const generateProceduralRetroUrbanMap = (options: ProceduralMapOptions = 
     tileSize: TILE_SIZE,
     mapScale: MAP_SCALE
   };
+};
+
+const generateAdvancedProceduralRetroUrbanMap = (
+  options: ProceduralMapOptions = {}
+): ProceduralRetroUrbanMap => {
+  const seed = Number.isFinite(options.seed) ? Math.floor(options.seed!) >>> 0 : 0;
+  const arenaHalfSize =
+    Number.isFinite(options.arenaHalfSize) && options.arenaHalfSize! > 0
+      ? options.arenaHalfSize!
+      : SIM_CONFIG.arenaHalfSize;
+  const tickRate =
+    Number.isFinite(options.tickRate) && options.tickRate! > 0 ? options.tickRate! : 60;
+
+  const advancedTileSize = TILE_SIZE * 0.6;
+  const maxGridRadius = Math.max(3, Math.floor(arenaHalfSize / (advancedTileSize * MAP_SCALE)));
+  let arenaCells = Math.max(7, Math.min(maxGridRadius * 2 + 1, 31));
+  if (arenaCells % 2 === 0) {
+    arenaCells += 1;
+  }
+
+  const advancedConfig = mergeAdvancedSuburbanConfig(
+    {
+      ...DEFAULT_ADVANCED_SUBURBAN_CONFIG,
+      ...options.advancedConfig
+    },
+    seed,
+    arenaCells,
+    arenaCells
+  );
+
+  const generated = generateAdvancedSuburbanMap(seed, advancedConfig, undefined, advancedTileSize);
+  const placements = [...generated.placements];
+  const roads = [...generated.roads];
+  const buildings = [...generated.buildings];
+
+  const colliders: AabbCollider[] = [];
+  let nextColliderId = 1;
+  for (const building of buildings) {
+    const cx = building.position[0] * MAP_SCALE;
+    const cy = building.position[2] * MAP_SCALE;
+    nextColliderId = appendBuildingCollidersAtCenter(
+      colliders,
+      nextColliderId,
+      cx,
+      cy,
+      building.file,
+      building.doorSide
+    );
+  }
+
+  const sortedByCenter = [...buildings].sort((a, b) => {
+    const da = a.cellX * a.cellX + a.cellY * a.cellY;
+    const db = b.cellX * b.cellX + b.cellY * b.cellY;
+    return da - db;
+  });
+  const pickupSpawns = buildPickupSpawnsFromWorld(sortedByCenter, tickRate);
+
+  return {
+    seed,
+    placements,
+    roads,
+    buildings,
+    colliders,
+    pickupSpawns,
+    gridRadius: Math.floor(Math.max(generated.width, generated.height) / 2),
+    tileSize: advancedTileSize,
+    mapScale: MAP_SCALE,
+    debug: {
+      generator: 'advanced',
+      config: generated.config,
+      stats: generated.stats,
+      validation: generated.validation,
+      graph: generated.graph,
+      layers: {
+        width: generated.width,
+        height: generated.height,
+        roadGround: generated.debug.roadGround,
+        roadElevated: generated.debug.roadElevated,
+        land: generated.debug.land
+      },
+      placements: generated.debug.placements
+    }
+  };
+};
+
+export const generateProceduralRetroUrbanMap = (
+  options: ProceduralMapOptions = {}
+): ProceduralRetroUrbanMap => {
+  if (options.generator === 'advanced') {
+    return generateAdvancedProceduralRetroUrbanMap(options);
+  }
+  return generateLegacyProceduralRetroUrbanMap(options);
 };
 
 export const PROCEDURAL_MAP_CONSTANTS = {

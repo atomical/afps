@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLIENT_DIR="${CLIENT_DIR:-${ROOT_DIR}/client}"
 SERVER_DIR="${SERVER_DIR:-${ROOT_DIR}/server}"
+CLIENT_COVERAGE_MODE="${CLIENT_COVERAGE_MODE:-required}"
 
 PORT_START="${UI_TEST_PORT:-5174}"
 UI_TEST_PORT="$(python3 - <<PY
@@ -35,6 +36,39 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
+run_client_unit_tests() {
+  case "${CLIENT_COVERAGE_MODE}" in
+    required)
+      (
+        cd "${CLIENT_DIR}"
+        npm test
+      )
+      ;;
+    optional)
+      if ! (
+        cd "${CLIENT_DIR}"
+        npm test
+      ); then
+        echo "Client coverage gate failed; rerunning unit tests without coverage (CLIENT_COVERAGE_MODE=optional)"
+        (
+          cd "${CLIENT_DIR}"
+          npx vitest run
+        )
+      fi
+      ;;
+    off)
+      (
+        cd "${CLIENT_DIR}"
+        npx vitest run
+      )
+      ;;
+    *)
+      echo "Invalid CLIENT_COVERAGE_MODE='${CLIENT_COVERAGE_MODE}' (expected: required|optional|off)"
+      return 1
+      ;;
+  esac
+}
+
 echo "==> Running server tests"
 (
   cd "${SERVER_DIR}"
@@ -43,11 +77,11 @@ echo "==> Running server tests"
   ctest --test-dir build
 ) || FAILED=1
 
+echo "==> Running map parity checks"
+node "${ROOT_DIR}/tools/check_map_parity.mjs" || FAILED=1
+
 echo "==> Running client unit tests"
-(
-  cd "${CLIENT_DIR}"
-  npm test
-) || FAILED=1
+run_client_unit_tests || FAILED=1
 
 echo "==> Starting client dev server for UI tests on port ${UI_TEST_PORT}"
 (

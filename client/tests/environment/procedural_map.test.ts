@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { generateProceduralRetroUrbanMap, getBuildingColliderProfile } from '../../src/environment/procedural_map';
+import {
+  buildStaticWorldFromPlacements,
+  generateProceduralRetroUrbanMap,
+  getBuildingColliderProfile
+} from '../../src/environment/procedural_map';
 
 const ROAD_NORTH = 1 << 0;
 const ROAD_EAST = 1 << 1;
@@ -87,7 +91,8 @@ describe('procedural retro urban map', () => {
       roadByCell.set(`${road.cellX}:${road.cellY}`, road.mask);
     }
     const hasRoad = (x: number, y: number) => roadByCell.has(`${x}:${y}`);
-    const hasMask = (x: number, y: number, bit: number) => ((roadByCell.get(`${x}:${y}`) ?? 0) & bit) !== 0;
+    const hasMask = (x: number, y: number, bit: number) =>
+      ((roadByCell.get(`${x}:${y}`) ?? 0) & bit) !== 0;
 
     for (const road of map.roads) {
       const { cellX, cellY } = road;
@@ -114,8 +119,10 @@ describe('procedural retro urban map', () => {
     const arenaHalfSize = 30;
     const map = generateProceduralRetroUrbanMap({ seed: 42, arenaHalfSize });
     const scaledOutOfBounds = map.placements.filter((placement) => {
-      const [x, _y, z] = placement.position;
-      return Math.abs(x * map.mapScale) > arenaHalfSize || Math.abs(z * map.mapScale) > arenaHalfSize;
+      const [x, , z] = placement.position;
+      return (
+        Math.abs(x * map.mapScale) > arenaHalfSize || Math.abs(z * map.mapScale) > arenaHalfSize
+      );
     });
     expect(scaledOutOfBounds).toHaveLength(0);
   });
@@ -126,6 +133,33 @@ describe('procedural retro urban map', () => {
     const weapon = map.pickupSpawns.filter((entry) => entry.kind === 'weapon');
     expect(health.length).toBeGreaterThanOrEqual(4);
     expect(weapon.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('supports advanced suburban generation mode', () => {
+    const map = generateProceduralRetroUrbanMap({
+      seed: 42,
+      arenaHalfSize: 30,
+      generator: 'advanced'
+    });
+    const debug = map.debug as
+      | {
+          generator?: string;
+          validation?: {
+            roadConnected?: boolean;
+            orphanRoadTiles?: number;
+            unassignedLandCells?: number;
+          };
+          stats?: { score?: number };
+        }
+      | undefined;
+
+    expect(map.placements.length).toBeGreaterThan(0);
+    expect(map.buildings.length).toBeGreaterThan(4);
+    expect(debug?.generator).toBe('advanced');
+    expect(debug?.validation?.roadConnected).toBe(true);
+    expect(debug?.validation?.orphanRoadTiles).toBe(0);
+    expect(debug?.validation?.unassignedLandCells).toBe(0);
+    expect(debug?.stats?.score ?? 0).toBeGreaterThan(0.45);
   });
 
   it('matches generated colliders to each building profile', () => {
@@ -169,5 +203,29 @@ describe('procedural retro urban map', () => {
   it('supports multi-part collider profiles for composite building assets', () => {
     const profile = getBuildingColliderProfile('building-type-b.glb');
     expect(profile.parts.length).toBeGreaterThan(1);
+  });
+
+  it('derives static colliders and pickups from manifest placements deterministically', () => {
+    const placements = [
+      { file: 'tree-large.glb', position: [0, 0, 0] as [number, number, number] },
+      {
+        file: 'building-type-a.glb',
+        position: [4, 0, -8] as [number, number, number],
+        rotation: [0, 0, 0] as [number, number, number]
+      },
+      {
+        file: 'building-type-c.glb',
+        position: [-8, 0, 4] as [number, number, number],
+        rotation: [0, Math.PI / 2, 0] as [number, number, number]
+      }
+    ];
+
+    const a = buildStaticWorldFromPlacements(placements, 60);
+    const b = buildStaticWorldFromPlacements(placements, 60);
+
+    expect(JSON.stringify(a.colliders)).toBe(JSON.stringify(b.colliders));
+    expect(JSON.stringify(a.pickupSpawns)).toBe(JSON.stringify(b.pickupSpawns));
+    expect(a.colliders.length).toBeGreaterThan(0);
+    expect(a.pickupSpawns.length).toBeGreaterThanOrEqual(6);
   });
 });
