@@ -24,6 +24,7 @@ const CAMERA_HEIGHT = resolveEyeHeight(SIM_CONFIG);
 const CROUCH_CAMERA_HEIGHT = resolveEyeHeight(SIM_CONFIG, CAMERA_HEIGHT, true);
 const CROUCH_CAMERA_BLEND_SPEED = 14;
 const MAP_SEED_FLAG = 'VITE_MAP_SEED';
+const PROCEDURAL_MAP_FLAG = 'VITE_PROCEDURAL_MAP';
 
 const parseMapSeed = (value: unknown) => {
   const parsed = Number.parseInt(String(value ?? ''), 10);
@@ -514,6 +515,8 @@ export const createApp = ({
   let mapHandle: LoadedRetroUrbanMap | null = null;
   let mapLoadToken = 0;
   let activeMapSeed = parseMapSeed(import.meta.env?.[MAP_SEED_FLAG]);
+  const proceduralFlag = import.meta.env?.[PROCEDURAL_MAP_FLAG];
+  const proceduralEnabled = proceduralFlag === undefined || proceduralFlag === '' || proceduralFlag === 'true';
 
   const setWorldColliders = (colliders: readonly AabbCollider[]) => {
     worldColliders = Array.isArray(colliders) ? [...colliders] : [];
@@ -550,13 +553,11 @@ export const createApp = ({
       return;
     }
     activeMapSeed = safeSeed;
-    void loadMap(safeSeed, true);
+    void loadMap(safeSeed, proceduralEnabled);
   };
 
   if (loadEnvironment) {
-    const proceduralFlag = import.meta.env?.VITE_PROCEDURAL_MAP;
-    const proceduralOnBoot = proceduralFlag === undefined || proceduralFlag === '' || proceduralFlag === 'true';
-    void loadMap(activeMapSeed, proceduralOnBoot);
+    void loadMap(activeMapSeed, proceduralEnabled);
   }
 
   let lastRenderTick: number | null = null;

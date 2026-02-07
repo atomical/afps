@@ -47,6 +47,16 @@ To run server + client together (HTTP signaling, default):
 ./tools/run_dev.sh
 ```
 
+Map mode/seed with `run_dev.sh`:
+
+```bash
+# Procedural map (default), shared seed on server+client:
+./tools/run_dev.sh --procedural --map-seed 1337
+
+# Static client map manifest:
+./tools/run_dev.sh --static
+```
+
 To enable the WASM sim (requires Emscripten):
 
 ```bash
