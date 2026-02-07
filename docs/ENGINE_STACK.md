@@ -125,6 +125,7 @@ This document describes the runtime architecture for AFPS: browser client, share
 
 ## Related docs
 
+- Gameplay features: `docs/GAMEPLAY_FEATURES.md`
 - Rendering: `docs/RENDERING.md`, `docs/OUTLINES.md`
 - WASM sim: `docs/WASM_SIM.md`
 - Pre-join flow: `docs/prejoin.md`
