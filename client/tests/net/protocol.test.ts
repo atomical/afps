@@ -915,7 +915,14 @@ describe('protocol helpers', () => {
         originZ: 3,
         dirX: 0.1,
         dirY: 0.2,
-        dirZ: 0.3
+        dirZ: 0.3,
+        debugEnabled: true,
+        debugPlayerPosX: 10,
+        debugPlayerPosY: -5,
+        debugPlayerPosZ: 0,
+        debugViewYaw: 1.2,
+        debugViewPitch: -0.4,
+        debugProjectionTelemetryEnabled: true
       },
       12,
       3
@@ -929,6 +936,13 @@ describe('protocol helpers', () => {
     expect(message.originX()).toBeCloseTo(1);
     expect(message.originY()).toBeCloseTo(2);
     expect(message.originZ()).toBeCloseTo(3);
+    expect(message.debugEnabled()).toBe(true);
+    expect(message.debugPlayerPosX()).toBeCloseTo(10);
+    expect(message.debugPlayerPosY()).toBeCloseTo(-5);
+    expect(message.debugPlayerPosZ()).toBeCloseTo(0);
+    expect(message.debugViewYaw()).toBeCloseTo(1.2);
+    expect(message.debugViewPitch()).toBeCloseTo(-0.4);
+    expect(message.debugProjectionTelemetryEnabled()).toBe(true);
   });
 
   it('builds FireWeaponRequest envelopes without weapon ids', () => {
@@ -951,6 +965,8 @@ describe('protocol helpers', () => {
     const decoded = decodeEnvelope(envelope);
     const message = FireWeaponRequest.getRootAsFireWeaponRequest(new flatbuffers.ByteBuffer(decoded!.payload));
     expect(message.weaponId()).toBeNull();
+    expect(message.debugEnabled()).toBe(false);
+    expect(message.debugProjectionTelemetryEnabled()).toBe(false);
   });
 
   it('builds SetLoadoutRequest envelopes', () => {

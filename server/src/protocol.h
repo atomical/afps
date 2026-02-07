@@ -91,6 +91,13 @@ struct FireWeaponRequest {
   double dir_x = 0.0;
   double dir_y = 0.0;
   double dir_z = 0.0;
+  bool debug_enabled = false;
+  double debug_player_pos_x = 0.0;
+  double debug_player_pos_y = 0.0;
+  double debug_player_pos_z = 0.0;
+  double debug_view_yaw = 0.0;
+  double debug_view_pitch = 0.0;
+  bool debug_projection_telemetry_enabled = false;
 };
 
 struct SetLoadoutRequest {

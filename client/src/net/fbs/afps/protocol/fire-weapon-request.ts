@@ -71,8 +71,43 @@ dirZ():number {
   return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
 }
 
+debugEnabled():boolean {
+  const offset = this.bb!.__offset(this.bb_pos, 22);
+  return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
+}
+
+debugPlayerPosX():number {
+  const offset = this.bb!.__offset(this.bb_pos, 24);
+  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
+}
+
+debugPlayerPosY():number {
+  const offset = this.bb!.__offset(this.bb_pos, 26);
+  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
+}
+
+debugPlayerPosZ():number {
+  const offset = this.bb!.__offset(this.bb_pos, 28);
+  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
+}
+
+debugViewYaw():number {
+  const offset = this.bb!.__offset(this.bb_pos, 30);
+  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
+}
+
+debugViewPitch():number {
+  const offset = this.bb!.__offset(this.bb_pos, 32);
+  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
+}
+
+debugProjectionTelemetryEnabled():boolean {
+  const offset = this.bb!.__offset(this.bb_pos, 34);
+  return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
+}
+
 static startFireWeaponRequest(builder:flatbuffers.Builder) {
-  builder.startObject(9);
+  builder.startObject(16);
 }
 
 static addClientShotSeq(builder:flatbuffers.Builder, clientShotSeq:number) {
@@ -111,12 +146,40 @@ static addDirZ(builder:flatbuffers.Builder, dirZ:number) {
   builder.addFieldFloat64(8, dirZ, 0.0);
 }
 
+static addDebugEnabled(builder:flatbuffers.Builder, debugEnabled:boolean) {
+  builder.addFieldInt8(9, +debugEnabled, +false);
+}
+
+static addDebugPlayerPosX(builder:flatbuffers.Builder, debugPlayerPosX:number) {
+  builder.addFieldFloat64(10, debugPlayerPosX, 0.0);
+}
+
+static addDebugPlayerPosY(builder:flatbuffers.Builder, debugPlayerPosY:number) {
+  builder.addFieldFloat64(11, debugPlayerPosY, 0.0);
+}
+
+static addDebugPlayerPosZ(builder:flatbuffers.Builder, debugPlayerPosZ:number) {
+  builder.addFieldFloat64(12, debugPlayerPosZ, 0.0);
+}
+
+static addDebugViewYaw(builder:flatbuffers.Builder, debugViewYaw:number) {
+  builder.addFieldFloat64(13, debugViewYaw, 0.0);
+}
+
+static addDebugViewPitch(builder:flatbuffers.Builder, debugViewPitch:number) {
+  builder.addFieldFloat64(14, debugViewPitch, 0.0);
+}
+
+static addDebugProjectionTelemetryEnabled(builder:flatbuffers.Builder, debugProjectionTelemetryEnabled:boolean) {
+  builder.addFieldInt8(15, +debugProjectionTelemetryEnabled, +false);
+}
+
 static endFireWeaponRequest(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createFireWeaponRequest(builder:flatbuffers.Builder, clientShotSeq:number, weaponIdOffset:flatbuffers.Offset, weaponSlot:number, originX:number, originY:number, originZ:number, dirX:number, dirY:number, dirZ:number):flatbuffers.Offset {
+static createFireWeaponRequest(builder:flatbuffers.Builder, clientShotSeq:number, weaponIdOffset:flatbuffers.Offset, weaponSlot:number, originX:number, originY:number, originZ:number, dirX:number, dirY:number, dirZ:number, debugEnabled:boolean, debugPlayerPosX:number, debugPlayerPosY:number, debugPlayerPosZ:number, debugViewYaw:number, debugViewPitch:number, debugProjectionTelemetryEnabled:boolean):flatbuffers.Offset {
   FireWeaponRequest.startFireWeaponRequest(builder);
   FireWeaponRequest.addClientShotSeq(builder, clientShotSeq);
   FireWeaponRequest.addWeaponId(builder, weaponIdOffset);
@@ -127,6 +190,13 @@ static createFireWeaponRequest(builder:flatbuffers.Builder, clientShotSeq:number
   FireWeaponRequest.addDirX(builder, dirX);
   FireWeaponRequest.addDirY(builder, dirY);
   FireWeaponRequest.addDirZ(builder, dirZ);
+  FireWeaponRequest.addDebugEnabled(builder, debugEnabled);
+  FireWeaponRequest.addDebugPlayerPosX(builder, debugPlayerPosX);
+  FireWeaponRequest.addDebugPlayerPosY(builder, debugPlayerPosY);
+  FireWeaponRequest.addDebugPlayerPosZ(builder, debugPlayerPosZ);
+  FireWeaponRequest.addDebugViewYaw(builder, debugViewYaw);
+  FireWeaponRequest.addDebugViewPitch(builder, debugViewPitch);
+  FireWeaponRequest.addDebugProjectionTelemetryEnabled(builder, debugProjectionTelemetryEnabled);
   return FireWeaponRequest.endFireWeaponRequest(builder);
 }
 
@@ -140,7 +210,14 @@ unpack(): FireWeaponRequestT {
     this.originZ(),
     this.dirX(),
     this.dirY(),
-    this.dirZ()
+    this.dirZ(),
+    this.debugEnabled(),
+    this.debugPlayerPosX(),
+    this.debugPlayerPosY(),
+    this.debugPlayerPosZ(),
+    this.debugViewYaw(),
+    this.debugViewPitch(),
+    this.debugProjectionTelemetryEnabled()
   );
 }
 
@@ -155,6 +232,13 @@ unpackTo(_o: FireWeaponRequestT): void {
   _o.dirX = this.dirX();
   _o.dirY = this.dirY();
   _o.dirZ = this.dirZ();
+  _o.debugEnabled = this.debugEnabled();
+  _o.debugPlayerPosX = this.debugPlayerPosX();
+  _o.debugPlayerPosY = this.debugPlayerPosY();
+  _o.debugPlayerPosZ = this.debugPlayerPosZ();
+  _o.debugViewYaw = this.debugViewYaw();
+  _o.debugViewPitch = this.debugViewPitch();
+  _o.debugProjectionTelemetryEnabled = this.debugProjectionTelemetryEnabled();
 }
 }
 
@@ -168,7 +252,14 @@ constructor(
   public originZ: number = 0.0,
   public dirX: number = 0.0,
   public dirY: number = 0.0,
-  public dirZ: number = 0.0
+  public dirZ: number = 0.0,
+  public debugEnabled: boolean = false,
+  public debugPlayerPosX: number = 0.0,
+  public debugPlayerPosY: number = 0.0,
+  public debugPlayerPosZ: number = 0.0,
+  public debugViewYaw: number = 0.0,
+  public debugViewPitch: number = 0.0,
+  public debugProjectionTelemetryEnabled: boolean = false
 ){}
 
 
@@ -184,7 +275,14 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
     this.originZ,
     this.dirX,
     this.dirY,
-    this.dirZ
+    this.dirZ,
+    this.debugEnabled,
+    this.debugPlayerPosX,
+    this.debugPlayerPosY,
+    this.debugPlayerPosZ,
+    this.debugViewYaw,
+    this.debugViewPitch,
+    this.debugProjectionTelemetryEnabled
   );
 }
 }

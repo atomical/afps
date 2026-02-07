@@ -199,7 +199,8 @@ const BUILDING_COLLIDER_PROFILES = new Map<string, BuildingColliderProfile>([
   [
     'building-type-c.glb',
     createColliderProfile([
-      { minX: -1.608, maxX: 1.608, minY: -1.2852, maxY: 1.2852, maxZ: 2.5839 }
+      { minX: -1.608, maxX: 0.92, minY: -1.2852, maxY: 1.2852, maxZ: 2.5839 },
+      { minX: 0.92, maxX: 1.608, minY: -0.92, maxY: 1.2852, maxZ: 2.5839 }
     ])
   ],
   [

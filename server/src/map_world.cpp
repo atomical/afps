@@ -99,7 +99,12 @@ const std::vector<ColliderProfile> &BuildingColliderProfiles() {
           ColliderPart{-2.285, 2.285, -1.205, 1.425, 2.8438},
           ColliderPart{1.08, 2.285, -1.425, -0.94, 2.007},
       }),
-      MakeProfile({ColliderPart{-1.608, 1.608, -1.2852, 1.2852, 2.5839}}),
+      MakeProfile({
+          // Type C has a recessed front-right facade; split into two parts so
+          // shots/collision do not hit empty space at the outer corner.
+          ColliderPart{-1.608, 0.92, -1.2852, 1.2852, 2.5839},
+          ColliderPart{0.92, 1.608, -0.92, 1.2852, 2.5839},
+      }),
       MakeProfile({ColliderPart{-2.1955, 2.1955, -1.285, 1.285, 3.0938}}),
       MakeProfile({ColliderPart{-1.625, 1.625, -1.285, 1.285, 2.8438}}),
       MakeProfile({ColliderPart{-1.785, 1.785, -1.7574, 1.7574, 2.8438}}),

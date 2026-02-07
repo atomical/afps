@@ -107,6 +107,7 @@ This document lists rectangle-based collider strategies for AFPS, with tradeoffs
 - Short term:
   - standardize on compound AABB profiles for all building prefabs used in multiplayer maps.
   - ensure server and client consume the same map generator output and collider metadata.
+  - use server-side dual-trace corner handling for hitscan (eye intent + muzzle obstruction + near-muzzle grace) to reduce false corner blocks with rectangle colliders.
 - Medium term:
   - add dense compound profiles only for prefabs with known decal/movement issues.
   - keep hybrid mesh projection as visual fallback, not as authority.

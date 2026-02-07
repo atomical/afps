@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
 #include <random>
 #include <type_traits>
@@ -54,7 +56,10 @@ bool TickAccumulator::initialized() const {
 #include "weapon_config.h"
 
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <sstream>
 
 namespace {
 constexpr double kPi = 3.14159265358979323846;
@@ -72,6 +77,9 @@ constexpr double kEnergyVentCoolPerSecond = 0.6;
 constexpr double kEnergyVentSeconds = 1.5;
 constexpr double kTraceCullDistanceMeters = 85.0;
 constexpr int kSpawnAngleSamples = 24;
+constexpr double kShotMuzzleOffsetMeters = 0.2;
+constexpr double kShotNearMuzzleGraceMeters = 0.22;
+constexpr double kShotRetraceEpsilonMeters = 0.02;
 
 constexpr uint8_t kPlayerFlagAds = 1 << 0;
 constexpr uint8_t kPlayerFlagSprint = 1 << 1;
@@ -230,7 +238,237 @@ struct WorldHitscanHit {
   afps::combat::Vec3 position{};
   afps::combat::Vec3 normal{};
   SurfaceType surface = SurfaceType::Stone;
+  int collider_id = -1;
 };
+
+std::string EscapeJsonText(const std::string &value) {
+  std::string out;
+  out.reserve(value.size());
+  for (unsigned char ch : value) {
+    switch (ch) {
+      case '"':
+        out += "\\\"";
+        break;
+      case '\\':
+        out += "\\\\";
+        break;
+      case '\b':
+        out += "\\b";
+        break;
+      case '\f':
+        out += "\\f";
+        break;
+      case '\n':
+        out += "\\n";
+        break;
+      case '\r':
+        out += "\\r";
+        break;
+      case '\t':
+        out += "\\t";
+        break;
+      default:
+        if (ch < 0x20) {
+          out += '?';
+        } else {
+          out.push_back(static_cast<char>(ch));
+        }
+        break;
+    }
+  }
+  return out;
+}
+
+bool EnvFlagEnabled(const char *raw) {
+  if (!raw) {
+    return false;
+  }
+  std::string value(raw);
+  value.erase(std::remove_if(value.begin(), value.end(), [](unsigned char ch) {
+                return std::isspace(ch) != 0;
+              }),
+              value.end());
+  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+    return static_cast<char>(std::tolower(ch));
+  });
+  return value == "1" || value == "true" || value == "yes" || value == "on";
+}
+
+bool ShouldLogShotDebug() {
+  static const bool enabled = EnvFlagEnabled(std::getenv("AFPS_LOG_SHOTS"));
+  return enabled;
+}
+
+std::string ShotDebugLogPath() {
+  const char *raw = std::getenv("AFPS_SHOT_LOG_PATH");
+  if (raw && raw[0] != '\0') {
+    return raw;
+  }
+  return "tmp/shot_debug.log";
+}
+
+void WriteShotDebugLine(const std::string &line) {
+  std::cout << line << "\n";
+
+  static const std::string path = ShotDebugLogPath();
+  static bool warned = false;
+  static std::ofstream stream;
+  if (!stream.is_open()) {
+    std::error_code ec;
+    const std::filesystem::path fs_path(path);
+    if (fs_path.has_parent_path()) {
+      std::filesystem::create_directories(fs_path.parent_path(), ec);
+      if (ec && !warned) {
+        std::cerr << "[warn] failed to create shot log directory: " << ec.message() << "\n";
+        warned = true;
+      }
+    }
+    stream.open(path, std::ios::out | std::ios::app);
+    if (!stream.good() && !warned) {
+      std::cerr << "[warn] failed to open shot log file: " << path << "\n";
+      warned = true;
+    }
+  }
+  if (!stream.good()) {
+    return;
+  }
+  stream << line << "\n";
+  stream.flush();
+}
+
+const char *HitKindName(HitKind hit_kind) {
+  switch (hit_kind) {
+    case HitKind::World:
+      return "world";
+    case HitKind::Player:
+      return "player";
+    case HitKind::None:
+    default:
+      return "none";
+  }
+}
+
+const char *SurfaceTypeName(SurfaceType surface) {
+  switch (surface) {
+    case SurfaceType::Metal:
+      return "metal";
+    case SurfaceType::Dirt:
+      return "dirt";
+    case SurfaceType::Energy:
+      return "energy";
+    case SurfaceType::Stone:
+    default:
+      return "stone";
+  }
+}
+
+void WriteVec3Json(std::ostream &out, const afps::combat::Vec3 &value) {
+  out << "{\"x\":" << value.x << ",\"y\":" << value.y << ",\"z\":" << value.z << "}";
+}
+
+void WriteWorldHitJson(std::ostream &out, const WorldHitscanHit &hit) {
+  out << "{\"hit\":" << (hit.hit ? "true" : "false")
+      << ",\"distance\":" << (std::isfinite(hit.distance) ? hit.distance : -1.0)
+      << ",\"collider_id\":" << hit.collider_id
+      << ",\"surface\":\"" << SurfaceTypeName(hit.surface) << "\""
+      << ",\"position\":";
+  WriteVec3Json(out, hit.position);
+  out << ",\"normal\":";
+  WriteVec3Json(out, hit.normal);
+  out << "}";
+}
+
+void LogHitscanShotDebug(int server_tick,
+                         const std::string &shooter_id,
+                         const std::string &weapon_id,
+                         int weapon_slot,
+                         int shot_seq,
+                         int estimated_tick,
+                         const FireWeaponRequest &request,
+                         const afps::combat::Vec3 &origin,
+                         const afps::combat::Vec3 &muzzle,
+                         const afps::combat::Vec3 &dir,
+                         double max_range,
+                         double intended_distance,
+                         const afps::combat::HitResult &player_hit,
+                         const WorldHitscanHit &eye_world_hit,
+                         bool muzzle_block_checked,
+                         const WorldHitscanHit &muzzle_block_hit,
+                         bool retry_attempted,
+                         bool retry_suppressed,
+                         bool retry_hit,
+                         const WorldHitscanHit &retry_world_hit,
+                         const char *world_hit_source,
+                         const WorldHitscanHit &final_world_hit,
+                         HitKind final_hit_kind,
+                         const std::string &final_hit_target,
+                         double final_hit_distance,
+                         const afps::combat::Vec3 &final_hit_position,
+                         const afps::combat::Vec3 &final_hit_normal,
+                         SurfaceType final_surface) {
+  const bool log_for_debug_shot = request.debug_enabled;
+  const bool log_for_env = ShouldLogShotDebug();
+  if (!log_for_debug_shot && !log_for_env) {
+    return;
+  }
+
+  std::ostringstream out;
+  out << "{\"event\":\"shot_debug\""
+      << ",\"server_tick\":" << server_tick
+      << ",\"shooter_id\":\"" << EscapeJsonText(shooter_id) << "\""
+      << ",\"shot_seq\":" << shot_seq
+      << ",\"client_shot_seq\":" << request.client_shot_seq
+      << ",\"estimated_tick\":" << estimated_tick
+      << ",\"weapon_slot\":" << weapon_slot
+      << ",\"weapon_id\":\"" << EscapeJsonText(weapon_id) << "\""
+      << ",\"log_mode\":\"" << (log_for_debug_shot ? "client_debug" : "env") << "\""
+      << ",\"max_range\":" << (std::isfinite(max_range) ? max_range : -1.0)
+      << ",\"intended_distance\":" << (std::isfinite(intended_distance) ? intended_distance : -1.0)
+      << ",\"client_debug\":{\"enabled\":" << (request.debug_enabled ? "true" : "false")
+      << ",\"player_pos\":{\"x\":" << request.debug_player_pos_x
+      << ",\"y\":" << request.debug_player_pos_y
+      << ",\"z\":" << request.debug_player_pos_z << "}"
+      << ",\"view\":{\"yaw\":" << request.debug_view_yaw
+      << ",\"pitch\":" << request.debug_view_pitch << "}"
+      << ",\"projection_telemetry_enabled\":"
+      << (request.debug_projection_telemetry_enabled ? "true" : "false")
+      << "}"
+      << ",\"origin\":";
+  WriteVec3Json(out, origin);
+  out << ",\"muzzle\":";
+  WriteVec3Json(out, muzzle);
+  out << ",\"dir\":";
+  WriteVec3Json(out, dir);
+  out << ",\"player_hit\":{\"hit\":" << (player_hit.hit ? "true" : "false")
+      << ",\"target_id\":\"" << EscapeJsonText(player_hit.target_id) << "\""
+      << ",\"distance\":" << (std::isfinite(player_hit.distance) ? player_hit.distance : -1.0)
+      << ",\"position\":";
+  WriteVec3Json(out, player_hit.position);
+  out << "}"
+      << ",\"world_hit_source\":\"" << (world_hit_source ? world_hit_source : "unknown") << "\""
+      << ",\"world_eye\":";
+  WriteWorldHitJson(out, eye_world_hit);
+  out << ",\"world_muzzle_checked\":" << (muzzle_block_checked ? "true" : "false")
+      << ",\"world_muzzle\":";
+  WriteWorldHitJson(out, muzzle_block_hit);
+  out << ",\"world_retry_attempted\":" << (retry_attempted ? "true" : "false")
+      << ",\"world_retry_suppressed\":" << (retry_suppressed ? "true" : "false")
+      << ",\"world_retry_hit\":" << (retry_hit ? "true" : "false")
+      << ",\"world_retry\":";
+  WriteWorldHitJson(out, retry_world_hit);
+  out << ",\"world_final\":";
+  WriteWorldHitJson(out, final_world_hit);
+  out << ",\"final\":{\"kind\":\"" << HitKindName(final_hit_kind) << "\""
+      << ",\"target_id\":\"" << EscapeJsonText(final_hit_target) << "\""
+      << ",\"distance\":" << (std::isfinite(final_hit_distance) ? final_hit_distance : -1.0)
+      << ",\"surface\":\"" << SurfaceTypeName(final_surface) << "\""
+      << ",\"position\":";
+  WriteVec3Json(out, final_hit_position);
+  out << ",\"normal\":";
+  WriteVec3Json(out, final_hit_normal);
+  out << "}}";
+  WriteShotDebugLine(out.str());
+}
 
 double Clamp01(double value) {
   if (!std::isfinite(value)) {
@@ -386,13 +624,24 @@ WorldHitscanHit ResolveWorldHitscan(const afps::combat::Vec3 &origin,
                                     const afps::combat::Vec3 &dir,
                                     const afps::sim::SimConfig &config,
                                     const afps::sim::CollisionWorld *world,
-                                    double max_range) {
+                                    double max_range,
+                                    const afps::sim::RaycastWorldOptions &options = {}) {
   WorldHitscanHit best;
   best.distance = std::numeric_limits<double>::infinity();
-  const afps::sim::RaycastHit hit = afps::sim::RaycastWorld({origin.x, origin.y, origin.z},
-                                                             {dir.x, dir.y, dir.z},
-                                                             config,
-                                                             world);
+  const double clamped_max_range =
+      (std::isfinite(max_range) && max_range > 0.0) ? max_range : std::numeric_limits<double>::infinity();
+  afps::sim::RaycastWorldOptions ray_options = options;
+  if (!std::isfinite(ray_options.min_t) || ray_options.min_t < 0.0) {
+    ray_options.min_t = 0.0;
+  }
+  if (!std::isfinite(ray_options.max_t) || ray_options.max_t > clamped_max_range) {
+    ray_options.max_t = clamped_max_range;
+  }
+  if (ray_options.max_t < ray_options.min_t) {
+    return best;
+  }
+  const afps::sim::RaycastHit hit = afps::sim::RaycastWorld(
+      {origin.x, origin.y, origin.z}, {dir.x, dir.y, dir.z}, config, world, ray_options);
   if (!hit.hit || !std::isfinite(hit.t) || hit.t < 0.0 || hit.t > max_range) {
     return best;
   }
@@ -406,6 +655,7 @@ WorldHitscanHit ResolveWorldHitscan(const afps::combat::Vec3 &origin,
   }
   best.normal = normal;
   best.surface = ToSurfaceType(hit.surface_type);
+  best.collider_id = hit.collider_id;
   return best;
 }
 
@@ -1335,21 +1585,87 @@ void TickLoop::Step() {
 	      const afps::combat::Vec3 origin{shooter_pose.x,
 	                                      shooter_pose.y,
 	                                      shooter_pose.z + afps::combat::kPlayerEyeHeight};
-	      const afps::combat::Vec3 muzzle = Add(origin, Mul(shot_dir, 0.2));
+	      const afps::combat::Vec3 muzzle = Add(origin, Mul(shot_dir, kShotMuzzleOffsetMeters));
 	      const double max_range = (std::isfinite(weapon->range) && weapon->range > 0.0)
 	                                   ? weapon->range
 	                                   : 0.0;
 	      const auto result = afps::combat::ResolveHitscan(
 	          event.connection_id, pose_histories_, estimated_tick, shot_view, sim_config_, weapon->range,
-            &collision_world_);
-	      const auto world_hit = ResolveWorldHitscan(origin, shot_dir, sim_config_, &collision_world_,
-                                                   weapon->range);
+	          nullptr);
+	      WorldHitscanHit world_hit = ResolveWorldHitscan(origin, shot_dir, sim_config_, &collision_world_,
+	                                                     weapon->range);
+	      const WorldHitscanHit eye_world_hit = world_hit;
+	      WorldHitscanHit muzzle_block_hit;
+	      bool muzzle_block_checked = false;
+	      bool retry_attempted = false;
+	      bool retry_suppressed = false;
+	      bool retry_hit = false;
+	      WorldHitscanHit retry_world_hit;
+	      const char *world_hit_source = world_hit.hit ? "eye" : "none";
+	      const double intended_distance =
+	          world_hit.hit ? world_hit.distance : max_range;
+	      if (std::isfinite(intended_distance) && intended_distance > 0.0) {
+	        muzzle_block_checked = true;
+	        afps::sim::RaycastWorldOptions muzzle_trace_options;
+	        muzzle_trace_options.max_t = intended_distance;
+	        const auto muzzle_block = ResolveWorldHitscan(
+	            muzzle, shot_dir, sim_config_, &collision_world_, intended_distance, muzzle_trace_options);
+	        if (muzzle_block.hit) {
+	          muzzle_block_hit = muzzle_block;
+	        }
+	        if (muzzle_block.hit &&
+	            muzzle_block.distance + kShotRetraceEpsilonMeters < intended_distance) {
+	          bool suppressed_near_muzzle_block = false;
+	          if (muzzle_block.distance <= kShotNearMuzzleGraceMeters &&
+	              muzzle_block.collider_id > 0) {
+	            retry_attempted = true;
+	            afps::sim::RaycastWorldOptions retry_options;
+	            retry_options.min_t = kShotNearMuzzleGraceMeters;
+	            retry_options.max_t = intended_distance;
+	            retry_options.ignore_collider_id = muzzle_block.collider_id;
+	            const auto retrace_hit = ResolveWorldHitscan(
+	                muzzle, shot_dir, sim_config_, &collision_world_, intended_distance, retry_options);
+	            if (retrace_hit.hit) {
+	              retry_hit = true;
+	              retry_world_hit = retrace_hit;
+	            }
+	            if (!retrace_hit.hit ||
+	                retrace_hit.distance + kShotRetraceEpsilonMeters >= intended_distance) {
+	              suppressed_near_muzzle_block = true;
+	              retry_suppressed = true;
+	              world_hit_source = "eye_near_muzzle_suppressed";
+	            } else {
+	              world_hit = retrace_hit;
+	              world_hit.distance = std::min(max_range,
+	                                            std::max(0.0, retrace_hit.distance + kShotMuzzleOffsetMeters));
+	              world_hit.position = Add(origin, Mul(shot_dir, world_hit.distance));
+	              world_hit_source = "muzzle_retry";
+	            }
+	          }
+	          if (!suppressed_near_muzzle_block &&
+	              !(muzzle_block.distance <= kShotNearMuzzleGraceMeters &&
+	                muzzle_block.collider_id > 0)) {
+	            world_hit = muzzle_block;
+	            world_hit.distance = std::min(max_range,
+	                                          std::max(0.0, muzzle_block.distance + kShotMuzzleOffsetMeters));
+	            world_hit.position = Add(origin, Mul(shot_dir, world_hit.distance));
+	            world_hit_source = "muzzle_block";
+	          }
+	        }
+	      }
 
 	      HitKind hit_kind = HitKind::None;
 	      SurfaceType surface_type = SurfaceType::Stone;
 	      afps::combat::Vec3 hit_normal{-shot_dir.x, -shot_dir.y, -shot_dir.z};
 	      double hit_distance = max_range;
 	      std::string hit_target;
+	      if (world_hit.hit &&
+	          world_hit.collider_id == -1 &&
+	          std::abs(world_hit.normal.z) < 0.5) {
+	        world_hit.hit = false;
+	        world_hit.distance = max_range;
+	        world_hit_source = "arena_side_ignored";
+	      }
 
 	      if (result.hit && (!world_hit.hit || result.distance <= world_hit.distance)) {
 	        hit_kind = HitKind::Player;
@@ -1363,6 +1679,11 @@ void TickLoop::Step() {
 	        hit_normal = world_hit.normal;
 	      }
 	      const afps::combat::Vec3 hit_position = Add(origin, Mul(shot_dir, hit_distance));
+	      LogHitscanShotDebug(server_tick_, event.connection_id, weapon->id, active_slot, shot_seq, estimated_tick,
+	                          event.request, origin, muzzle, shot_dir, max_range, intended_distance, result, eye_world_hit,
+	                          muzzle_block_checked, muzzle_block_hit, retry_attempted, retry_suppressed, retry_hit,
+	                          retry_world_hit, world_hit_source, world_hit, hit_kind, hit_target, hit_distance,
+	                          hit_position, hit_normal, surface_type);
 
 	      if (hit_kind == HitKind::Player) {
 	        auto target_iter = combat_states_.find(hit_target);

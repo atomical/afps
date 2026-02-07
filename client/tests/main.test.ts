@@ -939,6 +939,69 @@ describe('main entry', () => {
     expect(firePayload).toBeTruthy();
     const fire = FireWeaponRequest.getRootAsFireWeaponRequest(new flatbuffers.ByteBuffer(firePayload!.payload));
     expect(fire.dirZ()).toBeLessThan(0);
+    expect(fire.debugEnabled()).toBe(false);
+  });
+
+  it('includes debug shot payload fields when debug overlay is active', async () => {
+    const sendUnreliable = vi.fn();
+    connectMock.mockResolvedValue({
+      connectionId: 'conn',
+      serverHello: { serverTickRate: 60, snapshotRate: 20 },
+      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: sendUnreliable },
+      nextClientMessageSeq: () => 1,
+      getServerSeqAck: () => 0
+    });
+    envMock.getSignalingUrl.mockReturnValue('https://example.test');
+    envMock.getSignalingAuthToken.mockReturnValue('token');
+
+    await import('../src/main');
+    await flushPromises();
+
+    appInstance.getPlayerPose.mockReturnValue({
+      posX: 20.584,
+      posY: -5.424,
+      posZ: 0,
+      velX: 0,
+      velY: 0,
+      velZ: 0
+    });
+    appInstance.getLookAngles.mockReturnValue({ yaw: 0.3, pitch: 0.15 });
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Backquote' }));
+
+    const senderArgs = createInputSenderMock.mock.calls[0]?.[0] as { onSend?: (cmd: Record<string, unknown>) => void };
+    senderArgs.onSend?.({
+      type: 'InputCmd',
+      inputSeq: 1,
+      moveX: 0,
+      moveY: 0,
+      lookDeltaX: 0,
+      lookDeltaY: 0,
+      viewYaw: 0,
+      viewPitch: 0,
+      weaponSlot: 0,
+      jump: false,
+      fire: true,
+      ads: false,
+      sprint: false,
+      dash: false,
+      grapple: false,
+      shield: false,
+      shockwave: false
+    });
+
+    const firePayload = sendUnreliable.mock.calls
+      .map((call) => call[0] as ArrayBuffer | Uint8Array)
+      .map((payload) => decodeEnvelope(payload))
+      .find((envelope) => envelope?.header.msgType === MessageType.FireWeaponRequest);
+    expect(firePayload).toBeTruthy();
+    const fire = FireWeaponRequest.getRootAsFireWeaponRequest(new flatbuffers.ByteBuffer(firePayload!.payload));
+    expect(fire.debugEnabled()).toBe(true);
+    expect(fire.debugPlayerPosX()).toBeCloseTo(20.584);
+    expect(fire.debugPlayerPosY()).toBeCloseTo(-5.424);
+    expect(fire.debugPlayerPosZ()).toBeCloseTo(0);
+    expect(fire.debugViewYaw()).toBeCloseTo(0.3);
+    expect(fire.debugViewPitch()).toBeCloseTo(0.15);
+    expect(fire.debugProjectionTelemetryEnabled()).toBe(true);
   });
 
   it('spawns decals for remote world hit traces even when tracer rendering is culled', async () => {
@@ -1094,7 +1157,7 @@ describe('main entry', () => {
     expect(appInstance.spawnDecalVfx).toHaveBeenCalledTimes(1);
   });
 
-  it('projects miss traces onto static surfaces for decal recovery', async () => {
+  it('does not spawn decals for authoritative miss traces', async () => {
     connectMock.mockResolvedValue({
       connectionId: 'conn',
       serverHello: { serverTickRate: 60, snapshotRate: 20 },
@@ -1161,7 +1224,8 @@ describe('main entry', () => {
       });
       beforeRenderHook?.(0.016, 1000);
 
-      expect(appInstance.spawnDecalVfx).toHaveBeenCalledTimes(1);
+      expect(appInstance.spawnImpactVfx).not.toHaveBeenCalled();
+      expect(appInstance.spawnDecalVfx).not.toHaveBeenCalled();
     } finally {
       raycastSpy.mockRestore();
     }
@@ -1877,6 +1941,10 @@ describe('main entry', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
     await import('../src/main');
+    const projectionTelemetry = (window as unknown as {
+      __afpsProjectionTelemetry?: { enabled: () => boolean };
+    }).__afpsProjectionTelemetry;
+    const initialTelemetryEnabled = projectionTelemetry?.enabled() ?? false;
 
     statusMock.setVisible.mockClear();
     settingsMock.setVisible.mockClear();
@@ -1887,11 +1955,14 @@ describe('main entry', () => {
     expect(statusMock.element.dataset.debug).toBe('true');
     expect(settingsMock.setVisible).not.toHaveBeenCalled();
     expect(hudMock.element.dataset.debug).toBe('true');
+    expect(projectionTelemetry?.enabled()).toBe(true);
     expect(logSpy).toHaveBeenCalledWith('[afps] player coords', {
       x: 12.346,
       y: -7.891,
       z: 0.123
     });
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Backquote' }));
+    expect(projectionTelemetry?.enabled()).toBe(initialTelemetryEnabled);
     logSpy.mockRestore();
   });
 
@@ -1966,7 +2037,7 @@ describe('main entry', () => {
     }
   });
 
-  it('forces crouch while debug overlays are visible and restores normal crouch input when closed', async () => {
+  it('does not override crouch input while debug overlays are visible', async () => {
     connectMock.mockResolvedValue({
       connectionId: 'conn',
       serverHello: { serverTickRate: 60, snapshotRate: 20 },
@@ -2001,14 +2072,22 @@ describe('main entry', () => {
       fire: false,
       ads: false,
       sprint: false,
-      crouch: true,
+      crouch: false,
       dash: false,
       grapple: false,
       shield: false,
       shockwave: false
     };
     senderArgs.onSend?.(cmd);
-    expect(cmd.crouch).toBe(true);
+    expect(cmd.crouch).toBe(false);
+
+    const crouchPressedCmd: Record<string, unknown> = {
+      ...cmd,
+      inputSeq: 2,
+      crouch: true
+    };
+    senderArgs.onSend?.(crouchPressedCmd);
+    expect(crouchPressedCmd.crouch).toBe(true);
 
     const resetCallsBeforeClose = samplerInstance.reset.mock.calls.length;
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Backquote' }));
@@ -2016,7 +2095,7 @@ describe('main entry', () => {
 
     const afterCloseCmd: Record<string, unknown> = {
       ...cmd,
-      inputSeq: 2,
+      inputSeq: 3,
       crouch: false
     };
     senderArgs.onSend?.(afterCloseCmd);

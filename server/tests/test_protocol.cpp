@@ -133,7 +133,8 @@ TEST_CASE("ParseFireWeaponRequestPayload reads origin and direction") {
   flatbuffers::FlatBufferBuilder builder(128);
   const auto weapon_id = builder.CreateString("PLASMA_RIFLE");
   const auto offset = afps::protocol::CreateFireWeaponRequest(
-      builder, 17, weapon_id, 2, 1.25, -2.5, 3.75, 0.33, -0.66, 0.11);
+      builder, 17, weapon_id, 2, 1.25, -2.5, 3.75, 0.33, -0.66, 0.11,
+      true, 4.5, -6.25, 0.0, 0.9, -0.2, true);
   builder.Finish(offset);
   const std::vector<uint8_t> payload(builder.GetBufferPointer(),
                                      builder.GetBufferPointer() + builder.GetSize());
@@ -151,6 +152,13 @@ TEST_CASE("ParseFireWeaponRequestPayload reads origin and direction") {
   CHECK(request.dir_x == doctest::Approx(0.33));
   CHECK(request.dir_y == doctest::Approx(-0.66));
   CHECK(request.dir_z == doctest::Approx(0.11));
+  CHECK(request.debug_enabled);
+  CHECK(request.debug_player_pos_x == doctest::Approx(4.5));
+  CHECK(request.debug_player_pos_y == doctest::Approx(-6.25));
+  CHECK(request.debug_player_pos_z == doctest::Approx(0.0));
+  CHECK(request.debug_view_yaw == doctest::Approx(0.9));
+  CHECK(request.debug_view_pitch == doctest::Approx(-0.2));
+  CHECK(request.debug_projection_telemetry_enabled);
 }
 
 TEST_CASE("BuildGameEventBatch emits projectile spawn fields") {

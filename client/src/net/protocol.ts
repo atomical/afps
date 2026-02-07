@@ -168,6 +168,13 @@ export interface FireWeaponRequestMessage {
   dirX: number;
   dirY: number;
   dirZ: number;
+  debugEnabled?: boolean;
+  debugPlayerPosX?: number;
+  debugPlayerPosY?: number;
+  debugPlayerPosZ?: number;
+  debugViewYaw?: number;
+  debugViewPitch?: number;
+  debugProjectionTelemetryEnabled?: boolean;
 }
 
 export interface PingMessage {
@@ -444,7 +451,14 @@ export const encodeFireWeaponRequest = (
     request.originZ,
     request.dirX,
     request.dirY,
-    request.dirZ
+    request.dirZ,
+    request.debugEnabled ?? false,
+    request.debugPlayerPosX ?? 0,
+    request.debugPlayerPosY ?? 0,
+    request.debugPlayerPosZ ?? 0,
+    request.debugViewYaw ?? 0,
+    request.debugViewPitch ?? 0,
+    request.debugProjectionTelemetryEnabled ?? false
   ).pack(builder);
   builder.finish(payload);
   return encodeEnvelope(MessageType.FireWeaponRequest, builder.asUint8Array(), msgSeq, serverSeqAck);

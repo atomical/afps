@@ -112,6 +112,7 @@ Sources: `shared/sim/sim.h`, `server/src/tick.cpp`, `client/src/ui/hud.ts`, `cli
 ## Combat and Weapons
 
 - Server-authoritative combat with lag-compensated hitscan and server-simulated projectiles.
+- Hitscan uses dual-trace corner handling on server (eye intent + muzzle obstruction + near-muzzle grace retrace) to reduce false close-corner world blocks.
 - Weapon fire emits FX events used by clients for muzzle flash, tracer, impacts, decals, and casing ejection.
 - ADS changes local input sensitivity and affects weapon behavior/pose.
 - Projectile explosions support large grenade impact visuals.

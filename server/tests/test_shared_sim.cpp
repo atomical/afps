@@ -461,6 +461,62 @@ TEST_CASE("Shared sim raycast returns boundary normal at t=0") {
   CHECK(outward.normal_z == doctest::Approx(0.0));
 }
 
+TEST_CASE("Shared sim raycast options support min/max distance filtering") {
+  afps::sim::SimConfig config = afps::sim::kDefaultSimConfig;
+  config.arena_half_size = 0.0;
+  config.obstacle_min_x = 0.0;
+  config.obstacle_max_x = 0.0;
+  config.obstacle_min_y = 0.0;
+  config.obstacle_max_y = 0.0;
+
+  afps::sim::CollisionWorld world;
+  afps::sim::ClearColliders(world);
+  afps::sim::AddAabbCollider(world, afps::sim::AabbCollider{
+                                        1, 0.0, -1.0, 0.0, 1.0, 1.0, 3.0, 1, 0});
+  afps::sim::AddAabbCollider(world, afps::sim::AabbCollider{
+                                        2, 2.0, -1.0, 0.0, 3.0, 1.0, 3.0, 1, 0});
+
+  afps::sim::RaycastWorldOptions min_t_options;
+  min_t_options.min_t = 1.5;
+  const afps::sim::RaycastHit min_t_hit =
+      afps::sim::RaycastWorld({-1.0, 0.0, 1.6}, {1.0, 0.0, 0.0}, config, &world, min_t_options);
+  REQUIRE(min_t_hit.hit);
+  CHECK(min_t_hit.collider_id == 2);
+  CHECK(min_t_hit.t == doctest::Approx(3.0));
+
+  afps::sim::RaycastWorldOptions max_t_options;
+  max_t_options.max_t = 2.5;
+  const afps::sim::RaycastHit max_t_hit =
+      afps::sim::RaycastWorld({-1.0, 0.0, 1.6}, {1.0, 0.0, 0.0}, config, &world, max_t_options);
+  REQUIRE(max_t_hit.hit);
+  CHECK(max_t_hit.collider_id == 1);
+  CHECK(max_t_hit.t == doctest::Approx(1.0));
+}
+
+TEST_CASE("Shared sim raycast options support collider ignore") {
+  afps::sim::SimConfig config = afps::sim::kDefaultSimConfig;
+  config.arena_half_size = 0.0;
+  config.obstacle_min_x = 0.0;
+  config.obstacle_max_x = 0.0;
+  config.obstacle_min_y = 0.0;
+  config.obstacle_max_y = 0.0;
+
+  afps::sim::CollisionWorld world;
+  afps::sim::ClearColliders(world);
+  afps::sim::AddAabbCollider(world, afps::sim::AabbCollider{
+                                        1, 0.0, -1.0, 0.0, 1.0, 1.0, 3.0, 1, 0});
+  afps::sim::AddAabbCollider(world, afps::sim::AabbCollider{
+                                        2, 2.0, -1.0, 0.0, 3.0, 1.0, 3.0, 1, 0});
+
+  afps::sim::RaycastWorldOptions ignore_options;
+  ignore_options.ignore_collider_id = 1;
+  const afps::sim::RaycastHit hit =
+      afps::sim::RaycastWorld({-1.0, 0.0, 1.6}, {1.0, 0.0, 0.0}, config, &world, ignore_options);
+  REQUIRE(hit.hit);
+  CHECK(hit.collider_id == 2);
+  CHECK(hit.t == doctest::Approx(3.0));
+}
+
 TEST_CASE("Shared sim shield activates and triggers cooldown") {
   afps::sim::SimConfig config = afps::sim::kDefaultSimConfig;
   config.move_speed = 0.0;

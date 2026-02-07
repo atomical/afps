@@ -243,8 +243,18 @@ bool ParseFireWeaponRequestPayload(const std::vector<uint8_t> &payload, FireWeap
   out.dir_x = req->dir_x();
   out.dir_y = req->dir_y();
   out.dir_z = req->dir_z();
+  out.debug_enabled = req->debug_enabled();
+  out.debug_player_pos_x = req->debug_player_pos_x();
+  out.debug_player_pos_y = req->debug_player_pos_y();
+  out.debug_player_pos_z = req->debug_player_pos_z();
+  out.debug_view_yaw = req->debug_view_yaw();
+  out.debug_view_pitch = req->debug_view_pitch();
+  out.debug_projection_telemetry_enabled = req->debug_projection_telemetry_enabled();
   if (!IsFinite(out.origin_x) || !IsFinite(out.origin_y) || !IsFinite(out.origin_z) ||
-      !IsFinite(out.dir_x) || !IsFinite(out.dir_y) || !IsFinite(out.dir_z)) {
+      !IsFinite(out.dir_x) || !IsFinite(out.dir_y) || !IsFinite(out.dir_z) ||
+      !IsFinite(out.debug_player_pos_x) || !IsFinite(out.debug_player_pos_y) ||
+      !IsFinite(out.debug_player_pos_z) || !IsFinite(out.debug_view_yaw) ||
+      !IsFinite(out.debug_view_pitch)) {
     error = "invalid_field: origin_dir";
     return false;
   }

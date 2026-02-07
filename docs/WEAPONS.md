@@ -22,6 +22,16 @@ When a shot is accepted by the server:
 - That event includes a deterministic casing spawn payload (position, rotation, velocity, angular velocity, and seed).
 - Clients spawn a local casing instance from a pool using `client/src/weapons/casing_pool.ts` so every player sees the same ejection timing.
 
+## Corner Handling (Hitscan)
+
+Hitscan world blocking is resolved on the server using a dual-trace path:
+
+1. Eye-origin intent trace picks the intended world distance.
+2. Muzzle-origin obstruction trace validates whether the shot is truly blocked.
+3. A near-muzzle grace retrace can ignore the first immediate collider hit once to reduce false corner self-blocking.
+
+Details and constants: `docs/SHOOTING_AROUND_CORNERS.md`.
+
 ### Casing Model Asset
 
 The casing pool uses Kenney Blaster Kit’s `bullet-foam.glb` model.

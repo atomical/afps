@@ -1001,6 +1001,8 @@ const localStorageRef =
 const PROJECTION_TELEMETRY_HISTORY_LIMIT = 120;
 const projectionTelemetryHistory: ProjectionTelemetryEvent[] = [];
 let projectionTelemetryEnabled = false;
+let projectionTelemetryDebugOverlayEnabled = false;
+const isProjectionTelemetryEnabled = () => projectionTelemetryEnabled || projectionTelemetryDebugOverlayEnabled;
 if (typeof window !== 'undefined') {
   const query = new URLSearchParams(window.location.search);
   projectionTelemetryEnabled =
@@ -1011,7 +1013,7 @@ const recordProjectionTelemetry = (event: ProjectionTelemetryEvent) => {
   if (projectionTelemetryHistory.length > PROJECTION_TELEMETRY_HISTORY_LIMIT) {
     projectionTelemetryHistory.splice(0, projectionTelemetryHistory.length - PROJECTION_TELEMETRY_HISTORY_LIMIT);
   }
-  if (projectionTelemetryEnabled) {
+  if (isProjectionTelemetryEnabled()) {
     console.debug(`[afps] projection ${event.mode}`, event);
   }
 };
@@ -1027,7 +1029,7 @@ if (typeof window !== 'undefined') {
       };
     }
   ).__afpsProjectionTelemetry = {
-    enabled: () => projectionTelemetryEnabled,
+    enabled: () => isProjectionTelemetryEnabled(),
     setEnabled: (enabled: boolean) => {
       projectionTelemetryEnabled = enabled === true;
       localStorageRef.setItem('afps.debug.projection', projectionTelemetryEnabled ? '1' : '0');
@@ -1614,6 +1616,17 @@ refreshHudLockState(pointerLock.supported ? pointerLock.isLocked() : undefined);
 
 let debugOverlaysVisible = false;
 let scoreboardVisible = false;
+const logPlayerCoords = () => {
+  const pose = app.getPlayerPose();
+  const x = Number.isFinite(pose.posX) ? pose.posX : 0;
+  const y = Number.isFinite(pose.posY) ? pose.posY : 0;
+  const z = Number.isFinite(pose.posZ) ? pose.posZ : 0;
+  console.log('[afps] player coords', {
+    x: Number(x.toFixed(3)),
+    y: Number(y.toFixed(3)),
+    z: Number(z.toFixed(3))
+  });
+};
 const refreshStatusVisibility = () => {
   status.setVisible(debugOverlaysVisible || reconnecting);
   status.setMetricsVisible(debugOverlaysVisible || metricsVisible);
@@ -1621,12 +1634,17 @@ const refreshStatusVisibility = () => {
   status.element.dataset.debug = debugOverlaysVisible ? 'true' : 'false';
 };
 const setDebugOverlaysVisible = (visible: boolean) => {
+  const wasVisible = debugOverlaysVisible;
   debugOverlaysVisible = visible;
+  projectionTelemetryDebugOverlayEnabled = visible;
   sampler?.reset?.();
   refreshStatusVisibility();
   hud.element.dataset.debug = visible ? 'true' : 'false';
   killFeedOverlay.element.dataset.shift = visible ? 'true' : 'false';
   localAvatarDebug?.setVisible?.(visible);
+  if (visible && !wasVisible) {
+    logPlayerCoords();
+  }
 };
 setDebugOverlaysVisible(false);
 
@@ -1655,15 +1673,6 @@ window.addEventListener('keydown', (event) => {
   if (event.code === 'Backquote') {
     if (!event.repeat) {
       setDebugOverlaysVisible(!debugOverlaysVisible);
-      const pose = app.getPlayerPose();
-      const x = Number.isFinite(pose.posX) ? pose.posX : 0;
-      const y = Number.isFinite(pose.posY) ? pose.posY : 0;
-      const z = Number.isFinite(pose.posZ) ? pose.posZ : 0;
-      console.log('[afps] player coords', {
-        x: Number(x.toFixed(3)),
-        y: Number(y.toFixed(3)),
-        z: Number(z.toFixed(3))
-      });
     }
   }
 });
@@ -2496,23 +2505,38 @@ const debugFxLog = (...args: unknown[]) => {
               debugFxLog('shot-trace-missing', { traceKey, shooterId: event.shooterId, shotSeq: event.shotSeq });
               break;
             }
-            const projectedWorldHit =
-              projectedWorldHitByShot.get(traceKey) ?? (trace.hitKind !== 2 ? projectTraceWorldHit(trace) : null);
-            if (trace.hitKind === 0 && !projectedWorldHit) {
-              debugFxLog('shot-trace-no-hit', { traceKey, shooterId: event.shooterId, shotSeq: event.shotSeq });
+            if (trace.hitKind === 0) {
+              debugFxLog('shot-trace-no-hit', {
+                traceKey,
+                shooterId: event.shooterId,
+                shotSeq: event.shotSeq,
+                reason: 'authoritative_none'
+              });
               break;
             }
+            const projectedWorldHit =
+              projectedWorldHitByShot.get(traceKey) ?? (trace.hitKind !== 2 ? projectTraceWorldHit(trace) : null);
             const seed = (hashString(event.shooterId) ^ (event.shotSeq >>> 0)) >>> 0;
             const fallbackImpactPos = trace.hitPos;
-            const impactPos = projectedWorldHit?.position ?? fallbackImpactPos;
-            const impactNormal = projectedWorldHit?.normal ?? trace.normal;
+            const traceImpactPos = projectedWorldHit?.position ?? fallbackImpactPos;
+            const traceImpactNormal = projectedWorldHit?.normal ?? trace.normal;
+            const projectedImpact =
+              trace.hitKind === 1
+                ? projectImpactWorldHit({
+                    position: traceImpactPos,
+                    normal: traceImpactNormal
+                  })
+                : null;
+            const impactPos = projectedImpact?.position ?? traceImpactPos;
+            const impactNormal = projectedImpact?.normal ?? traceImpactNormal;
             debugFxLog('shot-trace-impact', {
               traceKey,
               shooterId: event.shooterId,
               shotSeq: event.shotSeq,
               hitKind: trace.hitKind,
               surfaceType: trace.surfaceType,
-              usedProjectedHit: projectedWorldHit !== null
+              usedProjectedHit: projectedWorldHit !== null,
+              usedImpactProjection: projectedImpact !== null
             });
             app.spawnImpactVfx({
               position: impactPos,
@@ -2520,9 +2544,9 @@ const debugFxLog = (...args: unknown[]) => {
               surfaceType: trace.surfaceType,
               seed
             });
-            if (fxSettings.decals && (trace.hitKind === 1 || (trace.hitKind === 0 && projectedWorldHit !== null))) {
+            if (fxSettings.decals && trace.hitKind === 1) {
               let decalTtl: number | undefined;
-              if (!projectedWorldHit) {
+              if (!projectedWorldHit && !projectedImpact) {
                 const firedDownward = trace.dir.y < -0.05;
                 const aboveSkyHeight = impactPos.y > SKY_DECAL_HEIGHT_METERS;
                 const aboveMuzzleByMargin =
@@ -2695,9 +2719,6 @@ const debugFxLog = (...args: unknown[]) => {
             const lookX = cmd.lookDeltaX;
             const lookY = cmd.lookDeltaY;
             adsTarget = cmd.ads ? 1 : 0;
-            if (debugOverlaysVisible) {
-              cmd.crouch = true;
-            }
             const adsSensitivity = 1 - adsBlend * (1 - ADS_SENSITIVITY_MULTIPLIER);
             const scaledLookX = lookX * adsSensitivity;
             const scaledLookY = lookY * adsSensitivity;
@@ -2747,6 +2768,8 @@ const debugFxLog = (...args: unknown[]) => {
                   });
                   const dirThree = anglesToDirection(angles);
                   const dirServer = swapYZ(dirThree);
+                  const playerPose = app.getPlayerPose();
+                  const debugEnabled = debugOverlaysVisible;
                   session.unreliableChannel.send(
                     encodeFireWeaponRequest(
                       {
@@ -2759,7 +2782,14 @@ const debugFxLog = (...args: unknown[]) => {
                         originZ: originServer.z,
                         dirX: dirServer.x,
                         dirY: dirServer.y,
-                        dirZ: dirServer.z
+                        dirZ: dirServer.z,
+                        debugEnabled,
+                        debugPlayerPosX: debugEnabled && Number.isFinite(playerPose.posX) ? playerPose.posX : 0,
+                        debugPlayerPosY: debugEnabled && Number.isFinite(playerPose.posY) ? playerPose.posY : 0,
+                        debugPlayerPosZ: debugEnabled && Number.isFinite(playerPose.posZ) ? playerPose.posZ : 0,
+                        debugViewYaw: debugEnabled && Number.isFinite(angles.yaw) ? angles.yaw : 0,
+                        debugViewPitch: debugEnabled && Number.isFinite(angles.pitch) ? angles.pitch : 0,
+                        debugProjectionTelemetryEnabled: debugEnabled ? isProjectionTelemetryEnabled() : false
                       },
                       session.nextClientMessageSeq(),
                       session.getServerSeqAck()

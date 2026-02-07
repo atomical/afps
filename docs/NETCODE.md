@@ -49,6 +49,15 @@ The server rejects non-monotonic sequences and logs abuse events.
 - Clients can read `snapshotKeyframeInterval` from `ServerHello` for diagnostics.
 - `ServerHello.mapSeed` is used to select/generate the deterministic map so collision and pickup layout match the server world.
 
+## Hitscan world resolution
+
+- Hitscan authority is server-side.
+- World blocking for hitscan now uses dual-trace corner handling:
+  - Eye-origin intent trace.
+  - Muzzle-origin obstruction trace.
+  - Near-muzzle grace retrace with one-collider ignore.
+- This reduces false world blocks when firing around corners on AABB-heavy maps while preserving server authority.
+
 ---
 
 ## Snapshots

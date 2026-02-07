@@ -61,6 +61,12 @@ To run server + client together (HTTP signaling, default):
 ./tools/run_dev.sh
 ```
 
+To enable shot debug logging and write per-shot JSON lines to `tmp/shot_debug.log`:
+
+```bash
+AFPS_LOG_SHOTS=1 AFPS_SHOT_LOG_PATH=tmp/shot_debug.log ./tools/run_dev.sh
+```
+
 Map mode/seed with `run_dev.sh`:
 
 ```bash

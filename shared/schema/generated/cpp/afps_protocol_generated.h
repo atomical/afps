@@ -2787,6 +2787,13 @@ struct FireWeaponRequestT : public ::flatbuffers::NativeTable {
   double dir_x = 0.0;
   double dir_y = 0.0;
   double dir_z = 0.0;
+  bool debug_enabled = false;
+  double debug_player_pos_x = 0.0;
+  double debug_player_pos_y = 0.0;
+  double debug_player_pos_z = 0.0;
+  double debug_view_yaw = 0.0;
+  double debug_view_pitch = 0.0;
+  bool debug_projection_telemetry_enabled = false;
 };
 
 struct FireWeaponRequest FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -2801,7 +2808,14 @@ struct FireWeaponRequest FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table 
     VT_ORIGIN_Z = 14,
     VT_DIR_X = 16,
     VT_DIR_Y = 18,
-    VT_DIR_Z = 20
+    VT_DIR_Z = 20,
+    VT_DEBUG_ENABLED = 22,
+    VT_DEBUG_PLAYER_POS_X = 24,
+    VT_DEBUG_PLAYER_POS_Y = 26,
+    VT_DEBUG_PLAYER_POS_Z = 28,
+    VT_DEBUG_VIEW_YAW = 30,
+    VT_DEBUG_VIEW_PITCH = 32,
+    VT_DEBUG_PROJECTION_TELEMETRY_ENABLED = 34
   };
   int32_t client_shot_seq() const {
     return GetField<int32_t>(VT_CLIENT_SHOT_SEQ, 0);
@@ -2830,6 +2844,27 @@ struct FireWeaponRequest FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table 
   double dir_z() const {
     return GetField<double>(VT_DIR_Z, 0.0);
   }
+  bool debug_enabled() const {
+    return GetField<uint8_t>(VT_DEBUG_ENABLED, 0) != 0;
+  }
+  double debug_player_pos_x() const {
+    return GetField<double>(VT_DEBUG_PLAYER_POS_X, 0.0);
+  }
+  double debug_player_pos_y() const {
+    return GetField<double>(VT_DEBUG_PLAYER_POS_Y, 0.0);
+  }
+  double debug_player_pos_z() const {
+    return GetField<double>(VT_DEBUG_PLAYER_POS_Z, 0.0);
+  }
+  double debug_view_yaw() const {
+    return GetField<double>(VT_DEBUG_VIEW_YAW, 0.0);
+  }
+  double debug_view_pitch() const {
+    return GetField<double>(VT_DEBUG_VIEW_PITCH, 0.0);
+  }
+  bool debug_projection_telemetry_enabled() const {
+    return GetField<uint8_t>(VT_DEBUG_PROJECTION_TELEMETRY_ENABLED, 0) != 0;
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -2843,6 +2878,13 @@ struct FireWeaponRequest FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table 
            VerifyField<double>(verifier, VT_DIR_X, 8) &&
            VerifyField<double>(verifier, VT_DIR_Y, 8) &&
            VerifyField<double>(verifier, VT_DIR_Z, 8) &&
+           VerifyField<uint8_t>(verifier, VT_DEBUG_ENABLED, 1) &&
+           VerifyField<double>(verifier, VT_DEBUG_PLAYER_POS_X, 8) &&
+           VerifyField<double>(verifier, VT_DEBUG_PLAYER_POS_Y, 8) &&
+           VerifyField<double>(verifier, VT_DEBUG_PLAYER_POS_Z, 8) &&
+           VerifyField<double>(verifier, VT_DEBUG_VIEW_YAW, 8) &&
+           VerifyField<double>(verifier, VT_DEBUG_VIEW_PITCH, 8) &&
+           VerifyField<uint8_t>(verifier, VT_DEBUG_PROJECTION_TELEMETRY_ENABLED, 1) &&
            verifier.EndTable();
   }
   FireWeaponRequestT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -2881,6 +2923,27 @@ struct FireWeaponRequestBuilder {
   void add_dir_z(double dir_z) {
     fbb_.AddElement<double>(FireWeaponRequest::VT_DIR_Z, dir_z, 0.0);
   }
+  void add_debug_enabled(bool debug_enabled) {
+    fbb_.AddElement<uint8_t>(FireWeaponRequest::VT_DEBUG_ENABLED, static_cast<uint8_t>(debug_enabled), 0);
+  }
+  void add_debug_player_pos_x(double debug_player_pos_x) {
+    fbb_.AddElement<double>(FireWeaponRequest::VT_DEBUG_PLAYER_POS_X, debug_player_pos_x, 0.0);
+  }
+  void add_debug_player_pos_y(double debug_player_pos_y) {
+    fbb_.AddElement<double>(FireWeaponRequest::VT_DEBUG_PLAYER_POS_Y, debug_player_pos_y, 0.0);
+  }
+  void add_debug_player_pos_z(double debug_player_pos_z) {
+    fbb_.AddElement<double>(FireWeaponRequest::VT_DEBUG_PLAYER_POS_Z, debug_player_pos_z, 0.0);
+  }
+  void add_debug_view_yaw(double debug_view_yaw) {
+    fbb_.AddElement<double>(FireWeaponRequest::VT_DEBUG_VIEW_YAW, debug_view_yaw, 0.0);
+  }
+  void add_debug_view_pitch(double debug_view_pitch) {
+    fbb_.AddElement<double>(FireWeaponRequest::VT_DEBUG_VIEW_PITCH, debug_view_pitch, 0.0);
+  }
+  void add_debug_projection_telemetry_enabled(bool debug_projection_telemetry_enabled) {
+    fbb_.AddElement<uint8_t>(FireWeaponRequest::VT_DEBUG_PROJECTION_TELEMETRY_ENABLED, static_cast<uint8_t>(debug_projection_telemetry_enabled), 0);
+  }
   explicit FireWeaponRequestBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -2902,8 +2965,20 @@ inline ::flatbuffers::Offset<FireWeaponRequest> CreateFireWeaponRequest(
     double origin_z = 0.0,
     double dir_x = 0.0,
     double dir_y = 0.0,
-    double dir_z = 0.0) {
+    double dir_z = 0.0,
+    bool debug_enabled = false,
+    double debug_player_pos_x = 0.0,
+    double debug_player_pos_y = 0.0,
+    double debug_player_pos_z = 0.0,
+    double debug_view_yaw = 0.0,
+    double debug_view_pitch = 0.0,
+    bool debug_projection_telemetry_enabled = false) {
   FireWeaponRequestBuilder builder_(_fbb);
+  builder_.add_debug_view_pitch(debug_view_pitch);
+  builder_.add_debug_view_yaw(debug_view_yaw);
+  builder_.add_debug_player_pos_z(debug_player_pos_z);
+  builder_.add_debug_player_pos_y(debug_player_pos_y);
+  builder_.add_debug_player_pos_x(debug_player_pos_x);
   builder_.add_dir_z(dir_z);
   builder_.add_dir_y(dir_y);
   builder_.add_dir_x(dir_x);
@@ -2913,6 +2988,8 @@ inline ::flatbuffers::Offset<FireWeaponRequest> CreateFireWeaponRequest(
   builder_.add_weapon_slot(weapon_slot);
   builder_.add_weapon_id(weapon_id);
   builder_.add_client_shot_seq(client_shot_seq);
+  builder_.add_debug_projection_telemetry_enabled(debug_projection_telemetry_enabled);
+  builder_.add_debug_enabled(debug_enabled);
   return builder_.Finish();
 }
 
@@ -2926,7 +3003,14 @@ inline ::flatbuffers::Offset<FireWeaponRequest> CreateFireWeaponRequestDirect(
     double origin_z = 0.0,
     double dir_x = 0.0,
     double dir_y = 0.0,
-    double dir_z = 0.0) {
+    double dir_z = 0.0,
+    bool debug_enabled = false,
+    double debug_player_pos_x = 0.0,
+    double debug_player_pos_y = 0.0,
+    double debug_player_pos_z = 0.0,
+    double debug_view_yaw = 0.0,
+    double debug_view_pitch = 0.0,
+    bool debug_projection_telemetry_enabled = false) {
   auto weapon_id__ = weapon_id ? _fbb.CreateString(weapon_id) : 0;
   return afps::protocol::CreateFireWeaponRequest(
       _fbb,
@@ -2938,7 +3022,14 @@ inline ::flatbuffers::Offset<FireWeaponRequest> CreateFireWeaponRequestDirect(
       origin_z,
       dir_x,
       dir_y,
-      dir_z);
+      dir_z,
+      debug_enabled,
+      debug_player_pos_x,
+      debug_player_pos_y,
+      debug_player_pos_z,
+      debug_view_yaw,
+      debug_view_pitch,
+      debug_projection_telemetry_enabled);
 }
 
 ::flatbuffers::Offset<FireWeaponRequest> CreateFireWeaponRequest(::flatbuffers::FlatBufferBuilder &_fbb, const FireWeaponRequestT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
@@ -4817,6 +4908,13 @@ inline void FireWeaponRequest::UnPackTo(FireWeaponRequestT *_o, const ::flatbuff
   { auto _e = dir_x(); _o->dir_x = _e; }
   { auto _e = dir_y(); _o->dir_y = _e; }
   { auto _e = dir_z(); _o->dir_z = _e; }
+  { auto _e = debug_enabled(); _o->debug_enabled = _e; }
+  { auto _e = debug_player_pos_x(); _o->debug_player_pos_x = _e; }
+  { auto _e = debug_player_pos_y(); _o->debug_player_pos_y = _e; }
+  { auto _e = debug_player_pos_z(); _o->debug_player_pos_z = _e; }
+  { auto _e = debug_view_yaw(); _o->debug_view_yaw = _e; }
+  { auto _e = debug_view_pitch(); _o->debug_view_pitch = _e; }
+  { auto _e = debug_projection_telemetry_enabled(); _o->debug_projection_telemetry_enabled = _e; }
 }
 
 inline ::flatbuffers::Offset<FireWeaponRequest> CreateFireWeaponRequest(::flatbuffers::FlatBufferBuilder &_fbb, const FireWeaponRequestT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
@@ -4836,6 +4934,13 @@ inline ::flatbuffers::Offset<FireWeaponRequest> FireWeaponRequest::Pack(::flatbu
   auto _dir_x = _o->dir_x;
   auto _dir_y = _o->dir_y;
   auto _dir_z = _o->dir_z;
+  auto _debug_enabled = _o->debug_enabled;
+  auto _debug_player_pos_x = _o->debug_player_pos_x;
+  auto _debug_player_pos_y = _o->debug_player_pos_y;
+  auto _debug_player_pos_z = _o->debug_player_pos_z;
+  auto _debug_view_yaw = _o->debug_view_yaw;
+  auto _debug_view_pitch = _o->debug_view_pitch;
+  auto _debug_projection_telemetry_enabled = _o->debug_projection_telemetry_enabled;
   return afps::protocol::CreateFireWeaponRequest(
       _fbb,
       _client_shot_seq,
@@ -4846,7 +4951,14 @@ inline ::flatbuffers::Offset<FireWeaponRequest> FireWeaponRequest::Pack(::flatbu
       _origin_z,
       _dir_x,
       _dir_y,
-      _dir_z);
+      _dir_z,
+      _debug_enabled,
+      _debug_player_pos_x,
+      _debug_player_pos_y,
+      _debug_player_pos_z,
+      _debug_view_yaw,
+      _debug_view_pitch,
+      _debug_projection_telemetry_enabled);
 }
 
 inline SetLoadoutRequestT *SetLoadoutRequest::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {

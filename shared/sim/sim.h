@@ -276,6 +276,12 @@ struct RaycastHit {
   uint8_t surface_type = 0;
 };
 
+struct RaycastWorldOptions {
+  double min_t = 0.0;
+  double max_t = std::numeric_limits<double>::infinity();
+  int ignore_collider_id = std::numeric_limits<int>::min();
+};
+
 inline double WrapAngle(double angle) {
   constexpr double kPi = 3.14159265358979323846;
   if (!std::isfinite(angle)) {
@@ -319,6 +325,8 @@ inline void RaycastAabb2D(double origin_x,
                           double max_x,
                           double min_y,
                           double max_y,
+                          double min_t,
+                          double max_t,
                           RaycastHit &best) {
   const double epsilon = 1e-8;
   if (!std::isfinite(dir_x) || !std::isfinite(dir_y)) {
@@ -330,7 +338,7 @@ inline void RaycastAabb2D(double origin_x,
       return;
     }
     const double t = (plane_x - origin_x) / dir_x;
-    if (!std::isfinite(t) || t < 0.0 || t >= best.t) {
+    if (!std::isfinite(t) || t < min_t || t > max_t || t >= best.t) {
       return;
     }
     const double hit_y = origin_y + dir_y * t;
@@ -349,7 +357,7 @@ inline void RaycastAabb2D(double origin_x,
       return;
     }
     const double t = (plane_y - origin_y) / dir_y;
-    if (!std::isfinite(t) || t < 0.0 || t >= best.t) {
+    if (!std::isfinite(t) || t < min_t || t > max_t || t >= best.t) {
       return;
     }
     const double hit_x = origin_x + dir_x * t;
@@ -499,17 +507,22 @@ inline bool GetObstacleAabb(const SimConfig &config,
 inline RaycastHit RaycastWorld(const Vec3 &origin,
                                const Vec3 &dir,
                                const SimConfig &config,
-                               const CollisionWorld *world = nullptr) {
+                               const CollisionWorld *world = nullptr,
+                               const RaycastWorldOptions &options = {}) {
   RaycastHit best;
   const double epsilon = 1e-8;
   if (std::abs(dir.x) < epsilon && std::abs(dir.y) < epsilon && std::abs(dir.z) < epsilon) {
     return best;
   }
+  const double min_t = (std::isfinite(options.min_t) && options.min_t >= 0.0) ? options.min_t : 0.0;
+  const double max_t =
+      (std::isfinite(options.max_t) && options.max_t >= min_t) ? options.max_t : std::numeric_limits<double>::infinity();
+  best.t = max_t;
   double arena_min = 0.0;
   double arena_max = 0.0;
   if (GetArenaAabb(config, arena_min, arena_max)) {
     const double before_t = best.t;
-    RaycastAabb2D(origin.x, origin.y, dir.x, dir.y, arena_min, arena_max, arena_min, arena_max, best);
+    RaycastAabb2D(origin.x, origin.y, dir.x, dir.y, arena_min, arena_max, arena_min, arena_max, min_t, max_t, best);
     if (best.hit && best.t < before_t) {
       best.collider_id = -1;
       best.surface_type = 0;
@@ -519,7 +532,7 @@ inline RaycastHit RaycastWorld(const Vec3 &origin,
         return;
       }
       const double t = (plane_z - origin.z) / dir.z;
-      if (!std::isfinite(t) || t < 0.0 || t >= best.t) {
+      if (!std::isfinite(t) || t < min_t || t > max_t || t >= best.t) {
         return;
       }
       const double hit_x = origin.x + dir.x * t;
@@ -552,7 +565,7 @@ inline RaycastHit RaycastWorld(const Vec3 &origin,
   double obs_max_y = 0.0;
   if (GetObstacleAabb(config, obs_min_x, obs_max_x, obs_min_y, obs_max_y)) {
     const double before_t = best.t;
-    RaycastAabb2D(origin.x, origin.y, dir.x, dir.y, obs_min_x, obs_max_x, obs_min_y, obs_max_y, best);
+    RaycastAabb2D(origin.x, origin.y, dir.x, dir.y, obs_min_x, obs_max_x, obs_min_y, obs_max_y, min_t, max_t, best);
     if (best.hit && best.t < before_t) {
       best.collider_id = -2;
       best.surface_type = 1;
@@ -572,7 +585,10 @@ inline RaycastHit RaycastWorld(const Vec3 &origin,
                          normal_z)) {
         continue;
       }
-      if (!std::isfinite(t) || t < 0.0 || t >= best.t) {
+      if (!std::isfinite(t) || t < min_t || t > max_t || t >= best.t) {
+        continue;
+      }
+      if (collider.id == options.ignore_collider_id) {
         continue;
       }
       best.hit = true;
