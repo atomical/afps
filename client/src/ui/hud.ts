@@ -58,6 +58,7 @@ export const createHudOverlay = (doc: Document, containerId = 'app'): HudOverlay
   const host = doc.getElementById(containerId) ?? doc.body;
   const overlay = doc.createElement('div');
   overlay.className = 'hud-overlay';
+  overlay.dataset.debug = 'false';
   const win = doc.defaultView ?? window;
 
   const crosshair = doc.createElement('div');

@@ -7,6 +7,7 @@ import { FxEvent as FxEventType, unionListToFxEvent } from './fbs/afps/protocol/
 import { HitConfirmedFx } from './fbs/afps/protocol/hit-confirmed-fx';
 import { HitKind } from './fbs/afps/protocol/hit-kind';
 import { InputCmdT } from './fbs/afps/protocol/input-cmd';
+import { KillFeedFx } from './fbs/afps/protocol/kill-feed-fx';
 import { NearMissFx } from './fbs/afps/protocol/near-miss-fx';
 import { OverheatFx } from './fbs/afps/protocol/overheat-fx';
 import { Ping } from './fbs/afps/protocol/ping';
@@ -244,6 +245,11 @@ export type FxEvent =
       targetId: string;
       damage: number;
       killed: boolean;
+    }
+  | {
+      type: 'KillFeedFx';
+      killerId: string;
+      victimId: string;
     }
   | {
       type: 'ProjectileSpawnFx';
@@ -745,6 +751,20 @@ export const parseGameEventPayload = (payload: Uint8Array): GameEventBatch | nul
           targetId,
           damage,
           killed: typed.killed()
+        });
+        break;
+      }
+      case FxEventType.KillFeedFx: {
+        const typed = event as KillFeedFx;
+        const killerId = typed.killerId();
+        const victimId = typed.victimId();
+        if (!killerId || !victimId) {
+          return null;
+        }
+        events.push({
+          type: 'KillFeedFx',
+          killerId,
+          victimId
         });
         break;
       }

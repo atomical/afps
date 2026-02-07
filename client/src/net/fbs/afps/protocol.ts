@@ -13,6 +13,7 @@ export { HitKind } from './protocol/hit-kind.js';
 export { InputCmd, InputCmdT } from './protocol/input-cmd.js';
 export { JoinAccept, JoinAcceptT } from './protocol/join-accept.js';
 export { JoinRequest, JoinRequestT } from './protocol/join-request.js';
+export { KillFeedFx, KillFeedFxT } from './protocol/kill-feed-fx.js';
 export { MessageType } from './protocol/message-type.js';
 export { NearMissFx, NearMissFxT } from './protocol/near-miss-fx.js';
 export { OverheatFx, OverheatFxT } from './protocol/overheat-fx.js';

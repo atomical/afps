@@ -51,6 +51,7 @@ import { HitConfirmedFxT } from '../../src/net/fbs/afps/protocol/hit-confirmed-f
 import { HitKind } from '../../src/net/fbs/afps/protocol/hit-kind';
 import { NearMissFxT } from '../../src/net/fbs/afps/protocol/near-miss-fx';
 import { OverheatFxT } from '../../src/net/fbs/afps/protocol/overheat-fx';
+import { KillFeedFxT } from '../../src/net/fbs/afps/protocol/kill-feed-fx';
 import { PickupKind } from '../../src/net/fbs/afps/protocol/pickup-kind';
 import { PickupSpawnedFxT } from '../../src/net/fbs/afps/protocol/pickup-spawned-fx';
 import { PickupTakenFxT } from '../../src/net/fbs/afps/protocol/pickup-taken-fx';
@@ -192,6 +193,7 @@ const buildGameEventPayload = () => {
     FxEvent.OverheatFx,
     FxEvent.VentFx,
     FxEvent.HitConfirmedFx,
+    FxEvent.KillFeedFx,
     FxEvent.ProjectileSpawnFx,
     FxEvent.ProjectileImpactFx,
     FxEvent.ProjectileImpactFx,
@@ -225,6 +227,7 @@ const buildGameEventPayload = () => {
     new OverheatFxT('shooter-3', 0, 999),
     new VentFxT('shooter-3', 0),
     new HitConfirmedFxT('target-1', 5.5, true),
+    new KillFeedFxT('shooter-1', 'target-1'),
     new ProjectileSpawnFxT('shooter-4', 0, 9, 33, 1, 2, 3, 4, 5, 6, 50),
     new ProjectileImpactFxT(33, true, '', 10, 11, 12, -123, 456, SurfaceType.Stone),
     new ProjectileImpactFxT(34, false, 'target-2', 20, 21, 22, 222, -333, SurfaceType.Dirt),
@@ -556,6 +559,7 @@ describe('protocol helpers', () => {
         { type: 'OverheatFx', shooterId: 'shooter-3', weaponSlot: 0, heatQ: 999 },
         { type: 'VentFx', shooterId: 'shooter-3', weaponSlot: 0 },
         { type: 'HitConfirmedFx', targetId: 'target-1', damage: 5.5, killed: true },
+        { type: 'KillFeedFx', killerId: 'shooter-1', victimId: 'target-1' },
         {
           type: 'ProjectileSpawnFx',
           shooterId: 'shooter-4',

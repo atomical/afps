@@ -3,6 +3,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any, @typescript-eslint/no-non-null-assertion */
 
 import { HitConfirmedFx, HitConfirmedFxT } from '../../afps/protocol/hit-confirmed-fx.js';
+import { KillFeedFx, KillFeedFxT } from '../../afps/protocol/kill-feed-fx.js';
 import { NearMissFx, NearMissFxT } from '../../afps/protocol/near-miss-fx.js';
 import { OverheatFx, OverheatFxT } from '../../afps/protocol/overheat-fx.js';
 import { PickupSpawnedFx, PickupSpawnedFxT } from '../../afps/protocol/pickup-spawned-fx.js';
@@ -25,17 +26,18 @@ export enum FxEvent {
   OverheatFx = 5,
   VentFx = 6,
   HitConfirmedFx = 7,
-  ProjectileSpawnFx = 8,
-  ProjectileImpactFx = 9,
-  ProjectileRemoveFx = 10,
-  PickupSpawnedFx = 11,
-  PickupTakenFx = 12
+  KillFeedFx = 8,
+  ProjectileSpawnFx = 9,
+  ProjectileImpactFx = 10,
+  ProjectileRemoveFx = 11,
+  PickupSpawnedFx = 12,
+  PickupTakenFx = 13
 }
 
 export function unionToFxEvent(
   type: FxEvent,
-  accessor: (obj:HitConfirmedFx|NearMissFx|OverheatFx|PickupSpawnedFx|PickupTakenFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx) => HitConfirmedFx|NearMissFx|OverheatFx|PickupSpawnedFx|PickupTakenFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx|null
-): HitConfirmedFx|NearMissFx|OverheatFx|PickupSpawnedFx|PickupTakenFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx|null {
+  accessor: (obj:HitConfirmedFx|KillFeedFx|NearMissFx|OverheatFx|PickupSpawnedFx|PickupTakenFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx) => HitConfirmedFx|KillFeedFx|NearMissFx|OverheatFx|PickupSpawnedFx|PickupTakenFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx|null
+): HitConfirmedFx|KillFeedFx|NearMissFx|OverheatFx|PickupSpawnedFx|PickupTakenFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx|null {
   switch(FxEvent[type]) {
     case 'NONE': return null; 
     case 'ShotFiredFx': return accessor(new ShotFiredFx())! as ShotFiredFx;
@@ -45,6 +47,7 @@ export function unionToFxEvent(
     case 'OverheatFx': return accessor(new OverheatFx())! as OverheatFx;
     case 'VentFx': return accessor(new VentFx())! as VentFx;
     case 'HitConfirmedFx': return accessor(new HitConfirmedFx())! as HitConfirmedFx;
+    case 'KillFeedFx': return accessor(new KillFeedFx())! as KillFeedFx;
     case 'ProjectileSpawnFx': return accessor(new ProjectileSpawnFx())! as ProjectileSpawnFx;
     case 'ProjectileImpactFx': return accessor(new ProjectileImpactFx())! as ProjectileImpactFx;
     case 'ProjectileRemoveFx': return accessor(new ProjectileRemoveFx())! as ProjectileRemoveFx;
@@ -56,9 +59,9 @@ export function unionToFxEvent(
 
 export function unionListToFxEvent(
   type: FxEvent, 
-  accessor: (index: number, obj:HitConfirmedFx|NearMissFx|OverheatFx|PickupSpawnedFx|PickupTakenFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx) => HitConfirmedFx|NearMissFx|OverheatFx|PickupSpawnedFx|PickupTakenFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx|null, 
+  accessor: (index: number, obj:HitConfirmedFx|KillFeedFx|NearMissFx|OverheatFx|PickupSpawnedFx|PickupTakenFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx) => HitConfirmedFx|KillFeedFx|NearMissFx|OverheatFx|PickupSpawnedFx|PickupTakenFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx|null, 
   index: number
-): HitConfirmedFx|NearMissFx|OverheatFx|PickupSpawnedFx|PickupTakenFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx|null {
+): HitConfirmedFx|KillFeedFx|NearMissFx|OverheatFx|PickupSpawnedFx|PickupTakenFx|ProjectileImpactFx|ProjectileRemoveFx|ProjectileSpawnFx|ReloadFx|ShotFiredFx|ShotTraceFx|VentFx|null {
   switch(FxEvent[type]) {
     case 'NONE': return null; 
     case 'ShotFiredFx': return accessor(index, new ShotFiredFx())! as ShotFiredFx;
@@ -68,6 +71,7 @@ export function unionListToFxEvent(
     case 'OverheatFx': return accessor(index, new OverheatFx())! as OverheatFx;
     case 'VentFx': return accessor(index, new VentFx())! as VentFx;
     case 'HitConfirmedFx': return accessor(index, new HitConfirmedFx())! as HitConfirmedFx;
+    case 'KillFeedFx': return accessor(index, new KillFeedFx())! as KillFeedFx;
     case 'ProjectileSpawnFx': return accessor(index, new ProjectileSpawnFx())! as ProjectileSpawnFx;
     case 'ProjectileImpactFx': return accessor(index, new ProjectileImpactFx())! as ProjectileImpactFx;
     case 'ProjectileRemoveFx': return accessor(index, new ProjectileRemoveFx())! as ProjectileRemoveFx;

@@ -88,6 +88,8 @@ const PROJECTILE_IMPACT_TTL_DEFAULT = 0.16;
 const GRENADE_PROJECTILE_IMPACT_SIZE = 1.35;
 const GRENADE_PROJECTILE_IMPACT_TTL = 0.32;
 const GRENADE_HIT_EXPLOSION_FRAME_STEP_MS = 50;
+const KILL_FEED_ENTRY_TTL_MS = 5000;
+const KILL_FEED_FADE_MS = 500;
 const SKY_DECAL_FADE_SECONDS = 3;
 const SKY_DECAL_HEIGHT_METERS = 8;
 const SKY_DECAL_VERTICAL_DELTA_METERS = 1;
@@ -167,6 +169,80 @@ const createGrenadeHitExplosionOverlay = (doc: Document, win: Window) => {
   };
 
   return { trigger };
+};
+
+const createKillFeedOverlay = (doc: Document, win: Window) => {
+  const host = doc.getElementById('app') ?? doc.body;
+  const overlay = doc.createElement('div');
+  overlay.className = 'kill-feed-overlay';
+  overlay.dataset.shift = 'false';
+  host.appendChild(overlay);
+
+  const fadeTimers = new Map<HTMLElement, number>();
+  const removeTimers = new Map<HTMLElement, number>();
+
+  const clearEntryTimers = (entry: HTMLElement) => {
+    const fadeTimer = fadeTimers.get(entry);
+    if (fadeTimer !== undefined) {
+      win.clearTimeout(fadeTimer);
+      fadeTimers.delete(entry);
+    }
+    const removeTimer = removeTimers.get(entry);
+    if (removeTimer !== undefined) {
+      win.clearTimeout(removeTimer);
+      removeTimers.delete(entry);
+    }
+  };
+
+  const removeEntry = (entry: HTMLElement) => {
+    clearEntryTimers(entry);
+    entry.remove();
+  };
+
+  const push = (text: string) => {
+    const trimmed = text.trim();
+    if (trimmed.length === 0) {
+      return;
+    }
+    const entry = doc.createElement('div');
+    entry.className = 'kill-feed-entry';
+    entry.textContent = trimmed;
+    overlay.appendChild(entry);
+
+    while (overlay.childElementCount > 6) {
+      const oldest = overlay.firstElementChild as HTMLElement | null;
+      if (!oldest) {
+        break;
+      }
+      removeEntry(oldest);
+    }
+
+    const fadeDelay = Math.max(0, KILL_FEED_ENTRY_TTL_MS - KILL_FEED_FADE_MS);
+    const fadeTimer = win.setTimeout(() => {
+      entry.classList.add('is-fading');
+      fadeTimers.delete(entry);
+    }, fadeDelay);
+    fadeTimers.set(entry, fadeTimer);
+
+    const removeTimer = win.setTimeout(() => {
+      removeEntry(entry);
+    }, KILL_FEED_ENTRY_TTL_MS);
+    removeTimers.set(entry, removeTimer);
+  };
+
+  const dispose = () => {
+    for (const timer of fadeTimers.values()) {
+      win.clearTimeout(timer);
+    }
+    for (const timer of removeTimers.values()) {
+      win.clearTimeout(timer);
+    }
+    fadeTimers.clear();
+    removeTimers.clear();
+    overlay.remove();
+  };
+
+  return { element: overlay, push, dispose };
 };
 
 const isFiniteVec3 = (v: Vec3) => Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z);
@@ -730,9 +806,18 @@ app.setBeforeRender((deltaSeconds, nowMs) => {
 const status = createStatusOverlay(document);
 status.setMetricsVisible(metricsVisible);
 const grenadeHitExplosionOverlay = createGrenadeHitExplosionOverlay(document, window);
+const killFeedOverlay = createKillFeedOverlay(document, window);
 const hud = createHudOverlay(document);
 const hudStore = createHudStore(hud);
 const scoreboard = createScoreboardOverlay(document);
+const resolvePlayerDisplayName = (id: string) => {
+  const profile = playerProfiles.get(id);
+  const nickname = profile?.nickname?.trim();
+  if (nickname) {
+    return nickname;
+  }
+  return id.length > 10 ? `${id.slice(0, 10)}...` : id;
+};
 const buildScoreboardRows = () => {
   const ids = new Set<string>();
   for (const id of playerProfiles.keys()) {
@@ -745,12 +830,10 @@ const buildScoreboardRows = () => {
     ids.add(localConnectionId);
   }
   return Array.from(ids).map((id) => {
-    const profile = playerProfiles.get(id);
     const snapshot = lastSnapshots.get(id);
-    const fallbackName = id.length > 10 ? `${id.slice(0, 10)}...` : id;
     return {
       id,
-      name: profile?.nickname?.trim() || fallbackName,
+      name: resolvePlayerDisplayName(id),
       kills: snapshot?.kills ?? 0,
       isLocal: localConnectionId === id
     };
@@ -780,6 +863,8 @@ const isGrenadeLauncherWeapon = (weapon: (typeof WEAPON_DEFS)[number] | null) =>
     weapon &&
       (weapon.id === 'GRENADE_LAUNCHER' || weapon.id === 'launcher' || weapon.sfxProfile === 'GRENADE_LAUNCHER')
   );
+const GRENADE_EXPLOSION_RADIUS_FALLBACK =
+  WEAPON_DEFS.find((weapon) => isGrenadeLauncherWeapon(weapon))?.explosionRadius ?? 4.5;
 const resolveTeamIndex = (connectionId: string | null) => {
   if (!connectionId) {
     return 0;
@@ -987,6 +1072,8 @@ const setDebugOverlaysVisible = (visible: boolean) => {
   debugOverlaysVisible = visible;
   sampler?.reset?.();
   refreshStatusVisibility();
+  hud.element.dataset.debug = visible ? 'true' : 'false';
+  killFeedOverlay.element.dataset.shift = visible ? 'true' : 'false';
   localAvatarDebug?.setVisible?.(visible);
 };
 setDebugOverlaysVisible(false);
@@ -1572,6 +1659,12 @@ const debugFxLog = (...args: unknown[]) => {
             audio.play('impact', { group: 'sfx', volume: 0.8 });
             break;
           }
+          case 'KillFeedFx': {
+            const killer = resolvePlayerDisplayName(event.killerId);
+            const victim = resolvePlayerDisplayName(event.victimId);
+            killFeedOverlay.push(`${killer} eliminated ${victim}`);
+            break;
+          }
           case 'ProjectileSpawnFx': {
             const originServer = {
               x: dequantizeI16(event.posXQ, PROJECTILE_POS_STEP_METERS),
@@ -1610,8 +1703,30 @@ const debugFxLog = (...args: unknown[]) => {
             const projectileWeapon =
               projectileWeaponSlot !== undefined ? resolveWeaponForSlot(projectileWeaponSlot) : null;
             const isGrenadeExplosion = isGrenadeLauncherWeapon(projectileWeapon);
-            const hitLocalPlayer =
-              Boolean(localConnectionId) && Boolean(event.targetId) && event.targetId === localConnectionId;
+            const hitLocalPlayer = Boolean(localConnectionId) && Boolean(event.targetId) && event.targetId === localConnectionId;
+            const cameraPos = app.state.camera?.position;
+            const localCameraPos =
+              cameraPos &&
+              Number.isFinite(cameraPos.x) &&
+              Number.isFinite(cameraPos.y) &&
+              Number.isFinite(cameraPos.z)
+                ? { x: cameraPos.x, y: cameraPos.y, z: cameraPos.z }
+                : null;
+            const localExplosionDistanceSq =
+              localCameraPos !== null
+                ? (impactPos.x - localCameraPos.x) * (impactPos.x - localCameraPos.x) +
+                  (impactPos.y - localCameraPos.y) * (impactPos.y - localCameraPos.y) +
+                  (impactPos.z - localCameraPos.z) * (impactPos.z - localCameraPos.z)
+                : Number.POSITIVE_INFINITY;
+            const explosionRadius = Math.max(
+              0.5,
+              Number.isFinite(projectileWeapon?.explosionRadius) ? (projectileWeapon?.explosionRadius ?? 0) : 0,
+              GRENADE_EXPLOSION_RADIUS_FALLBACK
+            );
+            const localNearExplosion = localExplosionDistanceSq <= (explosionRadius + 0.35) * (explosionRadius + 0.35);
+            // Spawn FX can be dropped on the unreliable stream, leaving projectileWeapon unknown.
+            // In that case treat near impacts as likely grenade impacts (current projectile weapon set is grenade-only).
+            const likelyGrenadeImpact = isGrenadeExplosion || projectileWeaponSlot === undefined;
             audio.playPositional('impact', impactPos, { group: 'sfx', volume: 0.5 });
             app.spawnImpactVfx({
               position: impactPos,
@@ -1629,7 +1744,7 @@ const debugFxLog = (...args: unknown[]) => {
                 seed: event.projectileId >>> 0
               });
             }
-            if (isGrenadeExplosion && hitLocalPlayer) {
+            if (hitLocalPlayer || (likelyGrenadeImpact && localNearExplosion)) {
               grenadeHitExplosionOverlay.trigger();
             }
             projectileWeaponSlotById.delete(event.projectileId);

@@ -441,6 +441,21 @@ std::vector<uint8_t> BuildGameEventBatch(const GameEventBatch &event, uint32_t m
             return;
           }
 
+          if constexpr (std::is_same_v<T, KillFeedFx>) {
+            if (typed.killer_id.empty() || typed.victim_id.empty()) {
+              return;
+            }
+            const auto killer_id = builder.CreateString(typed.killer_id);
+            const auto victim_id = builder.CreateString(typed.victim_id);
+            const auto offset = afps::protocol::CreateKillFeedFx(
+                builder,
+                killer_id,
+                victim_id);
+            types.push_back(afps::protocol::FxEvent::KillFeedFx);
+            payloads.push_back(offset.Union());
+            return;
+          }
+
           if constexpr (std::is_same_v<T, ProjectileSpawnFx>) {
             if (typed.shooter_id.empty()) {
               return;

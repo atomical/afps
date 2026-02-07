@@ -677,6 +677,15 @@ void TickLoop::Step() {
       entry.second.push_back(event);
     }
   };
+  auto emit_kill_feed_all = [&](const std::string &killer_id, const std::string &victim_id) {
+    if (killer_id.empty() || victim_id.empty()) {
+      return;
+    }
+    KillFeedFx kill_event;
+    kill_event.killer_id = killer_id;
+    kill_event.victim_id = victim_id;
+    emit_reliable_decal_all(kill_event);
+  };
   auto to_spawn_fx = [](const TickLoop::PickupState &pickup) {
     PickupSpawnedFx fx;
     fx.pickup_id = pickup.definition.id;
@@ -1146,6 +1155,7 @@ void TickLoop::Step() {
           emit_fx_to(event.connection_id, hit_event);
         }
         if (killed) {
+          emit_kill_feed_all(event.connection_id, hit.target_id);
           target_state_iter->second.vel_x = 0.0;
           target_state_iter->second.vel_y = 0.0;
           target_state_iter->second.vel_z = 0.0;
@@ -1362,13 +1372,14 @@ void TickLoop::Step() {
 	          if (shield_active) {
 	            shield_facing = resolve_shield_facing(hit_target, muzzle);
 	          }
-	          killed = afps::combat::ApplyDamageWithShield(target_iter->second, &shooter_iter->second, weapon->damage,
-	                                                       shield_active && shield_facing,
-	                                                       sim_config_.shield_damage_multiplier);
-	          if (killed) {
-	            auto &target_state = players_[hit_target];
-	            target_state.vel_x = 0.0;
-	            target_state.vel_y = 0.0;
+		          killed = afps::combat::ApplyDamageWithShield(target_iter->second, &shooter_iter->second, weapon->damage,
+		                                                       shield_active && shield_facing,
+		                                                       sim_config_.shield_damage_multiplier);
+		          if (killed) {
+		            emit_kill_feed_all(event.connection_id, hit_target);
+		            auto &target_state = players_[hit_target];
+		            target_state.vel_x = 0.0;
+		            target_state.vel_y = 0.0;
 	            target_state.vel_z = 0.0;
 	            target_state.dash_cooldown = 0.0;
 	          }
@@ -1568,12 +1579,13 @@ void TickLoop::Step() {
 	          HitConfirmedFx hit_event;
 	          hit_event.target_id = hit.target_id;
 	          hit_event.damage = hit.damage;
-	          hit_event.killed = killed;
-	          emit_fx_to(projectile.owner_id, hit_event);
-	          if (killed) {
-	            auto &target_state = players_[hit.target_id];
-	            target_state.vel_x = 0.0;
-	            target_state.vel_y = 0.0;
+		          hit_event.killed = killed;
+		          emit_fx_to(projectile.owner_id, hit_event);
+		          if (killed) {
+		            emit_kill_feed_all(projectile.owner_id, hit.target_id);
+		            auto &target_state = players_[hit.target_id];
+		            target_state.vel_x = 0.0;
+		            target_state.vel_y = 0.0;
             target_state.vel_z = 0.0;
             target_state.dash_cooldown = 0.0;
 	            alive_players.erase(hit.target_id);
@@ -1629,6 +1641,7 @@ void TickLoop::Step() {
 	          if constexpr (std::is_same_v<T, ShotTraceFx>) return 9;
 	          if constexpr (std::is_same_v<T, ProjectileImpactFx>) return 10;
 	          if constexpr (std::is_same_v<T, HitConfirmedFx>) return 11;
+	          if constexpr (std::is_same_v<T, KillFeedFx>) return 12;
 	          return 0;
 	        },
 	        event);

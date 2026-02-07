@@ -93,6 +93,11 @@ table HitConfirmedFx {
   killed:bool;
 }
 
+table KillFeedFx {
+  killer_id:string;
+  victim_id:string;
+}
+
 table ProjectileSpawnFx {
   shooter_id:string;
   weapon_slot:ubyte;
@@ -147,6 +152,7 @@ union FxEvent {
   OverheatFx,
   VentFx,
   HitConfirmedFx,
+  KillFeedFx,
   ProjectileSpawnFx,
   ProjectileImpactFx,
   ProjectileRemoveFx,

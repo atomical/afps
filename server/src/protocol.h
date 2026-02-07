@@ -175,6 +175,11 @@ struct HitConfirmedFx {
   bool killed = false;
 };
 
+struct KillFeedFx {
+  std::string killer_id;
+  std::string victim_id;
+};
+
 struct ProjectileSpawnFx {
   std::string shooter_id;
   uint8_t weapon_slot = 0;
@@ -228,6 +233,7 @@ using FxEventData = std::variant<ShotFiredFx,
                                  OverheatFx,
                                  VentFx,
                                  HitConfirmedFx,
+                                 KillFeedFx,
                                  ProjectileSpawnFx,
                                  ProjectileImpactFx,
                                  ProjectileRemoveFx,

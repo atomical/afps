@@ -253,6 +253,35 @@ TEST_CASE("BuildGameEventBatch emits shot trace hit position fields") {
   CHECK(payload_trace->hit_pos_z_q() == 345);
 }
 
+TEST_CASE("BuildGameEventBatch emits kill feed fields") {
+  GameEventBatch batch;
+  batch.server_tick = 91;
+  KillFeedFx feed;
+  feed.killer_id = "killer-1";
+  feed.victim_id = "victim-2";
+  batch.events.push_back(feed);
+
+  const auto payload = BuildGameEventBatch(batch, 6, 2);
+  DecodedEnvelope envelope;
+  std::string error;
+  REQUIRE(DecodeEnvelope(payload, envelope, error));
+  CHECK(envelope.header.msg_type == MessageType::GameEvent);
+
+  flatbuffers::Verifier verifier(envelope.payload.data(), envelope.payload.size());
+  const auto *parsed = flatbuffers::GetRoot<afps::protocol::GameEvent>(envelope.payload.data());
+  CHECK(parsed->Verify(verifier));
+  CHECK(parsed->server_tick() == 91);
+  REQUIRE(parsed->events_type());
+  REQUIRE(parsed->events());
+  REQUIRE(parsed->events_type()->size() == 1);
+  REQUIRE(parsed->events()->size() == 1);
+  CHECK(parsed->events_type()->Get(0) == afps::protocol::FxEvent::KillFeedFx);
+  const auto *payload_feed = parsed->events()->GetAs<afps::protocol::KillFeedFx>(0);
+  REQUIRE(payload_feed);
+  CHECK(payload_feed->killer_id()->str() == "killer-1");
+  CHECK(payload_feed->victim_id()->str() == "victim-2");
+}
+
 TEST_CASE("BuildStateSnapshot emits expected fields") {
   StateSnapshot snapshot;
   snapshot.server_tick = 42;

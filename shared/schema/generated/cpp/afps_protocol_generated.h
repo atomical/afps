@@ -44,6 +44,10 @@ struct HitConfirmedFx;
 struct HitConfirmedFxBuilder;
 struct HitConfirmedFxT;
 
+struct KillFeedFx;
+struct KillFeedFxBuilder;
+struct KillFeedFxT;
+
 struct ProjectileSpawnFx;
 struct ProjectileSpawnFxBuilder;
 struct ProjectileSpawnFxT;
@@ -331,16 +335,17 @@ enum class FxEvent : uint8_t {
   OverheatFx = 5,
   VentFx = 6,
   HitConfirmedFx = 7,
-  ProjectileSpawnFx = 8,
-  ProjectileImpactFx = 9,
-  ProjectileRemoveFx = 10,
-  PickupSpawnedFx = 11,
-  PickupTakenFx = 12,
+  KillFeedFx = 8,
+  ProjectileSpawnFx = 9,
+  ProjectileImpactFx = 10,
+  ProjectileRemoveFx = 11,
+  PickupSpawnedFx = 12,
+  PickupTakenFx = 13,
   MIN = NONE,
   MAX = PickupTakenFx
 };
 
-inline const FxEvent (&EnumValuesFxEvent())[13] {
+inline const FxEvent (&EnumValuesFxEvent())[14] {
   static const FxEvent values[] = {
     FxEvent::NONE,
     FxEvent::ShotFiredFx,
@@ -350,6 +355,7 @@ inline const FxEvent (&EnumValuesFxEvent())[13] {
     FxEvent::OverheatFx,
     FxEvent::VentFx,
     FxEvent::HitConfirmedFx,
+    FxEvent::KillFeedFx,
     FxEvent::ProjectileSpawnFx,
     FxEvent::ProjectileImpactFx,
     FxEvent::ProjectileRemoveFx,
@@ -360,7 +366,7 @@ inline const FxEvent (&EnumValuesFxEvent())[13] {
 }
 
 inline const char * const *EnumNamesFxEvent() {
-  static const char * const names[14] = {
+  static const char * const names[15] = {
     "NONE",
     "ShotFiredFx",
     "ShotTraceFx",
@@ -369,6 +375,7 @@ inline const char * const *EnumNamesFxEvent() {
     "OverheatFx",
     "VentFx",
     "HitConfirmedFx",
+    "KillFeedFx",
     "ProjectileSpawnFx",
     "ProjectileImpactFx",
     "ProjectileRemoveFx",
@@ -415,6 +422,10 @@ template<> struct FxEventTraits<afps::protocol::VentFx> {
 
 template<> struct FxEventTraits<afps::protocol::HitConfirmedFx> {
   static const FxEvent enum_value = FxEvent::HitConfirmedFx;
+};
+
+template<> struct FxEventTraits<afps::protocol::KillFeedFx> {
+  static const FxEvent enum_value = FxEvent::KillFeedFx;
 };
 
 template<> struct FxEventTraits<afps::protocol::ProjectileSpawnFx> {
@@ -467,6 +478,10 @@ template<> struct FxEventUnionTraits<afps::protocol::VentFxT> {
 
 template<> struct FxEventUnionTraits<afps::protocol::HitConfirmedFxT> {
   static const FxEvent enum_value = FxEvent::HitConfirmedFx;
+};
+
+template<> struct FxEventUnionTraits<afps::protocol::KillFeedFxT> {
+  static const FxEvent enum_value = FxEvent::KillFeedFx;
 };
 
 template<> struct FxEventUnionTraits<afps::protocol::ProjectileSpawnFxT> {
@@ -574,6 +589,14 @@ struct FxEventUnion {
   const afps::protocol::HitConfirmedFxT *AsHitConfirmedFx() const {
     return type == FxEvent::HitConfirmedFx ?
       reinterpret_cast<const afps::protocol::HitConfirmedFxT *>(value) : nullptr;
+  }
+  afps::protocol::KillFeedFxT *AsKillFeedFx() {
+    return type == FxEvent::KillFeedFx ?
+      reinterpret_cast<afps::protocol::KillFeedFxT *>(value) : nullptr;
+  }
+  const afps::protocol::KillFeedFxT *AsKillFeedFx() const {
+    return type == FxEvent::KillFeedFx ?
+      reinterpret_cast<const afps::protocol::KillFeedFxT *>(value) : nullptr;
   }
   afps::protocol::ProjectileSpawnFxT *AsProjectileSpawnFx() {
     return type == FxEvent::ProjectileSpawnFx ?
@@ -1374,6 +1397,84 @@ inline ::flatbuffers::Offset<HitConfirmedFx> CreateHitConfirmedFxDirect(
 }
 
 ::flatbuffers::Offset<HitConfirmedFx> CreateHitConfirmedFx(::flatbuffers::FlatBufferBuilder &_fbb, const HitConfirmedFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+
+struct KillFeedFxT : public ::flatbuffers::NativeTable {
+  typedef KillFeedFx TableType;
+  std::string killer_id{};
+  std::string victim_id{};
+};
+
+struct KillFeedFx FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef KillFeedFxT NativeTableType;
+  typedef KillFeedFxBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_KILLER_ID = 4,
+    VT_VICTIM_ID = 6
+  };
+  const ::flatbuffers::String *killer_id() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_KILLER_ID);
+  }
+  const ::flatbuffers::String *victim_id() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_VICTIM_ID);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyOffset(verifier, VT_KILLER_ID) &&
+           verifier.VerifyString(killer_id()) &&
+           VerifyOffset(verifier, VT_VICTIM_ID) &&
+           verifier.VerifyString(victim_id()) &&
+           verifier.EndTable();
+  }
+  KillFeedFxT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  void UnPackTo(KillFeedFxT *_o, const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  static ::flatbuffers::Offset<KillFeedFx> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const KillFeedFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+};
+
+struct KillFeedFxBuilder {
+  typedef KillFeedFx Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_killer_id(::flatbuffers::Offset<::flatbuffers::String> killer_id) {
+    fbb_.AddOffset(KillFeedFx::VT_KILLER_ID, killer_id);
+  }
+  void add_victim_id(::flatbuffers::Offset<::flatbuffers::String> victim_id) {
+    fbb_.AddOffset(KillFeedFx::VT_VICTIM_ID, victim_id);
+  }
+  explicit KillFeedFxBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<KillFeedFx> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<KillFeedFx>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<KillFeedFx> CreateKillFeedFx(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ::flatbuffers::Offset<::flatbuffers::String> killer_id = 0,
+    ::flatbuffers::Offset<::flatbuffers::String> victim_id = 0) {
+  KillFeedFxBuilder builder_(_fbb);
+  builder_.add_victim_id(victim_id);
+  builder_.add_killer_id(killer_id);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<KillFeedFx> CreateKillFeedFxDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    const char *killer_id = nullptr,
+    const char *victim_id = nullptr) {
+  auto killer_id__ = killer_id ? _fbb.CreateString(killer_id) : 0;
+  auto victim_id__ = victim_id ? _fbb.CreateString(victim_id) : 0;
+  return afps::protocol::CreateKillFeedFx(
+      _fbb,
+      killer_id__,
+      victim_id__);
+}
+
+::flatbuffers::Offset<KillFeedFx> CreateKillFeedFx(::flatbuffers::FlatBufferBuilder &_fbb, const KillFeedFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
 
 struct ProjectileSpawnFxT : public ::flatbuffers::NativeTable {
   typedef ProjectileSpawnFx TableType;
@@ -4241,6 +4342,35 @@ inline ::flatbuffers::Offset<HitConfirmedFx> HitConfirmedFx::Pack(::flatbuffers:
       _killed);
 }
 
+inline KillFeedFxT *KillFeedFx::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
+  auto _o = std::unique_ptr<KillFeedFxT>(new KillFeedFxT());
+  UnPackTo(_o.get(), _resolver);
+  return _o.release();
+}
+
+inline void KillFeedFx::UnPackTo(KillFeedFxT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
+  (void)_o;
+  (void)_resolver;
+  { auto _e = killer_id(); if (_e) _o->killer_id = _e->str(); }
+  { auto _e = victim_id(); if (_e) _o->victim_id = _e->str(); }
+}
+
+inline ::flatbuffers::Offset<KillFeedFx> CreateKillFeedFx(::flatbuffers::FlatBufferBuilder &_fbb, const KillFeedFxT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  return KillFeedFx::Pack(_fbb, _o, _rehasher);
+}
+
+inline ::flatbuffers::Offset<KillFeedFx> KillFeedFx::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const KillFeedFxT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  (void)_rehasher;
+  (void)_o;
+  struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const KillFeedFxT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
+  auto _killer_id = _o->killer_id.empty() ? 0 : _fbb.CreateString(_o->killer_id);
+  auto _victim_id = _o->victim_id.empty() ? 0 : _fbb.CreateString(_o->victim_id);
+  return afps::protocol::CreateKillFeedFx(
+      _fbb,
+      _killer_id,
+      _victim_id);
+}
+
 inline ProjectileSpawnFxT *ProjectileSpawnFx::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
   auto _o = std::unique_ptr<ProjectileSpawnFxT>(new ProjectileSpawnFxT());
   UnPackTo(_o.get(), _resolver);
@@ -5125,6 +5255,10 @@ inline bool VerifyFxEvent(::flatbuffers::VerifierTemplate<B> &verifier, const vo
       auto ptr = reinterpret_cast<const afps::protocol::HitConfirmedFx *>(obj);
       return verifier.VerifyTable(ptr);
     }
+    case FxEvent::KillFeedFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::KillFeedFx *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
     case FxEvent::ProjectileSpawnFx: {
       auto ptr = reinterpret_cast<const afps::protocol::ProjectileSpawnFx *>(obj);
       return verifier.VerifyTable(ptr);
@@ -5193,6 +5327,10 @@ inline void *FxEventUnion::UnPack(const void *obj, FxEvent type, const ::flatbuf
       auto ptr = reinterpret_cast<const afps::protocol::HitConfirmedFx *>(obj);
       return ptr->UnPack(resolver);
     }
+    case FxEvent::KillFeedFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::KillFeedFx *>(obj);
+      return ptr->UnPack(resolver);
+    }
     case FxEvent::ProjectileSpawnFx: {
       auto ptr = reinterpret_cast<const afps::protocol::ProjectileSpawnFx *>(obj);
       return ptr->UnPack(resolver);
@@ -5248,6 +5386,10 @@ inline ::flatbuffers::Offset<void> FxEventUnion::Pack(::flatbuffers::FlatBufferB
       auto ptr = reinterpret_cast<const afps::protocol::HitConfirmedFxT *>(value);
       return CreateHitConfirmedFx(_fbb, ptr, _rehasher).Union();
     }
+    case FxEvent::KillFeedFx: {
+      auto ptr = reinterpret_cast<const afps::protocol::KillFeedFxT *>(value);
+      return CreateKillFeedFx(_fbb, ptr, _rehasher).Union();
+    }
     case FxEvent::ProjectileSpawnFx: {
       auto ptr = reinterpret_cast<const afps::protocol::ProjectileSpawnFxT *>(value);
       return CreateProjectileSpawnFx(_fbb, ptr, _rehasher).Union();
@@ -5300,6 +5442,10 @@ inline FxEventUnion::FxEventUnion(const FxEventUnion &u) : type(u.type), value(n
     }
     case FxEvent::HitConfirmedFx: {
       value = new afps::protocol::HitConfirmedFxT(*reinterpret_cast<afps::protocol::HitConfirmedFxT *>(u.value));
+      break;
+    }
+    case FxEvent::KillFeedFx: {
+      value = new afps::protocol::KillFeedFxT(*reinterpret_cast<afps::protocol::KillFeedFxT *>(u.value));
       break;
     }
     case FxEvent::ProjectileSpawnFx: {
@@ -5361,6 +5507,11 @@ inline void FxEventUnion::Reset() {
     }
     case FxEvent::HitConfirmedFx: {
       auto ptr = reinterpret_cast<afps::protocol::HitConfirmedFxT *>(value);
+      delete ptr;
+      break;
+    }
+    case FxEvent::KillFeedFx: {
+      auto ptr = reinterpret_cast<afps::protocol::KillFeedFxT *>(value);
       delete ptr;
       break;
     }

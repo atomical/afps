@@ -1206,6 +1206,106 @@ describe('main entry', () => {
     expect(overlay?.dataset.visible).toBe('true');
   });
 
+  it('shows explosion overlay for nearby grenade splash even without direct target id', async () => {
+    connectMock.mockResolvedValue({
+      connectionId: 'conn',
+      serverHello: { serverTickRate: 60, snapshotRate: 20 },
+      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: vi.fn() },
+      nextClientMessageSeq: () => 1,
+      getServerSeqAck: () => 0
+    });
+    envMock.getSignalingUrl.mockReturnValue('https://example.test');
+    envMock.getSignalingAuthToken.mockReturnValue('token');
+
+    await import('../src/main');
+    await flushPromises();
+
+    const onGameEvent = connectMock.mock.calls[0]?.[0]?.onGameEvent as
+      | ((event: { type: string; serverTick: number; events: unknown[] }) => void)
+      | undefined;
+    onGameEvent?.({
+      type: 'GameEventBatch',
+      serverTick: 0,
+      events: [
+        {
+          type: 'ProjectileSpawnFx',
+          shooterId: 'other',
+          weaponSlot: 1,
+          shotSeq: 3,
+          projectileId: 9002,
+          posXQ: 0,
+          posYQ: 0,
+          posZQ: 0,
+          velXQ: 0,
+          velYQ: 0,
+          velZQ: 100,
+          ttlQ: 60
+        },
+        {
+          type: 'ProjectileImpactFx',
+          projectileId: 9002,
+          hitWorld: true,
+          targetId: '',
+          posXQ: 0,
+          posYQ: 0,
+          posZQ: 0,
+          normalOctX: 0,
+          normalOctY: 0,
+          surfaceType: 0
+        }
+      ]
+    });
+    beforeRenderHook?.(0.016, 1000);
+
+    const overlays = Array.from(document.querySelectorAll('.explosion-overlay')) as HTMLDivElement[];
+    const overlay = overlays.at(-1) ?? null;
+    expect(overlay).toBeTruthy();
+    expect(overlay?.dataset.visible).toBe('true');
+  });
+
+  it('shows explosion overlay when local player is direct-hit and spawn fx is missing', async () => {
+    connectMock.mockResolvedValue({
+      connectionId: 'conn',
+      serverHello: { serverTickRate: 60, snapshotRate: 20 },
+      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: vi.fn() },
+      nextClientMessageSeq: () => 1,
+      getServerSeqAck: () => 0
+    });
+    envMock.getSignalingUrl.mockReturnValue('https://example.test');
+    envMock.getSignalingAuthToken.mockReturnValue('token');
+
+    await import('../src/main');
+    await flushPromises();
+
+    const onGameEvent = connectMock.mock.calls[0]?.[0]?.onGameEvent as
+      | ((event: { type: string; serverTick: number; events: unknown[] }) => void)
+      | undefined;
+    onGameEvent?.({
+      type: 'GameEventBatch',
+      serverTick: 0,
+      events: [
+        {
+          type: 'ProjectileImpactFx',
+          projectileId: 9010,
+          hitWorld: false,
+          targetId: 'conn',
+          posXQ: 0,
+          posYQ: 0,
+          posZQ: 0,
+          normalOctX: 0,
+          normalOctY: 0,
+          surfaceType: 0
+        }
+      ]
+    });
+    beforeRenderHook?.(0.016, 1000);
+
+    const overlays = Array.from(document.querySelectorAll('.explosion-overlay')) as HTMLDivElement[];
+    const overlay = overlays.at(-1) ?? null;
+    expect(overlay).toBeTruthy();
+    expect(overlay?.dataset.visible).toBe('true');
+  });
+
   it('shows keyframe interval in metrics before snapshots arrive', async () => {
     connectMock.mockResolvedValue({
       connectionId: 'conn',
@@ -1314,16 +1414,70 @@ describe('main entry', () => {
 
     statusMock.setVisible.mockClear();
     settingsMock.setVisible.mockClear();
+    hudMock.element.dataset.debug = '';
 
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Backquote' }));
     expect(statusMock.setVisible).toHaveBeenCalledWith(true);
     expect(settingsMock.setVisible).not.toHaveBeenCalled();
+    expect(hudMock.element.dataset.debug).toBe('true');
     expect(logSpy).toHaveBeenCalledWith('[afps] player coords', {
       x: 12.346,
       y: -7.891,
       z: 0.123
     });
     logSpy.mockRestore();
+  });
+
+  it('renders and expires kill feed announcements for all players', async () => {
+    connectMock.mockResolvedValue({
+      connectionId: 'conn',
+      serverHello: { serverTickRate: 60, snapshotRate: 20 },
+      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: vi.fn() },
+      nextClientMessageSeq: () => 1,
+      getServerSeqAck: () => 0
+    });
+    envMock.getSignalingUrl.mockReturnValue('https://example.test');
+    envMock.getSignalingAuthToken.mockReturnValue('token');
+
+    await import('../src/main');
+    await flushPromises();
+
+    const config = connectMock.mock.calls[0]?.[0] as {
+      onPlayerProfile?: (profile: { type: string; clientId: string; nickname: string; characterId: string }) => void;
+      onGameEvent?: (event: { type: string; serverTick: number; events: unknown[] }) => void;
+    };
+    config.onPlayerProfile?.({
+      type: 'PlayerProfile',
+      clientId: 'killer-id',
+      nickname: 'Killer',
+      characterId: 'casual-a'
+    });
+    config.onPlayerProfile?.({
+      type: 'PlayerProfile',
+      clientId: 'victim-id',
+      nickname: 'Victim',
+      characterId: 'casual-b'
+    });
+    vi.useFakeTimers();
+    try {
+      config.onGameEvent?.({
+        type: 'GameEventBatch',
+        serverTick: 0,
+        events: [{ type: 'KillFeedFx', killerId: 'killer-id', victimId: 'victim-id' }]
+      });
+      beforeRenderHook?.(0.016, 1000);
+
+      const feedEntry = document.querySelector('.kill-feed-entry');
+      expect(feedEntry?.textContent).toContain('Killer eliminated Victim');
+
+      vi.advanceTimersByTime(4500);
+      expect(feedEntry?.classList.contains('is-fading')).toBe(true);
+
+      vi.advanceTimersByTime(500);
+      expect(document.querySelector('.kill-feed-entry')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('forces crouch while debug overlays are visible and restores normal crouch input when closed', async () => {
