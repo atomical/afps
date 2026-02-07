@@ -12,6 +12,8 @@ TEST_CASE("GenerateMapWorld is deterministic for seed") {
 
   REQUIRE(a.collision_world.colliders.size() == b.collision_world.colliders.size());
   REQUIRE(a.pickups.size() == b.pickups.size());
+  REQUIRE(a.building_prefab_ids == b.building_prefab_ids);
+  REQUIRE(a.static_mesh_instances.size() == b.static_mesh_instances.size());
 
   for (size_t i = 0; i < a.collision_world.colliders.size(); ++i) {
     const auto &ca = a.collision_world.colliders[i];
@@ -37,6 +39,22 @@ TEST_CASE("GenerateMapWorld is deterministic for seed") {
     CHECK(pa.radius == doctest::Approx(pb.radius));
     CHECK(pa.respawn_ticks == pb.respawn_ticks);
   }
+
+  for (size_t i = 0; i < a.static_mesh_instances.size(); ++i) {
+    const auto &ia = a.static_mesh_instances[i];
+    const auto &ib = b.static_mesh_instances[i];
+    CHECK(ia.instance_id == ib.instance_id);
+    CHECK(ia.prefab_id == ib.prefab_id);
+    CHECK(ia.center_x == doctest::Approx(ib.center_x));
+    CHECK(ia.center_y == doctest::Approx(ib.center_y));
+    CHECK(ia.base_z == doctest::Approx(ib.base_z));
+    CHECK(ia.yaw_quarter_turns == ib.yaw_quarter_turns);
+    CHECK(ia.scale == doctest::Approx(ib.scale));
+    CHECK(ia.first_collider_id == ib.first_collider_id);
+    CHECK(ia.last_collider_id == ib.last_collider_id);
+    CHECK(ia.first_collider_id > 0);
+    CHECK(ia.last_collider_id >= ia.first_collider_id);
+  }
 }
 
 TEST_CASE("GenerateMapWorld varies with seed and includes pickups") {
@@ -48,6 +66,10 @@ TEST_CASE("GenerateMapWorld varies with seed and includes pickups") {
   CHECK(b.collision_world.colliders.size() > 0);
   CHECK(a.pickups.size() >= 6);
   CHECK(b.pickups.size() >= 6);
+  CHECK_FALSE(a.building_prefab_ids.empty());
+  CHECK_FALSE(b.building_prefab_ids.empty());
+  CHECK_FALSE(a.static_mesh_instances.empty());
+  CHECK_FALSE(b.static_mesh_instances.empty());
 
   const auto different = a.collision_world.colliders.size() != b.collision_world.colliders.size() ||
                          (!a.collision_world.colliders.empty() && !b.collision_world.colliders.empty() &&
@@ -109,4 +131,6 @@ TEST_CASE("GenerateMapWorld static mode loads colliders from manifest") {
   const auto generated = afps::world::GenerateMapWorld(config, 0u, 60, options);
   CHECK(generated.collision_world.colliders.size() > 0);
   CHECK(generated.pickups.size() >= 6);
+  CHECK_FALSE(generated.building_prefab_ids.empty());
+  CHECK_FALSE(generated.static_mesh_instances.empty());
 }

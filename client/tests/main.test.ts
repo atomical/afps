@@ -1055,6 +1055,94 @@ describe('main entry', () => {
     );
   });
 
+  it('uses authoritative world hit coordinates for decals without client reprojection', async () => {
+    connectMock.mockResolvedValue({
+      connectionId: 'conn',
+      serverHello: { serverTickRate: 60, snapshotRate: 20 },
+      unreliableChannel: { label: 'afps_unreliable', readyState: 'open', send: vi.fn() },
+      nextClientMessageSeq: () => 1,
+      getServerSeqAck: () => 0
+    });
+    envMock.getSignalingUrl.mockReturnValue('https://example.test');
+    envMock.getSignalingAuthToken.mockReturnValue('token');
+
+    const staticRoot = new THREE.Object3D();
+    staticRoot.userData.afpsStaticSurface = true;
+    sceneMock.children = [staticRoot];
+
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
+    mesh.userData.afpsStaticSurface = true;
+    mesh.updateMatrixWorld(true);
+
+    const raycastSpy = vi
+      .spyOn(THREE.Raycaster.prototype, 'intersectObjects')
+      .mockImplementation(() => [
+        {
+          distance: 1.0,
+          point: new THREE.Vector3(88, 77, 66),
+          object: mesh,
+          face: { normal: new THREE.Vector3(0, 1, 0) }
+        } as unknown as THREE.Intersection
+      ]);
+
+    try {
+      await import('../src/main');
+      await flushPromises();
+
+      appInstance.spawnImpactVfx.mockClear();
+      appInstance.spawnDecalVfx.mockClear();
+
+      const onGameEvent = connectMock.mock.calls[0]?.[0]?.onGameEvent as
+        | ((event: { type: string; serverTick: number; events: unknown[] }) => void)
+        | undefined;
+      onGameEvent?.({
+        type: 'GameEventBatch',
+        serverTick: 0,
+        events: [
+          {
+            type: 'ShotTraceFx',
+            shooterId: 'other',
+            weaponSlot: 0,
+            shotSeq: 73,
+            dirOctX: 0,
+            dirOctY: 0,
+            hitDistQ: 220,
+            hitKind: 1,
+            surfaceType: 0,
+            normalOctX: 0,
+            normalOctY: 0,
+            showTracer: false,
+            hitPosXQ: 100,
+            hitPosYQ: 200,
+            hitPosZQ: 300
+          }
+        ]
+      });
+      beforeRenderHook?.(0.016, 1000);
+
+      expect(appInstance.spawnDecalVfx).toHaveBeenCalledTimes(1);
+      expect(appInstance.spawnImpactVfx).toHaveBeenCalledTimes(1);
+
+      const expectedServerHit = { x: 1, y: 3, z: 2 };
+      const decalCall = appInstance.spawnDecalVfx.mock.calls[0]?.[0] as { position: { x: number; y: number; z: number } };
+      const impactCall = appInstance.spawnImpactVfx.mock.calls[0]?.[0] as { position: { x: number; y: number; z: number } };
+      const decalError = Math.hypot(
+        decalCall.position.x - expectedServerHit.x,
+        decalCall.position.y - expectedServerHit.y,
+        decalCall.position.z - expectedServerHit.z
+      );
+      const impactError = Math.hypot(
+        impactCall.position.x - expectedServerHit.x,
+        impactCall.position.y - expectedServerHit.y,
+        impactCall.position.z - expectedServerHit.z
+      );
+      expect(decalError).toBeLessThan(0.03);
+      expect(impactError).toBeLessThan(0.03);
+    } finally {
+      raycastSpy.mockRestore();
+    }
+  });
+
   it('forces decals on even if legacy stored FX settings disabled them', async () => {
     fxSettingsMock.loadFxSettings.mockReturnValue({
       muzzleFlash: true,

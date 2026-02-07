@@ -23,7 +23,8 @@ The server now uses a dual-trace decision for hitscan world blocking:
 
 3. Near-muzzle grace:
 - If Trace B blocks within `kShotNearMuzzleGraceMeters`:
-- Retry Trace B once while ignoring the first blocking collider id and applying a `min_t` floor.
+- Retry Trace B once while ignoring the first blocking surface and applying a `min_t` floor.
+- For AABB hits this uses `ignore_collider_id`; for mesh/BVH hits this uses mapped `instance_id` ignore.
 - If retry reaches intended distance, the near block is treated as corner self-occlusion noise and ignored.
 - Otherwise the shot is blocked by the retry hit.
 

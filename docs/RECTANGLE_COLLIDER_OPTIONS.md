@@ -6,11 +6,24 @@ This document lists rectangle-based collider strategies for AFPS, with tradeoffs
 
 - Collider shape: axis-aligned 3D boxes (`AABB`).
 - Runtime storage: `CollisionWorld.colliders`.
-- Authoritative raycast: `RaycastWorld(...)`.
+- Authoritative world hitscan raycast: hybrid AABB + mesh/BVH.
+- Movement blocking raycast/sweep: AABB.
 - Main code paths:
   - `shared/sim/sim.h`
   - `server/src/map_world.cpp`
+  - `server/src/tick.cpp`
   - `client/src/environment/procedural_map.ts`
+
+## Runtime Today
+
+- Player movement and collision response remain AABB-based.
+- Authoritative hitscan world hit uses:
+  - AABB broadphase/fallback.
+  - Mesh/BVH narrow-phase for final building surface hit point/normal.
+  - AABB building hit -> mesh snap pass; if no nearby triangle is found, the server rejects that building AABB hit to avoid mid-air decals.
+- Near-muzzle corner retry supports ignoring either:
+  - `ignore_collider_id` (AABB), or
+  - mapped mesh `instance_id` (mesh/BVH path).
 
 ## Option 1: Single AABB Per Building
 
@@ -91,28 +104,42 @@ This document lists rectangle-based collider strategies for AFPS, with tradeoffs
 
 ## Option 7: Hybrid (AABB For Movement, Mesh/BVH For Decal Placement)
 
-- Description: keep rectangle colliders authoritative for gameplay, but use visual mesh raycasts for decal projection.
+- Description: keep rectangle colliders for movement/broadphase, but use mesh/BVH for authoritative world-hit surface resolution.
 - Pros:
-  - preserves deterministic movement/combat.
-  - improves decal placement without replacing collision core.
+  - preserves deterministic movement and broadphase simplicity.
+  - improves close-range corner shots and facade-aligned impacts.
+  - improves server authoritative hit points for synced decals.
 - Cons:
-  - can still diverge when authoritative world says miss (`hitKind=None`).
-  - requires careful fallback behavior and sync policy.
-- Fit quality for decals: high.
+  - requires prefab triangle registry and BVH build pipeline.
+  - still needs AABB fallback handling for non-building geometry.
+- Fit quality for decals/hits: high.
 - Multiplayer determinism for gameplay: high.
-- Status in repo: partially implemented on client projection side.
+- Status in repo: implemented for authoritative hitscan world-hit resolution.
+
+## Option 8: Full Mesh Collision For Movement (Not Recommended Now)
+
+- Description: replace movement collision with triangle mesh collision.
+- Pros:
+  - best geometric fidelity.
+- Cons:
+  - highest CPU cost and implementation risk.
+  - larger determinism/testing surface.
+  - unnecessary for current gameplay goals.
+- Fit quality: highest.
+- Multiplayer determinism: medium-high after heavy validation.
+- Status in repo: not implemented.
 
 ## Recommended Path
 
 - Short term:
-  - standardize on compound AABB profiles for all building prefabs used in multiplayer maps.
-  - ensure server and client consume the same map generator output and collider metadata.
-  - use server-side dual-trace corner handling for hitscan (eye intent + muzzle obstruction + near-muzzle grace) to reduce false corner blocks with rectangle colliders.
+  - keep compound AABB for movement collision and spawn blocking.
+  - keep authoritative hitscan on hybrid AABB + mesh/BVH path.
+  - keep triangle registry complete for all building prefabs.
 - Medium term:
-  - add dense compound profiles only for prefabs with known decal/movement issues.
-  - keep hybrid mesh projection as visual fallback, not as authority.
+  - add focused dense compound AABB profiles only for movement snag hotspots.
+  - continue improving mesh-instance retry/ignore telemetry and tests.
 - Long term:
-  - consider OBB support only if compound AABB maintenance cost becomes too high.
+  - consider OBB or full mesh movement only if AABB movement quality becomes unacceptable.
 
 ## Decision Matrix
 
@@ -124,6 +151,7 @@ This document lists rectangle-based collider strategies for AFPS, with tradeoffs
 | Dense Compound AABB | 3 | 4 | 4 | 1 |
 | Auto-Fitted AABB | 2 | 2 | 2-3 | 2 |
 | OBB | 3-4 | 4 | 4 | 3 |
-| Hybrid AABB + Mesh Decal | 2-3 | 3 | 4 (visual) | 2 |
+| Hybrid AABB + Mesh/BVH Hit | 2-3 | 3 | 4 | 2 |
+| Full Mesh Movement | 4 | 4 | 5 | 4 |
 
-Scale: `1` = lowest, `4` = highest.
+Scale: `1` = lowest, `5` = highest.

@@ -9,6 +9,7 @@
 #include <random>
 #include <type_traits>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 TickAccumulator::TickAccumulator(int tick_rate) {
@@ -80,6 +81,7 @@ constexpr int kSpawnAngleSamples = 24;
 constexpr double kShotMuzzleOffsetMeters = 0.2;
 constexpr double kShotNearMuzzleGraceMeters = 0.22;
 constexpr double kShotRetraceEpsilonMeters = 0.02;
+constexpr double kShotMeshSnapMaxDeltaMeters = 0.35;
 
 constexpr uint8_t kPlayerFlagAds = 1 << 0;
 constexpr uint8_t kPlayerFlagSprint = 1 << 1;
@@ -233,12 +235,32 @@ double RaycastAabb2D(double origin_x, double origin_y, double dir_x, double dir_
 }
 
 struct WorldHitscanHit {
+  enum class Backend : uint8_t {
+    None = 0,
+    Aabb = 1,
+    MeshBvh = 2,
+  };
+
   bool hit = false;
   double distance = 0.0;
   afps::combat::Vec3 position{};
   afps::combat::Vec3 normal{};
   SurfaceType surface = SurfaceType::Stone;
   int collider_id = -1;
+  Backend backend = Backend::None;
+  uint32_t instance_id = 0;
+  int face_id = -1;
+  std::string prefab_id;
+};
+
+struct ShadowDetailedWorldHit {
+  bool hit = false;
+  double distance = 0.0;
+  afps::combat::Vec3 position{};
+  afps::combat::Vec3 normal{};
+  std::string prefab_id;
+  uint32_t instance_id = 0;
+  int face_id = -1;
 };
 
 std::string EscapeJsonText(const std::string &value) {
@@ -366,11 +388,40 @@ void WriteVec3Json(std::ostream &out, const afps::combat::Vec3 &value) {
   out << "{\"x\":" << value.x << ",\"y\":" << value.y << ",\"z\":" << value.z << "}";
 }
 
+const char *WorldHitBackendName(WorldHitscanHit::Backend backend) {
+  switch (backend) {
+    case WorldHitscanHit::Backend::MeshBvh:
+      return "mesh_bvh";
+    case WorldHitscanHit::Backend::Aabb:
+      return "aabb";
+    case WorldHitscanHit::Backend::None:
+    default:
+      return "none";
+  }
+}
+
 void WriteWorldHitJson(std::ostream &out, const WorldHitscanHit &hit) {
   out << "{\"hit\":" << (hit.hit ? "true" : "false")
       << ",\"distance\":" << (std::isfinite(hit.distance) ? hit.distance : -1.0)
       << ",\"collider_id\":" << hit.collider_id
+      << ",\"backend\":\"" << WorldHitBackendName(hit.backend) << "\""
+      << ",\"instance_id\":" << hit.instance_id
+      << ",\"prefab_id\":\"" << EscapeJsonText(hit.prefab_id) << "\""
+      << ",\"face_id\":" << hit.face_id
       << ",\"surface\":\"" << SurfaceTypeName(hit.surface) << "\""
+      << ",\"position\":";
+  WriteVec3Json(out, hit.position);
+  out << ",\"normal\":";
+  WriteVec3Json(out, hit.normal);
+  out << "}";
+}
+
+void WriteShadowWorldHitJson(std::ostream &out, const ShadowDetailedWorldHit &hit) {
+  out << "{\"hit\":" << (hit.hit ? "true" : "false")
+      << ",\"distance\":" << (std::isfinite(hit.distance) ? hit.distance : -1.0)
+      << ",\"instance_id\":" << hit.instance_id
+      << ",\"prefab_id\":\"" << EscapeJsonText(hit.prefab_id) << "\""
+      << ",\"face_id\":" << hit.face_id
       << ",\"position\":";
   WriteVec3Json(out, hit.position);
   out << ",\"normal\":";
@@ -400,6 +451,8 @@ void LogHitscanShotDebug(int server_tick,
                          const WorldHitscanHit &retry_world_hit,
                          const char *world_hit_source,
                          const WorldHitscanHit &final_world_hit,
+                         bool shadow_world_checked,
+                         const ShadowDetailedWorldHit &shadow_world_hit,
                          HitKind final_hit_kind,
                          const std::string &final_hit_target,
                          double final_hit_distance,
@@ -456,6 +509,9 @@ void LogHitscanShotDebug(int server_tick,
       << ",\"world_retry_hit\":" << (retry_hit ? "true" : "false")
       << ",\"world_retry\":";
   WriteWorldHitJson(out, retry_world_hit);
+  out << ",\"world_shadow_checked\":" << (shadow_world_checked ? "true" : "false")
+      << ",\"world_shadow\":";
+  WriteShadowWorldHitJson(out, shadow_world_hit);
   out << ",\"world_final\":";
   WriteWorldHitJson(out, final_world_hit);
   out << ",\"final\":{\"kind\":\"" << HitKindName(final_hit_kind) << "\""
@@ -508,6 +564,338 @@ afps::combat::Vec3 Normalize(const afps::combat::Vec3 &v) {
 }
 
 double Clamp(double value, double min_value, double max_value);
+
+struct WorldAabbBounds {
+  double min_x = 0.0;
+  double max_x = 0.0;
+  double min_y = 0.0;
+  double max_y = 0.0;
+  double min_z = 0.0;
+  double max_z = 0.0;
+};
+
+std::array<double, 2> RotateQuarterTurns(double x, double y, uint8_t quarter_turns) {
+  switch (quarter_turns & 3u) {
+    case 1:
+      return {-y, x};
+    case 2:
+      return {-x, -y};
+    case 3:
+      return {y, -x};
+    case 0:
+    default:
+      return {x, y};
+  }
+}
+
+std::array<double, 2> InverseRotateQuarterTurns(double x, double y, uint8_t quarter_turns) {
+  switch (quarter_turns & 3u) {
+    case 1:
+      return {y, -x};
+    case 2:
+      return {-x, -y};
+    case 3:
+      return {-y, x};
+    case 0:
+    default:
+      return {x, y};
+  }
+}
+
+WorldAabbBounds BuildWorldBounds(const afps::world::StaticMeshInstance &instance,
+                                 const afps::world::CollisionMeshBounds &local_bounds) {
+  const double safe_scale = (std::isfinite(instance.scale) && instance.scale > 0.0)
+                                ? instance.scale
+                                : 1.0;
+  const double local_min_x = local_bounds.min_x * safe_scale;
+  const double local_max_x = local_bounds.max_x * safe_scale;
+  const double local_min_y = local_bounds.min_y * safe_scale;
+  const double local_max_y = local_bounds.max_y * safe_scale;
+  const double local_min_z = local_bounds.min_z * safe_scale;
+  const double local_max_z = local_bounds.max_z * safe_scale;
+
+  const std::array<std::array<double, 2>, 4> corners = {
+      RotateQuarterTurns(local_min_x, local_min_y, instance.yaw_quarter_turns),
+      RotateQuarterTurns(local_min_x, local_max_y, instance.yaw_quarter_turns),
+      RotateQuarterTurns(local_max_x, local_min_y, instance.yaw_quarter_turns),
+      RotateQuarterTurns(local_max_x, local_max_y, instance.yaw_quarter_turns),
+  };
+
+  WorldAabbBounds world;
+  world.min_x = std::numeric_limits<double>::infinity();
+  world.max_x = -std::numeric_limits<double>::infinity();
+  world.min_y = std::numeric_limits<double>::infinity();
+  world.max_y = -std::numeric_limits<double>::infinity();
+  for (const auto &corner : corners) {
+    world.min_x = std::min(world.min_x, instance.center_x + corner[0]);
+    world.max_x = std::max(world.max_x, instance.center_x + corner[0]);
+    world.min_y = std::min(world.min_y, instance.center_y + corner[1]);
+    world.max_y = std::max(world.max_y, instance.center_y + corner[1]);
+  }
+  world.min_z = instance.base_z + local_min_z;
+  world.max_z = instance.base_z + local_max_z;
+  return world;
+}
+
+double RaycastAabb3D(double origin_x,
+                     double origin_y,
+                     double origin_z,
+                     double dir_x,
+                     double dir_y,
+                     double dir_z,
+                     const WorldAabbBounds &bounds) {
+  const double inf = std::numeric_limits<double>::infinity();
+  const double epsilon = 1e-8;
+  double t_min = -inf;
+  double t_max = inf;
+  auto update_axis = [&](double origin, double dir, double min_bound, double max_bound) -> bool {
+    if (std::abs(dir) < epsilon) {
+      return origin >= min_bound && origin <= max_bound;
+    }
+    double t1 = (min_bound - origin) / dir;
+    double t2 = (max_bound - origin) / dir;
+    if (t1 > t2) {
+      std::swap(t1, t2);
+    }
+    t_min = std::max(t_min, t1);
+    t_max = std::min(t_max, t2);
+    return t_min <= t_max;
+  };
+
+  if (!update_axis(origin_x, dir_x, bounds.min_x, bounds.max_x)) {
+    return inf;
+  }
+  if (!update_axis(origin_y, dir_y, bounds.min_y, bounds.max_y)) {
+    return inf;
+  }
+  if (!update_axis(origin_z, dir_z, bounds.min_z, bounds.max_z)) {
+    return inf;
+  }
+  if (t_max < 0.0) {
+    return inf;
+  }
+  if (t_min >= 0.0) {
+    return t_min;
+  }
+  return t_max;
+}
+
+afps::combat::Vec3 TransformWorldToLocalPoint(const afps::world::StaticMeshInstance &instance,
+                                              const afps::combat::Vec3 &world_point) {
+  const double safe_scale = (std::isfinite(instance.scale) && instance.scale > 0.0)
+                                ? instance.scale
+                                : 1.0;
+  const double dx = world_point.x - instance.center_x;
+  const double dy = world_point.y - instance.center_y;
+  const auto rotated = InverseRotateQuarterTurns(dx, dy, instance.yaw_quarter_turns);
+  return {rotated[0] / safe_scale,
+          rotated[1] / safe_scale,
+          (world_point.z - instance.base_z) / safe_scale};
+}
+
+afps::combat::Vec3 TransformWorldToLocalDirection(const afps::world::StaticMeshInstance &instance,
+                                                  const afps::combat::Vec3 &world_dir) {
+  const double safe_scale = (std::isfinite(instance.scale) && instance.scale > 0.0)
+                                ? instance.scale
+                                : 1.0;
+  const auto rotated = InverseRotateQuarterTurns(world_dir.x, world_dir.y, instance.yaw_quarter_turns);
+  return {rotated[0] / safe_scale, rotated[1] / safe_scale, world_dir.z / safe_scale};
+}
+
+afps::combat::Vec3 TransformLocalToWorldPoint(const afps::world::StaticMeshInstance &instance,
+                                              const afps::combat::Vec3 &local_point) {
+  const double safe_scale = (std::isfinite(instance.scale) && instance.scale > 0.0)
+                                ? instance.scale
+                                : 1.0;
+  const auto rotated = RotateQuarterTurns(local_point.x * safe_scale,
+                                          local_point.y * safe_scale,
+                                          instance.yaw_quarter_turns);
+  return {instance.center_x + rotated[0],
+          instance.center_y + rotated[1],
+          instance.base_z + local_point.z * safe_scale};
+}
+
+afps::combat::Vec3 TransformLocalToWorldNormal(const afps::world::StaticMeshInstance &instance,
+                                               const afps::combat::Vec3 &local_normal) {
+  const auto rotated =
+      RotateQuarterTurns(local_normal.x, local_normal.y, instance.yaw_quarter_turns);
+  return Normalize({rotated[0], rotated[1], local_normal.z});
+}
+
+bool IntersectTriangle(const afps::combat::Vec3 &origin,
+                       const afps::combat::Vec3 &dir,
+                       const afps::world::CollisionMeshPrefab::Triangle &triangle,
+                       double max_distance,
+                       double &out_t,
+                       afps::combat::Vec3 &out_normal) {
+  const afps::combat::Vec3 v0{triangle.v0_x, triangle.v0_y, triangle.v0_z};
+  const afps::combat::Vec3 v1{triangle.v1_x, triangle.v1_y, triangle.v1_z};
+  const afps::combat::Vec3 v2{triangle.v2_x, triangle.v2_y, triangle.v2_z};
+  const afps::combat::Vec3 edge1 = Sub(v1, v0);
+  const afps::combat::Vec3 edge2 = Sub(v2, v0);
+  const afps::combat::Vec3 pvec = Cross(dir, edge2);
+  const double det = Dot(edge1, pvec);
+  constexpr double kEps = 1e-8;
+  if (std::abs(det) <= kEps) {
+    return false;
+  }
+  const double inv_det = 1.0 / det;
+  const afps::combat::Vec3 tvec = Sub(origin, v0);
+  const double u = Dot(tvec, pvec) * inv_det;
+  if (u < 0.0 || u > 1.0) {
+    return false;
+  }
+  const afps::combat::Vec3 qvec = Cross(tvec, edge1);
+  const double v = Dot(dir, qvec) * inv_det;
+  if (v < 0.0 || (u + v) > 1.0) {
+    return false;
+  }
+  const double t = Dot(edge2, qvec) * inv_det;
+  if (!std::isfinite(t) || t < 0.0 || t > max_distance) {
+    return false;
+  }
+  out_t = t;
+  out_normal = Normalize(Cross(edge1, edge2));
+  if (!std::isfinite(out_normal.x) || !std::isfinite(out_normal.y) || !std::isfinite(out_normal.z)) {
+    return false;
+  }
+  return true;
+}
+
+bool RaycastPrefabBvh(const afps::world::CollisionMeshPrefab &prefab,
+                      const afps::combat::Vec3 &origin_local,
+                      const afps::combat::Vec3 &dir_local,
+                      double max_distance,
+                      double &out_t,
+                      uint32_t &out_triangle_index,
+                      afps::combat::Vec3 &out_normal_local) {
+  if (prefab.bvh_nodes.empty() || prefab.triangle_indices.empty() || prefab.triangles.empty()) {
+    return false;
+  }
+  double best_t = max_distance;
+  uint32_t best_triangle = 0;
+  afps::combat::Vec3 best_normal{};
+  bool hit = false;
+
+  std::vector<uint32_t> stack;
+  stack.reserve(64);
+  stack.push_back(0);
+
+  while (!stack.empty()) {
+    const uint32_t node_index = stack.back();
+    stack.pop_back();
+    if (node_index >= prefab.bvh_nodes.size()) {
+      continue;
+    }
+    const auto &node = prefab.bvh_nodes[node_index];
+    const WorldAabbBounds node_bounds{
+        node.bounds.min_x, node.bounds.max_x, node.bounds.min_y, node.bounds.max_y, node.bounds.min_z, node.bounds.max_z};
+    const double node_t = RaycastAabb3D(origin_local.x,
+                                        origin_local.y,
+                                        origin_local.z,
+                                        dir_local.x,
+                                        dir_local.y,
+                                        dir_local.z,
+                                        node_bounds);
+    if (!std::isfinite(node_t) || node_t > best_t) {
+      continue;
+    }
+
+    if (node.leaf) {
+      const uint32_t end = std::min<uint32_t>(node.end, static_cast<uint32_t>(prefab.triangle_indices.size()));
+      for (uint32_t i = node.begin; i < end; ++i) {
+        const uint32_t triangle_index = prefab.triangle_indices[i];
+        if (triangle_index >= prefab.triangles.size()) {
+          continue;
+        }
+        double tri_t = 0.0;
+        afps::combat::Vec3 tri_normal{};
+        if (!IntersectTriangle(origin_local, dir_local, prefab.triangles[triangle_index], best_t, tri_t, tri_normal)) {
+          continue;
+        }
+        hit = true;
+        best_t = tri_t;
+        best_triangle = triangle_index;
+        best_normal = tri_normal;
+      }
+    } else {
+      if (node.left < prefab.bvh_nodes.size()) {
+        stack.push_back(node.left);
+      }
+      if (node.right < prefab.bvh_nodes.size()) {
+        stack.push_back(node.right);
+      }
+    }
+  }
+
+  if (!hit) {
+    return false;
+  }
+  out_t = best_t;
+  out_triangle_index = best_triangle;
+  out_normal_local = best_normal;
+  return true;
+}
+
+ShadowDetailedWorldHit ResolveShadowDetailedWorldHitscan(
+    const afps::combat::Vec3 &origin,
+    const afps::combat::Vec3 &dir,
+    double max_distance,
+    const std::vector<afps::world::StaticMeshInstance> &instances,
+    const afps::world::CollisionMeshRegistry &registry,
+    const std::unordered_map<std::string, size_t> &prefab_lookup) {
+  ShadowDetailedWorldHit best;
+  best.distance = std::numeric_limits<double>::infinity();
+  const double limit =
+      (std::isfinite(max_distance) && max_distance > 0.0) ? max_distance : std::numeric_limits<double>::infinity();
+  if (!std::isfinite(limit) || instances.empty() || registry.prefabs.empty()) {
+    return best;
+  }
+
+  const afps::combat::Vec3 safe_dir = Normalize(dir);
+  for (const auto &instance : instances) {
+    const auto lookup_iter = prefab_lookup.find(instance.prefab_id);
+    if (lookup_iter == prefab_lookup.end()) {
+      continue;
+    }
+    const size_t prefab_index = lookup_iter->second;
+    if (prefab_index >= registry.prefabs.size()) {
+      continue;
+    }
+    const auto &prefab = registry.prefabs[prefab_index];
+    const WorldAabbBounds bounds = BuildWorldBounds(instance, prefab.bounds);
+    const double t = RaycastAabb3D(
+        origin.x, origin.y, origin.z, safe_dir.x, safe_dir.y, safe_dir.z, bounds);
+    if (!std::isfinite(t) || t < 0.0 || t > limit || t >= best.distance) {
+      continue;
+    }
+    const afps::combat::Vec3 origin_local = TransformWorldToLocalPoint(instance, origin);
+    const afps::combat::Vec3 dir_local = TransformWorldToLocalDirection(instance, safe_dir);
+    double tri_t = std::min(limit, best.distance);
+    uint32_t triangle_index = 0;
+    afps::combat::Vec3 local_normal{};
+    if (!RaycastPrefabBvh(prefab, origin_local, dir_local, tri_t, tri_t, triangle_index, local_normal)) {
+      continue;
+    }
+    const afps::combat::Vec3 local_hit{
+        origin_local.x + dir_local.x * tri_t,
+        origin_local.y + dir_local.y * tri_t,
+        origin_local.z + dir_local.z * tri_t};
+    afps::combat::Vec3 normal = TransformLocalToWorldNormal(instance, local_normal);
+    if (Dot(normal, safe_dir) > 0.0) {
+      normal = {-normal.x, -normal.y, -normal.z};
+    }
+
+    best.hit = true;
+    best.distance = tri_t;
+    best.position = TransformLocalToWorldPoint(instance, local_hit);
+    best.normal = normal;
+    best.prefab_id = prefab.id;
+    best.instance_id = instance.instance_id;
+    best.face_id = static_cast<int>(triangle_index);
+  }
+  return best;
+}
 
 afps::combat::ViewAngles ViewFromDirection(const afps::combat::Vec3 &dir) {
   const afps::combat::Vec3 safe_dir = Normalize(dir);
@@ -620,12 +1008,12 @@ SurfaceType ToSurfaceType(uint8_t surface_type) {
   }
 }
 
-WorldHitscanHit ResolveWorldHitscan(const afps::combat::Vec3 &origin,
-                                    const afps::combat::Vec3 &dir,
-                                    const afps::sim::SimConfig &config,
-                                    const afps::sim::CollisionWorld *world,
-                                    double max_range,
-                                    const afps::sim::RaycastWorldOptions &options = {}) {
+WorldHitscanHit ResolveWorldHitscanAabb(const afps::combat::Vec3 &origin,
+                                        const afps::combat::Vec3 &dir,
+                                        const afps::sim::SimConfig &config,
+                                        const afps::sim::CollisionWorld *world,
+                                        double max_range,
+                                        const afps::sim::RaycastWorldOptions &options = {}) {
   WorldHitscanHit best;
   best.distance = std::numeric_limits<double>::infinity();
   const double clamped_max_range =
@@ -656,7 +1044,181 @@ WorldHitscanHit ResolveWorldHitscan(const afps::combat::Vec3 &origin,
   best.normal = normal;
   best.surface = ToSurfaceType(hit.surface_type);
   best.collider_id = hit.collider_id;
+  best.backend = WorldHitscanHit::Backend::Aabb;
+  best.instance_id = 0;
+  best.face_id = -1;
+  best.prefab_id.clear();
   return best;
+}
+
+WorldHitscanHit ResolveWorldHitscanDetailed(const afps::combat::Vec3 &origin,
+                                            const afps::combat::Vec3 &dir,
+                                            double max_range,
+                                            const afps::sim::RaycastWorldOptions &options,
+                                            const std::vector<afps::world::StaticMeshInstance> &instances,
+                                            const afps::world::CollisionMeshRegistry &registry,
+                                            const std::unordered_map<std::string, size_t> &prefab_lookup,
+                                            uint32_t ignore_instance_id,
+                                            uint32_t only_instance_id = 0) {
+  WorldHitscanHit best;
+  best.distance = std::numeric_limits<double>::infinity();
+  const double clamped_max_range =
+      (std::isfinite(max_range) && max_range > 0.0) ? max_range : std::numeric_limits<double>::infinity();
+  double min_t = options.min_t;
+  if (!std::isfinite(min_t) || min_t < 0.0) {
+    min_t = 0.0;
+  }
+  double max_t = options.max_t;
+  if (!std::isfinite(max_t) || max_t > clamped_max_range) {
+    max_t = clamped_max_range;
+  }
+  if (!std::isfinite(max_t) || max_t < min_t || instances.empty() || registry.prefabs.empty()) {
+    return best;
+  }
+
+  const afps::combat::Vec3 safe_dir = Normalize(dir);
+  for (const auto &instance : instances) {
+    if (only_instance_id > 0 && instance.instance_id != only_instance_id) {
+      continue;
+    }
+    if (ignore_instance_id > 0 && instance.instance_id == ignore_instance_id) {
+      continue;
+    }
+    const auto lookup_iter = prefab_lookup.find(instance.prefab_id);
+    if (lookup_iter == prefab_lookup.end()) {
+      continue;
+    }
+    const size_t prefab_index = lookup_iter->second;
+    if (prefab_index >= registry.prefabs.size()) {
+      continue;
+    }
+    const auto &prefab = registry.prefabs[prefab_index];
+    if (prefab.triangles.empty() || prefab.bvh_nodes.empty()) {
+      continue;
+    }
+
+    const WorldAabbBounds bounds = BuildWorldBounds(instance, prefab.bounds);
+    const double t_aabb = RaycastAabb3D(
+        origin.x, origin.y, origin.z, safe_dir.x, safe_dir.y, safe_dir.z, bounds);
+    if (!std::isfinite(t_aabb) || t_aabb > max_t || t_aabb >= best.distance) {
+      continue;
+    }
+
+    const afps::combat::Vec3 origin_local = TransformWorldToLocalPoint(instance, origin);
+    const afps::combat::Vec3 dir_local = TransformWorldToLocalDirection(instance, safe_dir);
+    double tri_t = std::min(max_t, best.distance);
+    uint32_t triangle_index = 0;
+    afps::combat::Vec3 local_normal{};
+    if (!RaycastPrefabBvh(prefab, origin_local, dir_local, tri_t, tri_t, triangle_index, local_normal)) {
+      continue;
+    }
+    if (!std::isfinite(tri_t) || tri_t < min_t || tri_t > max_t) {
+      continue;
+    }
+
+    const afps::combat::Vec3 local_hit{
+        origin_local.x + dir_local.x * tri_t,
+        origin_local.y + dir_local.y * tri_t,
+        origin_local.z + dir_local.z * tri_t};
+    afps::combat::Vec3 normal = TransformLocalToWorldNormal(instance, local_normal);
+    if (Dot(normal, safe_dir) > 0.0) {
+      normal = {-normal.x, -normal.y, -normal.z};
+    }
+
+    best.hit = true;
+    best.distance = tri_t;
+    best.position = TransformLocalToWorldPoint(instance, local_hit);
+    best.normal = normal;
+    best.surface = ToSurfaceType(prefab.surface_type);
+    // Preserve a positive collider id for mesh hits so downstream logic can
+    // distinguish building surfaces from arena bounds (-1 sentinel) and map
+    // back to the owning instance when needed.
+    best.collider_id = instance.first_collider_id > 0 ? instance.first_collider_id : 0;
+    best.backend = WorldHitscanHit::Backend::MeshBvh;
+    best.instance_id = instance.instance_id;
+    best.face_id = static_cast<int>(triangle_index);
+    best.prefab_id = prefab.id;
+  }
+  return best;
+}
+
+WorldHitscanHit ResolveWorldHitscan(const afps::combat::Vec3 &origin,
+                                    const afps::combat::Vec3 &dir,
+                                    const afps::sim::SimConfig &config,
+                                    const afps::sim::CollisionWorld *world,
+                                    const std::vector<afps::world::StaticMeshInstance> &instances,
+                                    const afps::world::CollisionMeshRegistry &registry,
+                                    const std::unordered_map<std::string, size_t> &prefab_lookup,
+                                    bool collision_mesh_enabled,
+                                    double max_range,
+                                    const afps::sim::RaycastWorldOptions &options = {},
+                                    uint32_t ignore_instance_id = 0) {
+  const WorldHitscanHit aabb_hit = ResolveWorldHitscanAabb(origin, dir, config, world, max_range, options);
+  if (!collision_mesh_enabled) {
+    return aabb_hit;
+  }
+  if (options.ignore_collider_id > 0 && ignore_instance_id == 0) {
+    return aabb_hit;
+  }
+
+  const WorldHitscanHit mesh_hit =
+      ResolveWorldHitscanDetailed(origin, dir, max_range, options, instances, registry, prefab_lookup, ignore_instance_id);
+  if (!mesh_hit.hit) {
+    return aabb_hit;
+  }
+
+  // Keep arena bounds authoritative only when they are meaningfully closer.
+  // For near-tie cases, prefer mesh collision so building decals stick to
+  // visible surfaces instead of snapping to arena-side bounds.
+  if (aabb_hit.hit && aabb_hit.collider_id == -1 &&
+      aabb_hit.distance + kShotRetraceEpsilonMeters < mesh_hit.distance) {
+    return aabb_hit;
+  }
+
+  return mesh_hit;
+}
+
+bool TrySnapAabbWorldHitToMesh(const WorldHitscanHit &aabb_hit,
+                               const afps::combat::Vec3 &trace_origin,
+                               const afps::combat::Vec3 &trace_dir,
+                               double max_range,
+                               double distance_offset_from_trace_to_origin,
+                               const std::unordered_map<int, uint32_t> &collider_instance_lookup,
+                               const std::vector<afps::world::StaticMeshInstance> &instances,
+                               const afps::world::CollisionMeshRegistry &registry,
+                               const std::unordered_map<std::string, size_t> &prefab_lookup,
+                               WorldHitscanHit &out_mesh_hit) {
+  if (!aabb_hit.hit || aabb_hit.backend != WorldHitscanHit::Backend::Aabb || aabb_hit.collider_id <= 0) {
+    return false;
+  }
+  const auto collider_iter = collider_instance_lookup.find(aabb_hit.collider_id);
+  if (collider_iter == collider_instance_lookup.end() || collider_iter->second == 0) {
+    return false;
+  }
+
+  double trace_distance = aabb_hit.distance - distance_offset_from_trace_to_origin;
+  if (!std::isfinite(trace_distance) || trace_distance <= 0.0) {
+    return false;
+  }
+  trace_distance = std::max(0.0, trace_distance);
+
+  afps::sim::RaycastWorldOptions mesh_options;
+  mesh_options.min_t = 0.0;
+  mesh_options.max_t = std::min(max_range, trace_distance + kShotMeshSnapMaxDeltaMeters);
+  if (!std::isfinite(mesh_options.max_t) || mesh_options.max_t <= 0.0) {
+    return false;
+  }
+  const WorldHitscanHit mesh_hit =
+      ResolveWorldHitscanDetailed(trace_origin, trace_dir, max_range, mesh_options, instances, registry, prefab_lookup,
+                                  0, collider_iter->second);
+  if (!mesh_hit.hit) {
+    return false;
+  }
+
+  out_mesh_hit = mesh_hit;
+  out_mesh_hit.distance = std::min(max_range, std::max(0.0, mesh_hit.distance + distance_offset_from_trace_to_origin));
+  out_mesh_hit.position = mesh_hit.position;
+  return true;
 }
 
 bool IsSpawnPointBlocked(const afps::sim::CollisionWorld &world,
@@ -804,6 +1366,33 @@ TickLoop::TickLoop(SignalingStore &store,
   }
   const auto generated = afps::world::GenerateMapWorld(sim_config_, map_seed_, accumulator_.tick_rate(), map_options_);
   collision_world_ = generated.collision_world;
+  static_mesh_instances_ = generated.static_mesh_instances;
+  collider_instance_lookup_.clear();
+  for (const auto &instance : static_mesh_instances_) {
+    if (instance.first_collider_id <= 0 || instance.last_collider_id < instance.first_collider_id) {
+      continue;
+    }
+    for (int collider_id = instance.first_collider_id; collider_id <= instance.last_collider_id; ++collider_id) {
+      collider_instance_lookup_[collider_id] = instance.instance_id;
+    }
+  }
+  std::string collision_mesh_error;
+  collision_mesh_registry_loaded_ =
+      afps::world::LoadCollisionMeshRegistry(collision_mesh_registry_, collision_mesh_error);
+  collision_mesh_prefab_lookup_.clear();
+  if (!collision_mesh_registry_loaded_) {
+    if (!collision_mesh_error.empty()) {
+      std::cerr << "[warn] " << collision_mesh_error << "\n";
+    }
+  } else {
+    collision_mesh_prefab_lookup_.reserve(collision_mesh_registry_.prefabs.size());
+    for (size_t i = 0; i < collision_mesh_registry_.prefabs.size(); ++i) {
+      const std::string &id = collision_mesh_registry_.prefabs[i].id;
+      if (!id.empty()) {
+        collision_mesh_prefab_lookup_[id] = i;
+      }
+    }
+  }
   pickups_.clear();
   pickups_.reserve(generated.pickups.size());
   for (const auto &pickup : generated.pickups) {
@@ -1592,7 +2181,10 @@ void TickLoop::Step() {
 	      const auto result = afps::combat::ResolveHitscan(
 	          event.connection_id, pose_histories_, estimated_tick, shot_view, sim_config_, weapon->range,
 	          nullptr);
+	      const bool collision_mesh_enabled = collision_mesh_registry_loaded_ && !static_mesh_instances_.empty();
 	      WorldHitscanHit world_hit = ResolveWorldHitscan(origin, shot_dir, sim_config_, &collision_world_,
+	                                                     static_mesh_instances_, collision_mesh_registry_,
+	                                                     collision_mesh_prefab_lookup_, collision_mesh_enabled,
 	                                                     weapon->range);
 	      const WorldHitscanHit eye_world_hit = world_hit;
 	      WorldHitscanHit muzzle_block_hit;
@@ -1601,7 +2193,9 @@ void TickLoop::Step() {
 	      bool retry_suppressed = false;
 	      bool retry_hit = false;
 	      WorldHitscanHit retry_world_hit;
-	      const char *world_hit_source = world_hit.hit ? "eye" : "none";
+	      std::string world_hit_source = world_hit.hit ? "eye" : "none";
+	      afps::combat::Vec3 world_hit_trace_origin = origin;
+	      double world_hit_trace_origin_offset = 0.0;
 	      const double intended_distance =
 	          world_hit.hit ? world_hit.distance : max_range;
 	      if (std::isfinite(intended_distance) && intended_distance > 0.0) {
@@ -1609,22 +2203,36 @@ void TickLoop::Step() {
 	        afps::sim::RaycastWorldOptions muzzle_trace_options;
 	        muzzle_trace_options.max_t = intended_distance;
 	        const auto muzzle_block = ResolveWorldHitscan(
-	            muzzle, shot_dir, sim_config_, &collision_world_, intended_distance, muzzle_trace_options);
+	            muzzle, shot_dir, sim_config_, &collision_world_, static_mesh_instances_,
+	            collision_mesh_registry_, collision_mesh_prefab_lookup_, collision_mesh_enabled,
+	            intended_distance, muzzle_trace_options);
 	        if (muzzle_block.hit) {
 	          muzzle_block_hit = muzzle_block;
 	        }
 	        if (muzzle_block.hit &&
 	            muzzle_block.distance + kShotRetraceEpsilonMeters < intended_distance) {
 	          bool suppressed_near_muzzle_block = false;
-	          if (muzzle_block.distance <= kShotNearMuzzleGraceMeters &&
-	              muzzle_block.collider_id > 0) {
+	          const bool near_muzzle_block =
+	              muzzle_block.distance <= kShotNearMuzzleGraceMeters;
+	          uint32_t retry_ignore_instance_id = muzzle_block.instance_id;
+	          if (retry_ignore_instance_id == 0 && muzzle_block.collider_id > 0) {
+	            const auto collider_iter = collider_instance_lookup_.find(muzzle_block.collider_id);
+	            if (collider_iter != collider_instance_lookup_.end()) {
+	              retry_ignore_instance_id = collider_iter->second;
+	            }
+	          }
+	          const bool can_retry_ignore =
+	              (muzzle_block.collider_id > 0) || (retry_ignore_instance_id > 0);
+	          if (near_muzzle_block && can_retry_ignore) {
 	            retry_attempted = true;
 	            afps::sim::RaycastWorldOptions retry_options;
 	            retry_options.min_t = kShotNearMuzzleGraceMeters;
 	            retry_options.max_t = intended_distance;
 	            retry_options.ignore_collider_id = muzzle_block.collider_id;
 	            const auto retrace_hit = ResolveWorldHitscan(
-	                muzzle, shot_dir, sim_config_, &collision_world_, intended_distance, retry_options);
+	                muzzle, shot_dir, sim_config_, &collision_world_, static_mesh_instances_,
+	                collision_mesh_registry_, collision_mesh_prefab_lookup_, collision_mesh_enabled,
+	                intended_distance, retry_options, retry_ignore_instance_id);
 	            if (retrace_hit.hit) {
 	              retry_hit = true;
 	              retry_world_hit = retrace_hit;
@@ -1639,18 +2247,51 @@ void TickLoop::Step() {
 	              world_hit.distance = std::min(max_range,
 	                                            std::max(0.0, retrace_hit.distance + kShotMuzzleOffsetMeters));
 	              world_hit.position = Add(origin, Mul(shot_dir, world_hit.distance));
+	              world_hit_trace_origin = muzzle;
+	              world_hit_trace_origin_offset = kShotMuzzleOffsetMeters;
 	              world_hit_source = "muzzle_retry";
 	            }
 	          }
 	          if (!suppressed_near_muzzle_block &&
-	              !(muzzle_block.distance <= kShotNearMuzzleGraceMeters &&
-	                muzzle_block.collider_id > 0)) {
+	              !(near_muzzle_block && can_retry_ignore)) {
 	            world_hit = muzzle_block;
 	            world_hit.distance = std::min(max_range,
 	                                          std::max(0.0, muzzle_block.distance + kShotMuzzleOffsetMeters));
 	            world_hit.position = Add(origin, Mul(shot_dir, world_hit.distance));
+	            world_hit_trace_origin = muzzle;
+	            world_hit_trace_origin_offset = kShotMuzzleOffsetMeters;
 	            world_hit_source = "muzzle_block";
 	          }
+	        }
+	      }
+
+	      if (collision_mesh_enabled &&
+	          world_hit.hit &&
+	          world_hit.backend == WorldHitscanHit::Backend::Aabb &&
+	          world_hit.collider_id > 0) {
+	        WorldHitscanHit mesh_snapped_hit;
+	        if (TrySnapAabbWorldHitToMesh(world_hit,
+	                                      world_hit_trace_origin,
+	                                      shot_dir,
+	                                      max_range,
+	                                      world_hit_trace_origin_offset,
+	                                      collider_instance_lookup_,
+	                                      static_mesh_instances_,
+	                                      collision_mesh_registry_,
+	                                      collision_mesh_prefab_lookup_,
+	                                      mesh_snapped_hit)) {
+	          world_hit = mesh_snapped_hit;
+	          if (world_hit_source.find("mesh") == std::string::npos) {
+	            world_hit_source += "_mesh_snap";
+	          }
+	        } else {
+	          world_hit.hit = false;
+	          world_hit.distance = max_range;
+	          world_hit.backend = WorldHitscanHit::Backend::None;
+	          world_hit.instance_id = 0;
+	          world_hit.face_id = -1;
+	          world_hit.prefab_id.clear();
+	          world_hit_source = "mesh_snap_rejected";
 	        }
 	      }
 
@@ -1660,11 +2301,21 @@ void TickLoop::Step() {
 	      double hit_distance = max_range;
 	      std::string hit_target;
 	      if (world_hit.hit &&
+	          world_hit.backend == WorldHitscanHit::Backend::Aabb &&
 	          world_hit.collider_id == -1 &&
 	          std::abs(world_hit.normal.z) < 0.5) {
 	        world_hit.hit = false;
 	        world_hit.distance = max_range;
+	        world_hit.backend = WorldHitscanHit::Backend::None;
+	        world_hit.instance_id = 0;
+	        world_hit.face_id = -1;
+	        world_hit.prefab_id.clear();
 	        world_hit_source = "arena_side_ignored";
+	      }
+	      if (world_hit.hit &&
+	          world_hit.backend == WorldHitscanHit::Backend::MeshBvh &&
+	          world_hit_source.find("mesh") == std::string::npos) {
+	        world_hit_source += "_mesh";
 	      }
 
 	      if (result.hit && (!world_hit.hit || result.distance <= world_hit.distance)) {
@@ -1678,11 +2329,23 @@ void TickLoop::Step() {
 	        surface_type = world_hit.surface;
 	        hit_normal = world_hit.normal;
 	      }
-	      const afps::combat::Vec3 hit_position = Add(origin, Mul(shot_dir, hit_distance));
+	      const afps::combat::Vec3 hit_position =
+	          (hit_kind == HitKind::World) ? world_hit.position : Add(origin, Mul(shot_dir, hit_distance));
+	      ShadowDetailedWorldHit shadow_world_hit;
+	      bool shadow_world_checked = false;
+	      if (event.request.debug_enabled || ShouldLogShotDebug()) {
+	        shadow_world_checked = collision_mesh_enabled;
+	        if (shadow_world_checked) {
+	          shadow_world_hit = ResolveShadowDetailedWorldHitscan(
+	              origin, shot_dir, hit_distance, static_mesh_instances_,
+	              collision_mesh_registry_, collision_mesh_prefab_lookup_);
+	        }
+	      }
 	      LogHitscanShotDebug(server_tick_, event.connection_id, weapon->id, active_slot, shot_seq, estimated_tick,
 	                          event.request, origin, muzzle, shot_dir, max_range, intended_distance, result, eye_world_hit,
 	                          muzzle_block_checked, muzzle_block_hit, retry_attempted, retry_suppressed, retry_hit,
-	                          retry_world_hit, world_hit_source, world_hit, hit_kind, hit_target, hit_distance,
+	                          retry_world_hit, world_hit_source.c_str(), world_hit, shadow_world_checked, shadow_world_hit,
+	                          hit_kind, hit_target, hit_distance,
 	                          hit_position, hit_normal, surface_type);
 
 	      if (hit_kind == HitKind::Player) {

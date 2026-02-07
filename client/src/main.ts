@@ -93,6 +93,7 @@ const KILL_FEED_FADE_MS = 500;
 const SKY_DECAL_FADE_SECONDS = 3;
 const SKY_DECAL_HEIGHT_METERS = 8;
 const SKY_DECAL_VERTICAL_DELTA_METERS = 1;
+const AUTHORITATIVE_WORLD_HIT_SURFACE_OFFSET_METERS = 0.005;
 const FX_DEDUP_TTL_TICKS = 600;
 const FX_DEDUP_MAX_ENTRIES = 4096;
 const GRENADE_HIT_EXPLOSION_FRAME_URLS = [
@@ -2186,7 +2187,9 @@ const debugFxLog = (...args: unknown[]) => {
             muzzlePos
           };
           traceByShot.set(traceKey, traceData);
-          if (traceData.hitKind !== 2) {
+          // Only project authoritative misses. World hits already carry a
+          // server-resolved surface point and normal.
+          if (traceData.hitKind === 0) {
             const projected = projectTraceWorldHit(traceData);
             if (projected) {
               projectedWorldHitByShot.set(traceKey, projected);
@@ -2514,27 +2517,40 @@ const debugFxLog = (...args: unknown[]) => {
               });
               break;
             }
+            const isAuthoritativeWorldHit = trace.hitKind === 1;
             const projectedWorldHit =
-              projectedWorldHitByShot.get(traceKey) ?? (trace.hitKind !== 2 ? projectTraceWorldHit(trace) : null);
+              !isAuthoritativeWorldHit && trace.hitKind !== 2
+                ? (projectedWorldHitByShot.get(traceKey) ?? projectTraceWorldHit(trace))
+                : null;
             const seed = (hashString(event.shooterId) ^ (event.shotSeq >>> 0)) >>> 0;
             const fallbackImpactPos = trace.hitPos;
             const traceImpactPos = projectedWorldHit?.position ?? fallbackImpactPos;
             const traceImpactNormal = projectedWorldHit?.normal ?? trace.normal;
             const projectedImpact =
-              trace.hitKind === 1
+              !isAuthoritativeWorldHit && trace.hitKind === 1
                 ? projectImpactWorldHit({
                     position: traceImpactPos,
                     normal: traceImpactNormal
                   })
                 : null;
-            const impactPos = projectedImpact?.position ?? traceImpactPos;
-            const impactNormal = projectedImpact?.normal ?? traceImpactNormal;
+            const authoritativeNormal = normalizeVec(trace.normal);
+            const impactNormal = isAuthoritativeWorldHit
+              ? authoritativeNormal
+              : (projectedImpact?.normal ?? traceImpactNormal);
+            const impactPos = isAuthoritativeWorldHit
+              ? {
+                  x: trace.hitPos.x + impactNormal.x * AUTHORITATIVE_WORLD_HIT_SURFACE_OFFSET_METERS,
+                  y: trace.hitPos.y + impactNormal.y * AUTHORITATIVE_WORLD_HIT_SURFACE_OFFSET_METERS,
+                  z: trace.hitPos.z + impactNormal.z * AUTHORITATIVE_WORLD_HIT_SURFACE_OFFSET_METERS
+                }
+              : (projectedImpact?.position ?? traceImpactPos);
             debugFxLog('shot-trace-impact', {
               traceKey,
               shooterId: event.shooterId,
               shotSeq: event.shotSeq,
               hitKind: trace.hitKind,
               surfaceType: trace.surfaceType,
+              authoritativeWorldHit: isAuthoritativeWorldHit,
               usedProjectedHit: projectedWorldHit !== null,
               usedImpactProjection: projectedImpact !== null
             });
@@ -2546,7 +2562,7 @@ const debugFxLog = (...args: unknown[]) => {
             });
             if (fxSettings.decals && trace.hitKind === 1) {
               let decalTtl: number | undefined;
-              if (!projectedWorldHit && !projectedImpact) {
+              if (!isAuthoritativeWorldHit && !projectedWorldHit && !projectedImpact) {
                 const firedDownward = trace.dir.y < -0.05;
                 const aboveSkyHeight = impactPos.y > SKY_DECAL_HEIGHT_METERS;
                 const aboveMuzzleByMargin =

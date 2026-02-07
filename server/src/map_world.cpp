@@ -48,6 +48,7 @@ struct BuildingWorld {
   double center_y = 0.0;
   DoorSide door_side = DoorSide::South;
   uint8_t type_index = 0;
+  std::string prefab_file;
   double scale = 1.0;
 };
 
@@ -134,6 +135,64 @@ const ColliderProfile &ResolveColliderProfile(uint8_t type_index) {
   const auto &profiles = BuildingColliderProfiles();
   const size_t index = profiles.empty() ? 0 : static_cast<size_t>(type_index) % profiles.size();
   return profiles[index];
+}
+
+std::string ResolveBuildingPrefabFile(uint8_t type_index) {
+  const uint8_t clamped = static_cast<uint8_t>(type_index % 21);
+  const char suffix = static_cast<char>('a' + static_cast<int>(clamped));
+  return std::string("building-type-") + suffix + ".glb";
+}
+
+std::string NormalizePrefabId(std::string value) {
+  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+    return static_cast<char>(std::tolower(ch));
+  });
+  return value;
+}
+
+void AddBuildingPrefabId(GeneratedMapWorld &generated, const std::string &value) {
+  if (value.empty()) {
+    return;
+  }
+  generated.building_prefab_ids.push_back(NormalizePrefabId(value));
+}
+
+void FinalizeBuildingPrefabIds(GeneratedMapWorld &generated) {
+  auto &ids = generated.building_prefab_ids;
+  std::sort(ids.begin(), ids.end());
+  ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+}
+
+uint8_t DoorSideQuarterTurns(DoorSide side) {
+  switch (side) {
+    case DoorSide::South:
+      return 0;
+    case DoorSide::West:
+      return 1;
+    case DoorSide::North:
+      return 2;
+    case DoorSide::East:
+    default:
+      return 3;
+  }
+}
+
+void AddStaticMeshInstance(GeneratedMapWorld &generated,
+                           const BuildingWorld &building,
+                           uint32_t instance_id,
+                           int first_collider_id,
+                           int last_collider_id) {
+  StaticMeshInstance instance;
+  instance.instance_id = instance_id;
+  instance.prefab_id = NormalizePrefabId(building.prefab_file);
+  instance.center_x = building.center_x;
+  instance.center_y = building.center_y;
+  instance.base_z = 0.0;
+  instance.yaw_quarter_turns = DoorSideQuarterTurns(building.door_side);
+  instance.scale = building.scale;
+  instance.first_collider_id = first_collider_id;
+  instance.last_collider_id = last_collider_id;
+  generated.static_mesh_instances.push_back(std::move(instance));
 }
 
 std::array<double, 2> RotatePointByDoorSide(double x, double y, DoorSide door_side) {
@@ -557,6 +616,7 @@ bool ParseStaticManifestBuildings(const std::string &manifest_path, std::vector<
     building.center_y = placement.pos_z * kMapScale;
     building.door_side = ResolveDoorSideFromRotation(yaw);
     building.type_index = type_index;
+    building.prefab_file = ResolveBuildingPrefabFile(type_index);
     building.scale = placement.scale;
     buildings.push_back(building);
   }
@@ -708,14 +768,27 @@ GeneratedMapWorld GenerateLegacyMapWorld(const afps::sim::SimConfig &config, uin
          static_cast<double>(building.cell_y) * kTileSize * kMapScale,
          building.door_side,
          building.type_index,
+         ResolveBuildingPrefabFile(building.type_index),
          1.0});
   }
 
   afps::sim::ClearColliders(generated.collision_world);
+  generated.static_mesh_instances.clear();
+  generated.static_mesh_instances.reserve(world_buildings.size());
+  uint32_t next_instance_id = 1;
   int next_collider_id = 1;
   for (const auto &building : world_buildings) {
+    const int first_collider_id = next_collider_id;
     AppendBuildingCollidersAt(generated.collision_world, building, next_collider_id);
+    const int last_collider_id = next_collider_id - 1;
+    AddBuildingPrefabId(generated, building.prefab_file);
+    AddStaticMeshInstance(generated,
+                          building,
+                          next_instance_id++,
+                          first_collider_id,
+                          last_collider_id);
   }
+  FinalizeBuildingPrefabIds(generated);
 
   BuildPickupsFromBuildings(world_buildings, tick_rate, generated);
   return generated;
@@ -749,16 +822,31 @@ GeneratedMapWorld GenerateStaticMapWorld(const afps::sim::SimConfig &config,
     if (a.door_side != b.door_side) {
       return static_cast<int>(a.door_side) < static_cast<int>(b.door_side);
     }
+    if (a.prefab_file != b.prefab_file) {
+      return a.prefab_file < b.prefab_file;
+    }
     return a.scale < b.scale;
   });
 
   GeneratedMapWorld generated;
   generated.seed = seed;
   afps::sim::ClearColliders(generated.collision_world);
+  generated.static_mesh_instances.clear();
+  generated.static_mesh_instances.reserve(buildings.size());
+  uint32_t next_instance_id = 1;
   int next_collider_id = 1;
   for (const auto &building : buildings) {
+    const int first_collider_id = next_collider_id;
     AppendBuildingCollidersAt(generated.collision_world, building, next_collider_id);
+    const int last_collider_id = next_collider_id - 1;
+    AddBuildingPrefabId(generated, building.prefab_file);
+    AddStaticMeshInstance(generated,
+                          building,
+                          next_instance_id++,
+                          first_collider_id,
+                          last_collider_id);
   }
+  FinalizeBuildingPrefabIds(generated);
   BuildPickupsFromBuildings(buildings, tick_rate, generated);
   return generated;
 }

@@ -34,6 +34,7 @@ private:
 #include "signaling.h"
 #include "sim/sim.h"
 #include "weapons/weapon_defs.h"
+#include "world_collision_mesh.h"
 
 class TickLoop {
 public:
@@ -91,6 +92,11 @@ private:
   uint32_t map_seed_ = 0;
   afps::world::MapWorldOptions map_options_{};
   afps::sim::CollisionWorld collision_world_;
+  std::vector<afps::world::StaticMeshInstance> static_mesh_instances_;
+  std::unordered_map<int, uint32_t> collider_instance_lookup_;
+  afps::world::CollisionMeshRegistry collision_mesh_registry_{};
+  std::unordered_map<std::string, size_t> collision_mesh_prefab_lookup_;
+  bool collision_mesh_registry_loaded_ = false;
   afps::sim::SimConfig sim_config_ = afps::sim::kDefaultSimConfig;
   afps::weapons::WeaponConfig weapon_config_ = afps::weapons::BuildDefaultWeaponConfig();
   int server_tick_ = 0;

@@ -7,6 +7,7 @@
 #include "security_headers.h"
 #include "tick.h"
 #include "usage.h"
+#include "world_collision_mesh.h"
 
 #include "httplib.h"
 
@@ -21,9 +22,11 @@
 #include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
+#include <optional>
 #include <random>
 #include <sstream>
 #include <string>
@@ -163,6 +166,162 @@ afps::world::MapWorldOptions BuildMapOptions(const ServerConfig &config) {
     options.static_manifest_path.clear();
   }
   return options;
+}
+
+bool EnvFlagEnabled(const char *raw) {
+  if (!raw) {
+    return false;
+  }
+  std::string value(raw);
+  value.erase(std::remove_if(value.begin(), value.end(), [](unsigned char ch) {
+                return std::isspace(ch) != 0;
+              }),
+              value.end());
+  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+    return static_cast<char>(std::tolower(ch));
+  });
+  return value == "1" || value == "true" || value == "yes" || value == "on";
+}
+
+std::string ShellSingleQuote(const std::string &value) {
+  std::string out;
+  out.reserve(value.size() + 2);
+  out.push_back('\'');
+  for (char ch : value) {
+    if (ch == '\'') {
+      out += "'\"'\"'";
+    } else {
+      out.push_back(ch);
+    }
+  }
+  out.push_back('\'');
+  return out;
+}
+
+std::optional<std::filesystem::path> FindRepoRootForCollisionMeshTool() {
+  std::filesystem::path cursor = std::filesystem::current_path();
+  for (;;) {
+    const auto tool_path = cursor / "tools" / "build_collision_meshes.mjs";
+    if (std::filesystem::exists(tool_path)) {
+      return cursor;
+    }
+    if (!cursor.has_parent_path() || cursor == cursor.parent_path()) {
+      break;
+    }
+    cursor = cursor.parent_path();
+  }
+  return std::nullopt;
+}
+
+bool CollisionMeshRegistryHasTriangleData(const afps::world::CollisionMeshRegistry &registry,
+                                          size_t &missing_triangle_prefabs) {
+  missing_triangle_prefabs = 0;
+  for (const auto &prefab : registry.prefabs) {
+    if (!prefab.has_explicit_triangles || prefab.triangles.empty()) {
+      missing_triangle_prefabs += 1;
+    }
+  }
+  return missing_triangle_prefabs == 0;
+}
+
+bool RunCollisionMeshBuildTool(const std::string &registry_path, std::string &error) {
+  error.clear();
+  const auto repo_root = FindRepoRootForCollisionMeshTool();
+  if (!repo_root.has_value()) {
+    error = "unable to find repo root for tools/build_collision_meshes.mjs";
+    return false;
+  }
+
+  const std::filesystem::path absolute_registry_path =
+      std::filesystem::absolute(std::filesystem::path(registry_path));
+  const std::string command = "cd " + ShellSingleQuote(repo_root->string()) +
+                              " && node tools/build_collision_meshes.mjs --out " +
+                              ShellSingleQuote(absolute_registry_path.string());
+  const int rc = std::system(command.c_str());
+  if (rc != 0) {
+    std::ostringstream out;
+    out << "collision mesh build command failed (exit=" << rc << ")";
+    error = out.str();
+    return false;
+  }
+  return true;
+}
+
+bool ValidateCollisionMeshRegistryForMap(const ServerConfig &config) {
+  const std::string path = afps::world::ResolveCollisionMeshRegistryPath();
+  const bool strict = EnvFlagEnabled(std::getenv("AFPS_STRICT_COLLISION_MESH"));
+  afps::world::CollisionMeshRegistry registry;
+  std::string load_error;
+  bool loaded = afps::world::LoadCollisionMeshRegistry(path, registry, load_error);
+  size_t missing_triangle_prefabs = 0;
+  bool has_triangles = loaded && CollisionMeshRegistryHasTriangleData(registry, missing_triangle_prefabs);
+  bool rebuilt_registry = false;
+
+  if (!loaded || !has_triangles) {
+    const std::string reason = !loaded ? load_error
+                                       : ("missing explicit triangles for " +
+                                          std::to_string(missing_triangle_prefabs) + " prefabs");
+    std::cerr << "[warn] collision mesh registry requires rebuild: " << reason << "\n";
+    std::string build_error;
+    if (!RunCollisionMeshBuildTool(path, build_error)) {
+      std::cerr << "[error] " << build_error << "\n";
+      return false;
+    }
+    rebuilt_registry = true;
+    registry = {};
+    load_error.clear();
+    loaded = afps::world::LoadCollisionMeshRegistry(path, registry, load_error);
+    has_triangles = loaded && CollisionMeshRegistryHasTriangleData(registry, missing_triangle_prefabs);
+  }
+
+  if (!loaded) {
+    std::cerr << "[error] " << load_error << "\n";
+    return false;
+  }
+  if (!has_triangles) {
+    std::cerr << "[error] collision mesh registry still missing explicit triangles for "
+              << missing_triangle_prefabs << " prefabs after rebuild attempt\n";
+    return false;
+  }
+
+  const auto options = BuildMapOptions(config);
+  const auto generated = afps::world::GenerateMapWorld(
+      afps::sim::kDefaultSimConfig, config.map_seed, kMapSignatureTickRate, options);
+  const auto missing_prefabs = afps::world::FindMissingCollisionMeshPrefabs(
+      registry, generated.building_prefab_ids);
+
+  std::cout << "{\"event\":\"collision_mesh_registry_loaded\""
+            << ",\"path\":" << std::quoted(path)
+            << ",\"version\":" << registry.version
+            << ",\"prefab_count\":" << registry.prefabs.size()
+            << ",\"rebuilt\":" << (rebuilt_registry ? "true" : "false")
+            << ",\"missing_triangle_prefab_count\":" << missing_triangle_prefabs
+            << ",\"checksum\":" << std::quoted(HashToHex(
+                   afps::world::ComputeCollisionMeshRegistryChecksum(registry)))
+            << ",\"map_prefab_count\":" << generated.building_prefab_ids.size()
+            << ",\"missing_count\":" << missing_prefabs.size()
+            << ",\"strict\":" << (strict ? "true" : "false")
+            << "}\n";
+
+  if (missing_prefabs.empty()) {
+    return true;
+  }
+
+  std::ostringstream joined;
+  for (size_t i = 0; i < missing_prefabs.size(); ++i) {
+    if (i > 0) {
+      joined << ", ";
+    }
+    joined << missing_prefabs[i];
+  }
+  const std::string message = "collision mesh registry missing prefabs: " + joined.str();
+  if (strict) {
+    std::cerr << "[error] " << message << "\n";
+    return false;
+  }
+
+  std::cerr << "[warn] " << message << "\n";
+  return true;
 }
 
 int DumpMapSignature(const ServerConfig &config) {
@@ -338,6 +497,10 @@ int main(int argc, char **argv) {
 
   if (parse.config.dump_map_signature) {
     return DumpMapSignature(parse.config);
+  }
+
+  if (!ValidateCollisionMeshRegistryForMap(parse.config)) {
+    return 1;
   }
 
   RateLimiter limiter(40.0, 20.0);

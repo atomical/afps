@@ -23,10 +23,24 @@ struct PickupSpawn {
   int respawn_ticks = 0;
 };
 
+struct StaticMeshInstance {
+  uint32_t instance_id = 0;
+  std::string prefab_id;
+  double center_x = 0.0;
+  double center_y = 0.0;
+  double base_z = 0.0;
+  uint8_t yaw_quarter_turns = 0;
+  double scale = 1.0;
+  int first_collider_id = 0;
+  int last_collider_id = 0;
+};
+
 struct GeneratedMapWorld {
   uint32_t seed = 0;
   afps::sim::CollisionWorld collision_world;
   std::vector<PickupSpawn> pickups;
+  std::vector<std::string> building_prefab_ids;
+  std::vector<StaticMeshInstance> static_mesh_instances;
 };
 
 enum class MapWorldMode : uint8_t {

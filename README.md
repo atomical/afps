@@ -9,6 +9,8 @@ Living spec: `docs/LIVING_SPEC.md`.
 - Protocol reference: `docs/PROTOCOL.md`
 - Netcode flow: `docs/NETCODE.md`
 - Advanced suburban map generation: `docs/ADVANCED_SUBURBAN_GENERATOR.md`
+- World collision meshes + shot-debug triage: `docs/WORLD_COLLISION_MESHES.md`
+- Rectangle collider strategy matrix: `docs/RECTANGLE_COLLIDER_OPTIONS.md`
 
 ## Controls
 
@@ -65,7 +67,12 @@ To enable shot debug logging and write per-shot JSON lines to `tmp/shot_debug.lo
 
 ```bash
 AFPS_LOG_SHOTS=1 AFPS_SHOT_LOG_PATH=tmp/shot_debug.log ./tools/run_dev.sh
+
+# rebuild building mesh-collider registry from OBJ assets
+node tools/build_collision_meshes.mjs
 ```
+
+Server startup now auto-builds the collision mesh registry when the file is missing or any prefab is missing explicit `triangles`.
 
 Map mode/seed with `run_dev.sh`:
 
@@ -131,6 +138,13 @@ npm run wasm:check
 cd server
 cmake -S . -B build
 cmake --build build
+./build/afps_server --http --auth-token devtoken --host 0.0.0.0 --port 8443 --snapshot-keyframe-interval 5
+```
+
+Recommended (strict collision-mesh validation + auto-rebuild if needed):
+
+```bash
+AFPS_STRICT_COLLISION_MESH=1 \
 ./build/afps_server --http --auth-token devtoken --host 0.0.0.0 --port 8443 --snapshot-keyframe-interval 5
 ```
 
