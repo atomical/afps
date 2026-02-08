@@ -48,6 +48,8 @@ type RemoteAvatar = {
   simPosX?: number;
   simPosY?: number;
   simPosZ?: number;
+  health?: number;
+  deadBlend?: number;
   crouchBones?: CrouchBoneBinding[];
   loadoutBits?: number;
   adsBlend?: number;
@@ -153,6 +155,9 @@ const OVERHEAT_POSE = {
   position: { x: -0.04, y: -0.04, z: 0.06 },
   rotation: { x: 0.4, y: -0.25, z: 0.2 }
 };
+const DEAD_HEALTH_EPSILON = 0.01;
+const DEAD_FALL_PITCH_RADIANS = 1.3;
+const DEAD_DROP_CENTER_Y = 0.16;
 const HAND_DEFAULT_OFFSET: WeaponOffset = {
   position: [0.08, 0.02, 0],
   rotation: [0, 0, 0],
@@ -862,6 +867,19 @@ export const createRemoteAvatarManager = ({
     return groundOffset * CROUCH_SCALE_REDUCTION * blend;
   };
 
+  const resolveDeathDrop = (avatar: RemoteAvatar, deadBlend: number) => {
+    const blend = clamp01(deadBlend);
+    if (blend <= 0) {
+      return 0;
+    }
+    const groundOffset = avatar.groundOffsetY ?? BODY_HALF;
+    if (groundOffset <= 0.12 || hasKneelPoseTargets(avatar)) {
+      return 0.08 * blend;
+    }
+    const drop = Math.max(0, groundOffset - DEAD_DROP_CENTER_Y);
+    return drop * blend;
+  };
+
   const applyAvatarRootPosition = (avatar: RemoteAvatar) => {
     if (
       !Number.isFinite(avatar.simPosX) ||
@@ -871,13 +889,26 @@ export const createRemoteAvatarManager = ({
       return;
     }
     const blend = Number.isFinite(avatar.crouchBlend) ? (avatar.crouchBlend as number) : 0;
+    const deadBlend = Number.isFinite(avatar.deadBlend) ? (avatar.deadBlend as number) : 0;
     const groundOffset = avatar.groundOffsetY ?? BODY_HALF;
     const crouchDrop = resolveCrouchDrop(avatar, blend);
+    const deathDrop = resolveDeathDrop(avatar, deadBlend);
     avatar.root.position.set(
       avatar.simPosX as number,
-      groundOffset + (avatar.simPosZ as number) - crouchDrop,
+      groundOffset + (avatar.simPosZ as number) - crouchDrop - deathDrop,
       avatar.simPosY as number
     );
+  };
+
+  const applyDeathPose = (avatar: RemoteAvatar) => {
+    if (!avatar.root?.rotation) {
+      return;
+    }
+    const deadBlend = clamp01(Number.isFinite(avatar.deadBlend) ? (avatar.deadBlend as number) : 0);
+    const yaw = avatar.viewYaw ?? 0;
+    avatar.root.rotation.y = MODEL_YAW_OFFSET - yaw;
+    avatar.root.rotation.x = -DEAD_FALL_PITCH_RADIANS * deadBlend;
+    avatar.root.rotation.z = 0;
   };
 
   const updateCrouchBindings = (avatar: RemoteAvatar) => {
@@ -906,7 +937,8 @@ export const createRemoteAvatarManager = ({
   };
 
   const applyCrouchPose = (avatar: RemoteAvatar) => {
-    const blend = clamp01(Number.isFinite(avatar.crouchBlend) ? (avatar.crouchBlend as number) : 0);
+    const deadBlend = clamp01(Number.isFinite(avatar.deadBlend) ? (avatar.deadBlend as number) : 0);
+    const blend = deadBlend > 0 ? 0 : clamp01(Number.isFinite(avatar.crouchBlend) ? (avatar.crouchBlend as number) : 0);
     const bindings = avatar.crouchBones ?? [];
     const rootBaseScale = ensureRootBaseScale(avatar);
     if (bindings.length === 0) {
@@ -1175,6 +1207,8 @@ export const createRemoteAvatarManager = ({
       viewPitch: 0,
       playerFlags: 0,
       crouchBlend: 0,
+      health: 100,
+      deadBlend: 0,
       simPosX: 0,
       simPosY: 0,
       simPosZ: 0,
@@ -1237,16 +1271,15 @@ export const createRemoteAvatarManager = ({
     avatar.viewYaw = decodeYawQ(snapshot.viewYawQ);
     avatar.viewPitch = decodePitchQ(snapshot.viewPitchQ);
     avatar.playerFlags = snapshot.playerFlags;
+    avatar.health = Number.isFinite(snapshot.health) ? snapshot.health : 100;
+    avatar.deadBlend = avatar.health <= DEAD_HEALTH_EPSILON ? 1 : 0;
     if (!Number.isFinite(avatar.crouchBlend)) {
       avatar.crouchBlend = (snapshot.playerFlags & PLAYER_FLAG_CROUCHED) !== 0 ? 1 : 0;
     }
     avatar.loadoutBits = snapshot.loadoutBits;
     updateWeapon(avatar, slot);
     applyAvatarRootPosition(avatar);
-    const yaw = avatar.viewYaw ?? 0;
-    if (avatar.root.rotation) {
-      avatar.root.rotation.y = MODEL_YAW_OFFSET - yaw;
-    }
+    applyDeathPose(avatar);
     if (desiredModelUrl && desiredCharacterId && avatar.characterId === desiredCharacterId) {
       const needsModel =
         avatar.modelUrl !== desiredModelUrl || avatar.modelCharacterId !== desiredCharacterId;
@@ -1284,6 +1317,7 @@ export const createRemoteAvatarManager = ({
           setupAnimations(current, model);
           applyAvatarRootPosition(current);
           applyCrouchPose(current);
+          applyDeathPose(current);
           current.modelLoading = false;
           current.modelUrl = desiredModelUrl;
           current.modelCharacterId = desiredCharacterId;
@@ -1520,6 +1554,7 @@ export const createRemoteAvatarManager = ({
           setupAnimations(current, model);
           applyAvatarRootPosition(current);
           applyCrouchPose(current);
+          applyDeathPose(current);
           current.modelLoading = false;
           current.modelUrl = desiredModelUrl;
           current.modelCharacterId = desiredCharacterId;
@@ -1543,30 +1578,38 @@ export const createRemoteAvatarManager = ({
     for (const avatar of avatars.values()) {
       if (avatar.mixer) {
         avatar.mixer.update(deltaSeconds);
-        const velocity = avatar.velocity;
-        const speed = velocity ? Math.hypot(velocity.x, velocity.y) : 0;
-        const verticalMotion =
-          (velocity ? Math.abs(velocity.z) : 0) > 0.55 || (avatar.height ?? 0) > 0.35;
-        const jumpCooldownMs = 350;
-        if (verticalMotion && avatar.jumpAction) {
-          if (!avatar.lastJumpMs || nowMs - avatar.lastJumpMs > jumpCooldownMs) {
-            avatar.lastJumpMs = nowMs;
-          }
-        }
-        if (avatar.lastJumpMs && nowMs - avatar.lastJumpMs < 250 && avatar.jumpAction) {
-          setAnimationState(avatar, 'jump');
-        } else if (speed > 0.2) {
-          setAnimationState(avatar, 'run');
-        } else {
+        const isDead = (avatar.health ?? 100) <= DEAD_HEALTH_EPSILON;
+        if (isDead) {
           setAnimationState(avatar, 'idle');
+        } else {
+          const velocity = avatar.velocity;
+          const speed = velocity ? Math.hypot(velocity.x, velocity.y) : 0;
+          const verticalMotion =
+            (velocity ? Math.abs(velocity.z) : 0) > 0.55 || (avatar.height ?? 0) > 0.35;
+          const jumpCooldownMs = 350;
+          if (verticalMotion && avatar.jumpAction) {
+            if (!avatar.lastJumpMs || nowMs - avatar.lastJumpMs > jumpCooldownMs) {
+              avatar.lastJumpMs = nowMs;
+            }
+          }
+          if (avatar.lastJumpMs && nowMs - avatar.lastJumpMs < 250 && avatar.jumpAction) {
+            setAnimationState(avatar, 'jump');
+          } else if (speed > 0.2) {
+            setAnimationState(avatar, 'run');
+          } else {
+            setAnimationState(avatar, 'idle');
+          }
         }
       }
       const flags = avatar.playerFlags ?? 0;
       const wantsCrouch = (flags & PLAYER_FLAG_CROUCHED) !== 0;
       const crouchBlend = Number.isFinite(avatar.crouchBlend) ? (avatar.crouchBlend as number) : (wantsCrouch ? 1 : 0);
-      avatar.crouchBlend = approachBlend(crouchBlend, wantsCrouch ? 1 : 0, CROUCH_BLEND_SPEED, deltaSeconds);
+      const isDead = (avatar.health ?? 100) <= DEAD_HEALTH_EPSILON;
+      avatar.deadBlend = isDead ? 1 : 0;
+      avatar.crouchBlend = approachBlend(crouchBlend, isDead ? 0 : wantsCrouch ? 1 : 0, CROUCH_BLEND_SPEED, deltaSeconds);
       applyAvatarRootPosition(avatar);
       applyCrouchPose(avatar);
+      applyDeathPose(avatar);
       updateWeaponPose(avatar, deltaSeconds);
     }
   };

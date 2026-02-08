@@ -2566,6 +2566,29 @@ struct InputCmdT : public ::flatbuffers::NativeTable {
   bool shield = false;
   bool shockwave = false;
   bool crouch = false;
+  bool debug_decal_report_present = false;
+  int32_t debug_decal_server_tick = 0;
+  int32_t debug_decal_shot_seq = 0;
+  uint8_t debug_decal_hit_kind = 0;
+  uint8_t debug_decal_surface_type = 0;
+  bool debug_decal_authoritative_world_hit = false;
+  bool debug_decal_used_projected_hit = false;
+  bool debug_decal_used_impact_projection = false;
+  bool debug_decal_spawned = false;
+  bool debug_decal_in_frustum = false;
+  double debug_decal_distance = -1.0;
+  double debug_decal_position_x = 0.0;
+  double debug_decal_position_y = 0.0;
+  double debug_decal_position_z = 0.0;
+  double debug_decal_normal_x = 0.0;
+  double debug_decal_normal_y = 0.0;
+  double debug_decal_normal_z = 0.0;
+  double debug_trace_hit_position_x = 0.0;
+  double debug_trace_hit_position_y = 0.0;
+  double debug_trace_hit_position_z = 0.0;
+  double debug_trace_hit_normal_x = 0.0;
+  double debug_trace_hit_normal_y = 0.0;
+  double debug_trace_hit_normal_z = 0.0;
 };
 
 struct InputCmd FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -2588,7 +2611,30 @@ struct InputCmd FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_GRAPPLE = 30,
     VT_SHIELD = 32,
     VT_SHOCKWAVE = 34,
-    VT_CROUCH = 36
+    VT_CROUCH = 36,
+    VT_DEBUG_DECAL_REPORT_PRESENT = 38,
+    VT_DEBUG_DECAL_SERVER_TICK = 40,
+    VT_DEBUG_DECAL_SHOT_SEQ = 42,
+    VT_DEBUG_DECAL_HIT_KIND = 44,
+    VT_DEBUG_DECAL_SURFACE_TYPE = 46,
+    VT_DEBUG_DECAL_AUTHORITATIVE_WORLD_HIT = 48,
+    VT_DEBUG_DECAL_USED_PROJECTED_HIT = 50,
+    VT_DEBUG_DECAL_USED_IMPACT_PROJECTION = 52,
+    VT_DEBUG_DECAL_SPAWNED = 54,
+    VT_DEBUG_DECAL_IN_FRUSTUM = 56,
+    VT_DEBUG_DECAL_DISTANCE = 58,
+    VT_DEBUG_DECAL_POSITION_X = 60,
+    VT_DEBUG_DECAL_POSITION_Y = 62,
+    VT_DEBUG_DECAL_POSITION_Z = 64,
+    VT_DEBUG_DECAL_NORMAL_X = 66,
+    VT_DEBUG_DECAL_NORMAL_Y = 68,
+    VT_DEBUG_DECAL_NORMAL_Z = 70,
+    VT_DEBUG_TRACE_HIT_POSITION_X = 72,
+    VT_DEBUG_TRACE_HIT_POSITION_Y = 74,
+    VT_DEBUG_TRACE_HIT_POSITION_Z = 76,
+    VT_DEBUG_TRACE_HIT_NORMAL_X = 78,
+    VT_DEBUG_TRACE_HIT_NORMAL_Y = 80,
+    VT_DEBUG_TRACE_HIT_NORMAL_Z = 82
   };
   int32_t input_seq() const {
     return GetField<int32_t>(VT_INPUT_SEQ, 0);
@@ -2641,6 +2687,75 @@ struct InputCmd FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   bool crouch() const {
     return GetField<uint8_t>(VT_CROUCH, 0) != 0;
   }
+  bool debug_decal_report_present() const {
+    return GetField<uint8_t>(VT_DEBUG_DECAL_REPORT_PRESENT, 0) != 0;
+  }
+  int32_t debug_decal_server_tick() const {
+    return GetField<int32_t>(VT_DEBUG_DECAL_SERVER_TICK, 0);
+  }
+  int32_t debug_decal_shot_seq() const {
+    return GetField<int32_t>(VT_DEBUG_DECAL_SHOT_SEQ, 0);
+  }
+  uint8_t debug_decal_hit_kind() const {
+    return GetField<uint8_t>(VT_DEBUG_DECAL_HIT_KIND, 0);
+  }
+  uint8_t debug_decal_surface_type() const {
+    return GetField<uint8_t>(VT_DEBUG_DECAL_SURFACE_TYPE, 0);
+  }
+  bool debug_decal_authoritative_world_hit() const {
+    return GetField<uint8_t>(VT_DEBUG_DECAL_AUTHORITATIVE_WORLD_HIT, 0) != 0;
+  }
+  bool debug_decal_used_projected_hit() const {
+    return GetField<uint8_t>(VT_DEBUG_DECAL_USED_PROJECTED_HIT, 0) != 0;
+  }
+  bool debug_decal_used_impact_projection() const {
+    return GetField<uint8_t>(VT_DEBUG_DECAL_USED_IMPACT_PROJECTION, 0) != 0;
+  }
+  bool debug_decal_spawned() const {
+    return GetField<uint8_t>(VT_DEBUG_DECAL_SPAWNED, 0) != 0;
+  }
+  bool debug_decal_in_frustum() const {
+    return GetField<uint8_t>(VT_DEBUG_DECAL_IN_FRUSTUM, 0) != 0;
+  }
+  double debug_decal_distance() const {
+    return GetField<double>(VT_DEBUG_DECAL_DISTANCE, -1.0);
+  }
+  double debug_decal_position_x() const {
+    return GetField<double>(VT_DEBUG_DECAL_POSITION_X, 0.0);
+  }
+  double debug_decal_position_y() const {
+    return GetField<double>(VT_DEBUG_DECAL_POSITION_Y, 0.0);
+  }
+  double debug_decal_position_z() const {
+    return GetField<double>(VT_DEBUG_DECAL_POSITION_Z, 0.0);
+  }
+  double debug_decal_normal_x() const {
+    return GetField<double>(VT_DEBUG_DECAL_NORMAL_X, 0.0);
+  }
+  double debug_decal_normal_y() const {
+    return GetField<double>(VT_DEBUG_DECAL_NORMAL_Y, 0.0);
+  }
+  double debug_decal_normal_z() const {
+    return GetField<double>(VT_DEBUG_DECAL_NORMAL_Z, 0.0);
+  }
+  double debug_trace_hit_position_x() const {
+    return GetField<double>(VT_DEBUG_TRACE_HIT_POSITION_X, 0.0);
+  }
+  double debug_trace_hit_position_y() const {
+    return GetField<double>(VT_DEBUG_TRACE_HIT_POSITION_Y, 0.0);
+  }
+  double debug_trace_hit_position_z() const {
+    return GetField<double>(VT_DEBUG_TRACE_HIT_POSITION_Z, 0.0);
+  }
+  double debug_trace_hit_normal_x() const {
+    return GetField<double>(VT_DEBUG_TRACE_HIT_NORMAL_X, 0.0);
+  }
+  double debug_trace_hit_normal_y() const {
+    return GetField<double>(VT_DEBUG_TRACE_HIT_NORMAL_Y, 0.0);
+  }
+  double debug_trace_hit_normal_z() const {
+    return GetField<double>(VT_DEBUG_TRACE_HIT_NORMAL_Z, 0.0);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -2661,6 +2776,29 @@ struct InputCmd FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<uint8_t>(verifier, VT_SHIELD, 1) &&
            VerifyField<uint8_t>(verifier, VT_SHOCKWAVE, 1) &&
            VerifyField<uint8_t>(verifier, VT_CROUCH, 1) &&
+           VerifyField<uint8_t>(verifier, VT_DEBUG_DECAL_REPORT_PRESENT, 1) &&
+           VerifyField<int32_t>(verifier, VT_DEBUG_DECAL_SERVER_TICK, 4) &&
+           VerifyField<int32_t>(verifier, VT_DEBUG_DECAL_SHOT_SEQ, 4) &&
+           VerifyField<uint8_t>(verifier, VT_DEBUG_DECAL_HIT_KIND, 1) &&
+           VerifyField<uint8_t>(verifier, VT_DEBUG_DECAL_SURFACE_TYPE, 1) &&
+           VerifyField<uint8_t>(verifier, VT_DEBUG_DECAL_AUTHORITATIVE_WORLD_HIT, 1) &&
+           VerifyField<uint8_t>(verifier, VT_DEBUG_DECAL_USED_PROJECTED_HIT, 1) &&
+           VerifyField<uint8_t>(verifier, VT_DEBUG_DECAL_USED_IMPACT_PROJECTION, 1) &&
+           VerifyField<uint8_t>(verifier, VT_DEBUG_DECAL_SPAWNED, 1) &&
+           VerifyField<uint8_t>(verifier, VT_DEBUG_DECAL_IN_FRUSTUM, 1) &&
+           VerifyField<double>(verifier, VT_DEBUG_DECAL_DISTANCE, 8) &&
+           VerifyField<double>(verifier, VT_DEBUG_DECAL_POSITION_X, 8) &&
+           VerifyField<double>(verifier, VT_DEBUG_DECAL_POSITION_Y, 8) &&
+           VerifyField<double>(verifier, VT_DEBUG_DECAL_POSITION_Z, 8) &&
+           VerifyField<double>(verifier, VT_DEBUG_DECAL_NORMAL_X, 8) &&
+           VerifyField<double>(verifier, VT_DEBUG_DECAL_NORMAL_Y, 8) &&
+           VerifyField<double>(verifier, VT_DEBUG_DECAL_NORMAL_Z, 8) &&
+           VerifyField<double>(verifier, VT_DEBUG_TRACE_HIT_POSITION_X, 8) &&
+           VerifyField<double>(verifier, VT_DEBUG_TRACE_HIT_POSITION_Y, 8) &&
+           VerifyField<double>(verifier, VT_DEBUG_TRACE_HIT_POSITION_Z, 8) &&
+           VerifyField<double>(verifier, VT_DEBUG_TRACE_HIT_NORMAL_X, 8) &&
+           VerifyField<double>(verifier, VT_DEBUG_TRACE_HIT_NORMAL_Y, 8) &&
+           VerifyField<double>(verifier, VT_DEBUG_TRACE_HIT_NORMAL_Z, 8) &&
            verifier.EndTable();
   }
   InputCmdT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -2723,6 +2861,75 @@ struct InputCmdBuilder {
   void add_crouch(bool crouch) {
     fbb_.AddElement<uint8_t>(InputCmd::VT_CROUCH, static_cast<uint8_t>(crouch), 0);
   }
+  void add_debug_decal_report_present(bool debug_decal_report_present) {
+    fbb_.AddElement<uint8_t>(InputCmd::VT_DEBUG_DECAL_REPORT_PRESENT, static_cast<uint8_t>(debug_decal_report_present), 0);
+  }
+  void add_debug_decal_server_tick(int32_t debug_decal_server_tick) {
+    fbb_.AddElement<int32_t>(InputCmd::VT_DEBUG_DECAL_SERVER_TICK, debug_decal_server_tick, 0);
+  }
+  void add_debug_decal_shot_seq(int32_t debug_decal_shot_seq) {
+    fbb_.AddElement<int32_t>(InputCmd::VT_DEBUG_DECAL_SHOT_SEQ, debug_decal_shot_seq, 0);
+  }
+  void add_debug_decal_hit_kind(uint8_t debug_decal_hit_kind) {
+    fbb_.AddElement<uint8_t>(InputCmd::VT_DEBUG_DECAL_HIT_KIND, debug_decal_hit_kind, 0);
+  }
+  void add_debug_decal_surface_type(uint8_t debug_decal_surface_type) {
+    fbb_.AddElement<uint8_t>(InputCmd::VT_DEBUG_DECAL_SURFACE_TYPE, debug_decal_surface_type, 0);
+  }
+  void add_debug_decal_authoritative_world_hit(bool debug_decal_authoritative_world_hit) {
+    fbb_.AddElement<uint8_t>(InputCmd::VT_DEBUG_DECAL_AUTHORITATIVE_WORLD_HIT, static_cast<uint8_t>(debug_decal_authoritative_world_hit), 0);
+  }
+  void add_debug_decal_used_projected_hit(bool debug_decal_used_projected_hit) {
+    fbb_.AddElement<uint8_t>(InputCmd::VT_DEBUG_DECAL_USED_PROJECTED_HIT, static_cast<uint8_t>(debug_decal_used_projected_hit), 0);
+  }
+  void add_debug_decal_used_impact_projection(bool debug_decal_used_impact_projection) {
+    fbb_.AddElement<uint8_t>(InputCmd::VT_DEBUG_DECAL_USED_IMPACT_PROJECTION, static_cast<uint8_t>(debug_decal_used_impact_projection), 0);
+  }
+  void add_debug_decal_spawned(bool debug_decal_spawned) {
+    fbb_.AddElement<uint8_t>(InputCmd::VT_DEBUG_DECAL_SPAWNED, static_cast<uint8_t>(debug_decal_spawned), 0);
+  }
+  void add_debug_decal_in_frustum(bool debug_decal_in_frustum) {
+    fbb_.AddElement<uint8_t>(InputCmd::VT_DEBUG_DECAL_IN_FRUSTUM, static_cast<uint8_t>(debug_decal_in_frustum), 0);
+  }
+  void add_debug_decal_distance(double debug_decal_distance) {
+    fbb_.AddElement<double>(InputCmd::VT_DEBUG_DECAL_DISTANCE, debug_decal_distance, -1.0);
+  }
+  void add_debug_decal_position_x(double debug_decal_position_x) {
+    fbb_.AddElement<double>(InputCmd::VT_DEBUG_DECAL_POSITION_X, debug_decal_position_x, 0.0);
+  }
+  void add_debug_decal_position_y(double debug_decal_position_y) {
+    fbb_.AddElement<double>(InputCmd::VT_DEBUG_DECAL_POSITION_Y, debug_decal_position_y, 0.0);
+  }
+  void add_debug_decal_position_z(double debug_decal_position_z) {
+    fbb_.AddElement<double>(InputCmd::VT_DEBUG_DECAL_POSITION_Z, debug_decal_position_z, 0.0);
+  }
+  void add_debug_decal_normal_x(double debug_decal_normal_x) {
+    fbb_.AddElement<double>(InputCmd::VT_DEBUG_DECAL_NORMAL_X, debug_decal_normal_x, 0.0);
+  }
+  void add_debug_decal_normal_y(double debug_decal_normal_y) {
+    fbb_.AddElement<double>(InputCmd::VT_DEBUG_DECAL_NORMAL_Y, debug_decal_normal_y, 0.0);
+  }
+  void add_debug_decal_normal_z(double debug_decal_normal_z) {
+    fbb_.AddElement<double>(InputCmd::VT_DEBUG_DECAL_NORMAL_Z, debug_decal_normal_z, 0.0);
+  }
+  void add_debug_trace_hit_position_x(double debug_trace_hit_position_x) {
+    fbb_.AddElement<double>(InputCmd::VT_DEBUG_TRACE_HIT_POSITION_X, debug_trace_hit_position_x, 0.0);
+  }
+  void add_debug_trace_hit_position_y(double debug_trace_hit_position_y) {
+    fbb_.AddElement<double>(InputCmd::VT_DEBUG_TRACE_HIT_POSITION_Y, debug_trace_hit_position_y, 0.0);
+  }
+  void add_debug_trace_hit_position_z(double debug_trace_hit_position_z) {
+    fbb_.AddElement<double>(InputCmd::VT_DEBUG_TRACE_HIT_POSITION_Z, debug_trace_hit_position_z, 0.0);
+  }
+  void add_debug_trace_hit_normal_x(double debug_trace_hit_normal_x) {
+    fbb_.AddElement<double>(InputCmd::VT_DEBUG_TRACE_HIT_NORMAL_X, debug_trace_hit_normal_x, 0.0);
+  }
+  void add_debug_trace_hit_normal_y(double debug_trace_hit_normal_y) {
+    fbb_.AddElement<double>(InputCmd::VT_DEBUG_TRACE_HIT_NORMAL_Y, debug_trace_hit_normal_y, 0.0);
+  }
+  void add_debug_trace_hit_normal_z(double debug_trace_hit_normal_z) {
+    fbb_.AddElement<double>(InputCmd::VT_DEBUG_TRACE_HIT_NORMAL_Z, debug_trace_hit_normal_z, 0.0);
+  }
   explicit InputCmdBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -2752,16 +2959,62 @@ inline ::flatbuffers::Offset<InputCmd> CreateInputCmd(
     bool grapple = false,
     bool shield = false,
     bool shockwave = false,
-    bool crouch = false) {
+    bool crouch = false,
+    bool debug_decal_report_present = false,
+    int32_t debug_decal_server_tick = 0,
+    int32_t debug_decal_shot_seq = 0,
+    uint8_t debug_decal_hit_kind = 0,
+    uint8_t debug_decal_surface_type = 0,
+    bool debug_decal_authoritative_world_hit = false,
+    bool debug_decal_used_projected_hit = false,
+    bool debug_decal_used_impact_projection = false,
+    bool debug_decal_spawned = false,
+    bool debug_decal_in_frustum = false,
+    double debug_decal_distance = -1.0,
+    double debug_decal_position_x = 0.0,
+    double debug_decal_position_y = 0.0,
+    double debug_decal_position_z = 0.0,
+    double debug_decal_normal_x = 0.0,
+    double debug_decal_normal_y = 0.0,
+    double debug_decal_normal_z = 0.0,
+    double debug_trace_hit_position_x = 0.0,
+    double debug_trace_hit_position_y = 0.0,
+    double debug_trace_hit_position_z = 0.0,
+    double debug_trace_hit_normal_x = 0.0,
+    double debug_trace_hit_normal_y = 0.0,
+    double debug_trace_hit_normal_z = 0.0) {
   InputCmdBuilder builder_(_fbb);
+  builder_.add_debug_trace_hit_normal_z(debug_trace_hit_normal_z);
+  builder_.add_debug_trace_hit_normal_y(debug_trace_hit_normal_y);
+  builder_.add_debug_trace_hit_normal_x(debug_trace_hit_normal_x);
+  builder_.add_debug_trace_hit_position_z(debug_trace_hit_position_z);
+  builder_.add_debug_trace_hit_position_y(debug_trace_hit_position_y);
+  builder_.add_debug_trace_hit_position_x(debug_trace_hit_position_x);
+  builder_.add_debug_decal_normal_z(debug_decal_normal_z);
+  builder_.add_debug_decal_normal_y(debug_decal_normal_y);
+  builder_.add_debug_decal_normal_x(debug_decal_normal_x);
+  builder_.add_debug_decal_position_z(debug_decal_position_z);
+  builder_.add_debug_decal_position_y(debug_decal_position_y);
+  builder_.add_debug_decal_position_x(debug_decal_position_x);
+  builder_.add_debug_decal_distance(debug_decal_distance);
   builder_.add_view_pitch(view_pitch);
   builder_.add_view_yaw(view_yaw);
   builder_.add_look_delta_y(look_delta_y);
   builder_.add_look_delta_x(look_delta_x);
   builder_.add_move_y(move_y);
   builder_.add_move_x(move_x);
+  builder_.add_debug_decal_shot_seq(debug_decal_shot_seq);
+  builder_.add_debug_decal_server_tick(debug_decal_server_tick);
   builder_.add_weapon_slot(weapon_slot);
   builder_.add_input_seq(input_seq);
+  builder_.add_debug_decal_in_frustum(debug_decal_in_frustum);
+  builder_.add_debug_decal_spawned(debug_decal_spawned);
+  builder_.add_debug_decal_used_impact_projection(debug_decal_used_impact_projection);
+  builder_.add_debug_decal_used_projected_hit(debug_decal_used_projected_hit);
+  builder_.add_debug_decal_authoritative_world_hit(debug_decal_authoritative_world_hit);
+  builder_.add_debug_decal_surface_type(debug_decal_surface_type);
+  builder_.add_debug_decal_hit_kind(debug_decal_hit_kind);
+  builder_.add_debug_decal_report_present(debug_decal_report_present);
   builder_.add_crouch(crouch);
   builder_.add_shockwave(shockwave);
   builder_.add_shield(shield);
@@ -4842,6 +5095,29 @@ inline void InputCmd::UnPackTo(InputCmdT *_o, const ::flatbuffers::resolver_func
   { auto _e = shield(); _o->shield = _e; }
   { auto _e = shockwave(); _o->shockwave = _e; }
   { auto _e = crouch(); _o->crouch = _e; }
+  { auto _e = debug_decal_report_present(); _o->debug_decal_report_present = _e; }
+  { auto _e = debug_decal_server_tick(); _o->debug_decal_server_tick = _e; }
+  { auto _e = debug_decal_shot_seq(); _o->debug_decal_shot_seq = _e; }
+  { auto _e = debug_decal_hit_kind(); _o->debug_decal_hit_kind = _e; }
+  { auto _e = debug_decal_surface_type(); _o->debug_decal_surface_type = _e; }
+  { auto _e = debug_decal_authoritative_world_hit(); _o->debug_decal_authoritative_world_hit = _e; }
+  { auto _e = debug_decal_used_projected_hit(); _o->debug_decal_used_projected_hit = _e; }
+  { auto _e = debug_decal_used_impact_projection(); _o->debug_decal_used_impact_projection = _e; }
+  { auto _e = debug_decal_spawned(); _o->debug_decal_spawned = _e; }
+  { auto _e = debug_decal_in_frustum(); _o->debug_decal_in_frustum = _e; }
+  { auto _e = debug_decal_distance(); _o->debug_decal_distance = _e; }
+  { auto _e = debug_decal_position_x(); _o->debug_decal_position_x = _e; }
+  { auto _e = debug_decal_position_y(); _o->debug_decal_position_y = _e; }
+  { auto _e = debug_decal_position_z(); _o->debug_decal_position_z = _e; }
+  { auto _e = debug_decal_normal_x(); _o->debug_decal_normal_x = _e; }
+  { auto _e = debug_decal_normal_y(); _o->debug_decal_normal_y = _e; }
+  { auto _e = debug_decal_normal_z(); _o->debug_decal_normal_z = _e; }
+  { auto _e = debug_trace_hit_position_x(); _o->debug_trace_hit_position_x = _e; }
+  { auto _e = debug_trace_hit_position_y(); _o->debug_trace_hit_position_y = _e; }
+  { auto _e = debug_trace_hit_position_z(); _o->debug_trace_hit_position_z = _e; }
+  { auto _e = debug_trace_hit_normal_x(); _o->debug_trace_hit_normal_x = _e; }
+  { auto _e = debug_trace_hit_normal_y(); _o->debug_trace_hit_normal_y = _e; }
+  { auto _e = debug_trace_hit_normal_z(); _o->debug_trace_hit_normal_z = _e; }
 }
 
 inline ::flatbuffers::Offset<InputCmd> CreateInputCmd(::flatbuffers::FlatBufferBuilder &_fbb, const InputCmdT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
@@ -4869,6 +5145,29 @@ inline ::flatbuffers::Offset<InputCmd> InputCmd::Pack(::flatbuffers::FlatBufferB
   auto _shield = _o->shield;
   auto _shockwave = _o->shockwave;
   auto _crouch = _o->crouch;
+  auto _debug_decal_report_present = _o->debug_decal_report_present;
+  auto _debug_decal_server_tick = _o->debug_decal_server_tick;
+  auto _debug_decal_shot_seq = _o->debug_decal_shot_seq;
+  auto _debug_decal_hit_kind = _o->debug_decal_hit_kind;
+  auto _debug_decal_surface_type = _o->debug_decal_surface_type;
+  auto _debug_decal_authoritative_world_hit = _o->debug_decal_authoritative_world_hit;
+  auto _debug_decal_used_projected_hit = _o->debug_decal_used_projected_hit;
+  auto _debug_decal_used_impact_projection = _o->debug_decal_used_impact_projection;
+  auto _debug_decal_spawned = _o->debug_decal_spawned;
+  auto _debug_decal_in_frustum = _o->debug_decal_in_frustum;
+  auto _debug_decal_distance = _o->debug_decal_distance;
+  auto _debug_decal_position_x = _o->debug_decal_position_x;
+  auto _debug_decal_position_y = _o->debug_decal_position_y;
+  auto _debug_decal_position_z = _o->debug_decal_position_z;
+  auto _debug_decal_normal_x = _o->debug_decal_normal_x;
+  auto _debug_decal_normal_y = _o->debug_decal_normal_y;
+  auto _debug_decal_normal_z = _o->debug_decal_normal_z;
+  auto _debug_trace_hit_position_x = _o->debug_trace_hit_position_x;
+  auto _debug_trace_hit_position_y = _o->debug_trace_hit_position_y;
+  auto _debug_trace_hit_position_z = _o->debug_trace_hit_position_z;
+  auto _debug_trace_hit_normal_x = _o->debug_trace_hit_normal_x;
+  auto _debug_trace_hit_normal_y = _o->debug_trace_hit_normal_y;
+  auto _debug_trace_hit_normal_z = _o->debug_trace_hit_normal_z;
   return afps::protocol::CreateInputCmd(
       _fbb,
       _input_seq,
@@ -4887,7 +5186,30 @@ inline ::flatbuffers::Offset<InputCmd> InputCmd::Pack(::flatbuffers::FlatBufferB
       _grapple,
       _shield,
       _shockwave,
-      _crouch);
+      _crouch,
+      _debug_decal_report_present,
+      _debug_decal_server_tick,
+      _debug_decal_shot_seq,
+      _debug_decal_hit_kind,
+      _debug_decal_surface_type,
+      _debug_decal_authoritative_world_hit,
+      _debug_decal_used_projected_hit,
+      _debug_decal_used_impact_projection,
+      _debug_decal_spawned,
+      _debug_decal_in_frustum,
+      _debug_decal_distance,
+      _debug_decal_position_x,
+      _debug_decal_position_y,
+      _debug_decal_position_z,
+      _debug_decal_normal_x,
+      _debug_decal_normal_y,
+      _debug_decal_normal_z,
+      _debug_trace_hit_position_x,
+      _debug_trace_hit_position_y,
+      _debug_trace_hit_position_z,
+      _debug_trace_hit_normal_x,
+      _debug_trace_hit_normal_y,
+      _debug_trace_hit_normal_z);
 }
 
 inline FireWeaponRequestT *FireWeaponRequest::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {

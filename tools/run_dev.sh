@@ -16,6 +16,7 @@ SERVER_SCRIPT="${SERVER_SCRIPT:-${ROOT_DIR}/tools/run_server.sh}"
 : "${SERVER_MAP_MODE:=legacy}"
 : "${SERVER_MAP_MANIFEST:=${ROOT_DIR}/client/public/assets/environments/cc0/kenney_city_kit_suburban_20/map.json}"
 : "${ADVANCED_MAP_MANIFEST_PATH:=${ROOT_DIR}/client/public/assets/environments/generated/advanced_map.json}"
+: "${AFPS_WORLD_HIT_BACKEND:=mesh_only}"
 
 STATIC_DEFAULT_MANIFEST="${ROOT_DIR}/client/public/assets/environments/cc0/kenney_city_kit_suburban_20/map.json"
 USE_ADVANCED_MANIFEST=false
@@ -33,6 +34,7 @@ Options:
   --server-map-seed <n>  Set only server map seed.
   --server-map-mode <m>  Set server map mode (`legacy` or `static`).
   --server-map-manifest <path>  Static map manifest path for server static mode.
+  --world-hit-backend <m>  Server world-hit backend (`mesh_only`, `hybrid`, `aabb`).
   -h, --help             Show this help text.
 EOF
 }
@@ -107,6 +109,15 @@ while [[ $# -gt 0 ]]; do
       fi
       SERVER_MAP_MANIFEST="$1"
       ;;
+    --world-hit-backend)
+      shift
+      if [[ $# -eq 0 ]]; then
+        echo "error: --world-hit-backend requires a value" >&2
+        usage
+        exit 2
+      fi
+      AFPS_WORLD_HIT_BACKEND="$1"
+      ;;
     -h|--help)
       usage
       exit 0
@@ -130,7 +141,7 @@ server_args=(--map-seed "${SERVER_MAP_SEED}" --map-mode "${SERVER_MAP_MODE}")
 if [[ "${SERVER_MAP_MODE}" == "static" ]]; then
   server_args+=(--map-manifest "${SERVER_MAP_MANIFEST}")
 fi
-"${SERVER_SCRIPT}" "${server_args[@]}" &
+AFPS_WORLD_HIT_BACKEND="${AFPS_WORLD_HIT_BACKEND}" "${SERVER_SCRIPT}" "${server_args[@]}" &
 SERVER_PID=$!
 
 cleanup() {

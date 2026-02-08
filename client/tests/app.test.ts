@@ -434,6 +434,66 @@ describe('createApp', () => {
     expect(app.getRenderTick()).toBeCloseTo(1.5);
   });
 
+  it('applies immediate first-person death fall and clears on respawn', () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1 });
+
+    app.ingestSnapshot(
+      {
+        type: 'StateSnapshot',
+        serverTick: 10,
+        lastProcessedInputSeq: 10,
+        posX: 2,
+        posY: 1,
+        posZ: 0,
+        velX: 0,
+        velY: 0,
+        velZ: 0,
+        weaponSlot: 0,
+        ammoInMag: 30,
+        dashCooldown: 0,
+        health: 0,
+        kills: 0,
+        deaths: 1
+      },
+      100
+    );
+
+    app.renderFrame(0, 100);
+
+    const camera = app.state.camera as FakeCamera;
+    expect(camera.position.y).toBeCloseTo(0.8, 4);
+    expect(camera.rotation.x).toBeCloseTo(-1.15, 4);
+    expect(camera.rotation.z).toBeCloseTo(-0.55, 4);
+
+    app.ingestSnapshot(
+      {
+        type: 'StateSnapshot',
+        serverTick: 11,
+        lastProcessedInputSeq: 11,
+        posX: 2,
+        posY: 1,
+        posZ: 0,
+        velX: 0,
+        velY: 0,
+        velZ: 0,
+        weaponSlot: 0,
+        ammoInMag: 30,
+        dashCooldown: 0,
+        health: 100,
+        kills: 0,
+        deaths: 1
+      },
+      116
+    );
+
+    app.renderFrame(0, 116);
+    expect(camera.position.y).toBeCloseTo(1.6, 4);
+    expect(camera.rotation.x).toBeCloseTo(0, 4);
+    expect(camera.rotation.z).toBeCloseTo(0, 4);
+  });
+
   it('uses predicted state when inputs are recorded', () => {
     const three = createFakeThree();
     const canvas = document.createElement('canvas');

@@ -405,6 +405,7 @@ export const buildClientHello = (
 };
 
 export const encodeInputCmd = (cmd: InputCmd, msgSeq = 1, serverSeqAck = 0) => {
+  const report = cmd.debugDecalReport;
   const builder = new flatbuffers.Builder(256);
   const payload = new InputCmdT(
     cmd.inputSeq,
@@ -423,7 +424,30 @@ export const encodeInputCmd = (cmd: InputCmd, msgSeq = 1, serverSeqAck = 0) => {
     cmd.grapple,
     cmd.shield,
     cmd.shockwave,
-    cmd.crouch
+    cmd.crouch,
+    report !== undefined,
+    report?.serverTick ?? 0,
+    report?.shotSeq ?? 0,
+    report?.hitKind ?? 0,
+    report?.surfaceType ?? 0,
+    report?.authoritativeWorldHit ?? false,
+    report?.usedProjectedHit ?? false,
+    report?.usedImpactProjection ?? false,
+    report?.decalSpawned ?? false,
+    report?.decalInFrustum ?? false,
+    report?.decalDistance ?? -1,
+    report?.decalPositionX ?? 0,
+    report?.decalPositionY ?? 0,
+    report?.decalPositionZ ?? 0,
+    report?.decalNormalX ?? 0,
+    report?.decalNormalY ?? 0,
+    report?.decalNormalZ ?? 0,
+    report?.traceHitPositionX ?? 0,
+    report?.traceHitPositionY ?? 0,
+    report?.traceHitPositionZ ?? 0,
+    report?.traceHitNormalX ?? 0,
+    report?.traceHitNormalY ?? 0,
+    report?.traceHitNormalZ ?? 0
   ).pack(builder);
   builder.finish(payload);
   return encodeEnvelope(MessageType.InputCmd, builder.asUint8Array(), msgSeq, serverSeqAck);

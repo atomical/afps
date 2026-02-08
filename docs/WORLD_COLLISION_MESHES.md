@@ -9,11 +9,11 @@ Rectangle/compound AABB colliders are fast and stable for movement, but they can
 ## Current runtime behavior
 
 - Movement + blocking collisions are still AABB-based (`afps::sim::CollisionWorld`).
-- Authoritative hitscan world-hit resolution now uses a hybrid path:
-  - AABB broadphase/fallback.
-  - Mesh/BVH narrow-phase for final building-surface hit points and normals.
-  - If an AABB building hit is selected, server performs a same-instance mesh snap pass; if no nearby triangle is found, that building AABB hit is rejected.
-  - Arena bounds/floor fallback remains AABB.
+- Authoritative hitscan world-hit resolution is backend-policy driven (`AFPS_WORLD_HIT_BACKEND`):
+  - `mesh_only` (default): triangle/BVH authoritative for buildings, AABB fallback only for non-building world bounds (`collider_id <= 0`).
+  - `hybrid`: prefer mesh/BVH when available, but allow AABB fallback for misses.
+  - `aabb`: disable mesh/BVH world-hit resolution.
+- Near-muzzle retry resolves ignored collider IDs to mesh instance IDs before retracing.
 - Server shot debug logging also records a shadow detailed trace (`world_shadow`) for comparison.
 - On server boot, registry validation auto-runs `tools/build_collision_meshes.mjs` if the file is missing/invalid or any prefab lacks explicit `triangles`.
 
@@ -82,11 +82,12 @@ What it does:
 Enable logging:
 
 ```bash
-AFPS_LOG_SHOTS=1 AFPS_SHOT_LOG_PATH=tmp/shot_debug.log ./tools/run_dev.sh
+AFPS_WORLD_HIT_BACKEND=mesh_only AFPS_LOG_SHOTS=1 AFPS_SHOT_LOG_PATH=tmp/shot_debug.log ./tools/run_dev.sh
 ```
 
 Per-shot JSON now includes:
 
+- `world_hit_backend_mode`
 - `world_shadow_checked`
 - `world_shadow.hit`
 - `world_shadow.distance`
@@ -95,9 +96,7 @@ Per-shot JSON now includes:
 - `world_shadow.face_id`
 - `world_shadow.position`
 - `world_shadow.normal`
-- `world_hit_source` values including mesh snap states:
-  - `*_mesh_snap` (AABB->mesh conversion succeeded)
-  - `mesh_snap_rejected` (AABB building hit had no nearby triangle and was dropped)
+- `world_hit_source`
 
 Use this to diagnose mid-air decals:
 
@@ -128,6 +127,7 @@ Key assertions:
 
 ```bash
 AFPS_STRICT_COLLISION_MESH=1 \
+AFPS_WORLD_HIT_BACKEND=mesh_only \
 ./server/build/afps_server --http --auth-token devtoken --host 0.0.0.0 --port 8443 --snapshot-keyframe-interval 5
 ```
 
@@ -135,6 +135,7 @@ With shot trace logging:
 
 ```bash
 AFPS_STRICT_COLLISION_MESH=1 \
+AFPS_WORLD_HIT_BACKEND=mesh_only \
 AFPS_LOG_SHOTS=1 \
 AFPS_SHOT_LOG_PATH=tmp/shot_debug.log \
 ./server/build/afps_server --http --auth-token devtoken --host 0.0.0.0 --port 8443 --snapshot-keyframe-interval 5

@@ -23,6 +23,10 @@ const PLAYER_FLAG_CROUCHED = 1 << 5;
 const CAMERA_HEIGHT = resolveEyeHeight(SIM_CONFIG);
 const CROUCH_CAMERA_HEIGHT = resolveEyeHeight(SIM_CONFIG, CAMERA_HEIGHT, true);
 const CROUCH_CAMERA_BLEND_SPEED = 14;
+const DEAD_HEALTH_EPSILON = 0.01;
+const DEAD_CAMERA_FALL_PITCH = 1.15;
+const DEAD_CAMERA_FALL_ROLL = 0.55;
+const DEAD_CAMERA_DROP_METERS = 0.8;
 const MAP_SEED_FLAG = 'VITE_MAP_SEED';
 const PROCEDURAL_MAP_FLAG = 'VITE_PROCEDURAL_MAP';
 
@@ -572,6 +576,7 @@ export const createApp = ({
     eyeHeight: DEFAULTS.cameraHeight
   };
   let cameraEyeHeight = DEFAULTS.cameraHeight;
+  let lastSnapshotHealth = 100;
   const resolvePoseEyeHeight = (crouched: boolean) => (crouched ? CROUCH_CAMERA_HEIGHT : DEFAULTS.cameraHeight);
   const resolvePlayerPose = (nowMs: number) => {
     const timeline = snapshotBuffer.sampleWithRenderTick(nowMs);
@@ -914,6 +919,9 @@ export const createApp = ({
 
   const ingestSnapshot = (snapshot: NetworkSnapshot, nowMs: number) => {
     snapshotBuffer.push(snapshot, nowMs);
+    if (Number.isFinite(snapshot.health)) {
+      lastSnapshotHealth = snapshot.health;
+    }
     prediction.reconcile(snapshot);
   };
 
@@ -1119,7 +1127,12 @@ export const createApp = ({
     } else {
       cameraEyeHeight = targetEyeHeight;
     }
-    camera.position.set(pose.posX, cameraEyeHeight + height, pose.posY);
+    const isDead = Number.isFinite(lastSnapshotHealth) && lastSnapshotHealth <= DEAD_HEALTH_EPSILON;
+    const deadBlend = isDead ? 1 : 0;
+    camera.position.set(pose.posX, cameraEyeHeight + height - DEAD_CAMERA_DROP_METERS * deadBlend, pose.posY);
+    camera.rotation.y = -lookYaw;
+    camera.rotation.x = -lookPitch - DEAD_CAMERA_FALL_PITCH * deadBlend;
+    camera.rotation.z = -DEAD_CAMERA_FALL_ROLL * deadBlend;
     beforeRenderHook?.(safeDelta, now);
     refreshOutlineFlash(now);
     if (composer) {

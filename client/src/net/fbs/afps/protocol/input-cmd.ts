@@ -109,8 +109,123 @@ crouch():boolean {
   return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
 }
 
+debugDecalReportPresent():boolean {
+  const offset = this.bb!.__offset(this.bb_pos, 38);
+  return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
+}
+
+debugDecalServerTick():number {
+  const offset = this.bb!.__offset(this.bb_pos, 40);
+  return offset ? this.bb!.readInt32(this.bb_pos + offset) : 0;
+}
+
+debugDecalShotSeq():number {
+  const offset = this.bb!.__offset(this.bb_pos, 42);
+  return offset ? this.bb!.readInt32(this.bb_pos + offset) : 0;
+}
+
+debugDecalHitKind():number {
+  const offset = this.bb!.__offset(this.bb_pos, 44);
+  return offset ? this.bb!.readUint8(this.bb_pos + offset) : 0;
+}
+
+debugDecalSurfaceType():number {
+  const offset = this.bb!.__offset(this.bb_pos, 46);
+  return offset ? this.bb!.readUint8(this.bb_pos + offset) : 0;
+}
+
+debugDecalAuthoritativeWorldHit():boolean {
+  const offset = this.bb!.__offset(this.bb_pos, 48);
+  return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
+}
+
+debugDecalUsedProjectedHit():boolean {
+  const offset = this.bb!.__offset(this.bb_pos, 50);
+  return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
+}
+
+debugDecalUsedImpactProjection():boolean {
+  const offset = this.bb!.__offset(this.bb_pos, 52);
+  return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
+}
+
+debugDecalSpawned():boolean {
+  const offset = this.bb!.__offset(this.bb_pos, 54);
+  return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
+}
+
+debugDecalInFrustum():boolean {
+  const offset = this.bb!.__offset(this.bb_pos, 56);
+  return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
+}
+
+debugDecalDistance():number {
+  const offset = this.bb!.__offset(this.bb_pos, 58);
+  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : -1.0;
+}
+
+debugDecalPositionX():number {
+  const offset = this.bb!.__offset(this.bb_pos, 60);
+  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
+}
+
+debugDecalPositionY():number {
+  const offset = this.bb!.__offset(this.bb_pos, 62);
+  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
+}
+
+debugDecalPositionZ():number {
+  const offset = this.bb!.__offset(this.bb_pos, 64);
+  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
+}
+
+debugDecalNormalX():number {
+  const offset = this.bb!.__offset(this.bb_pos, 66);
+  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
+}
+
+debugDecalNormalY():number {
+  const offset = this.bb!.__offset(this.bb_pos, 68);
+  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
+}
+
+debugDecalNormalZ():number {
+  const offset = this.bb!.__offset(this.bb_pos, 70);
+  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
+}
+
+debugTraceHitPositionX():number {
+  const offset = this.bb!.__offset(this.bb_pos, 72);
+  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
+}
+
+debugTraceHitPositionY():number {
+  const offset = this.bb!.__offset(this.bb_pos, 74);
+  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
+}
+
+debugTraceHitPositionZ():number {
+  const offset = this.bb!.__offset(this.bb_pos, 76);
+  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
+}
+
+debugTraceHitNormalX():number {
+  const offset = this.bb!.__offset(this.bb_pos, 78);
+  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
+}
+
+debugTraceHitNormalY():number {
+  const offset = this.bb!.__offset(this.bb_pos, 80);
+  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
+}
+
+debugTraceHitNormalZ():number {
+  const offset = this.bb!.__offset(this.bb_pos, 82);
+  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.0;
+}
+
 static startInputCmd(builder:flatbuffers.Builder) {
-  builder.startObject(17);
+  builder.startObject(40);
 }
 
 static addInputSeq(builder:flatbuffers.Builder, inputSeq:number) {
@@ -181,12 +296,104 @@ static addCrouch(builder:flatbuffers.Builder, crouch:boolean) {
   builder.addFieldInt8(16, +crouch, +false);
 }
 
+static addDebugDecalReportPresent(builder:flatbuffers.Builder, debugDecalReportPresent:boolean) {
+  builder.addFieldInt8(17, +debugDecalReportPresent, +false);
+}
+
+static addDebugDecalServerTick(builder:flatbuffers.Builder, debugDecalServerTick:number) {
+  builder.addFieldInt32(18, debugDecalServerTick, 0);
+}
+
+static addDebugDecalShotSeq(builder:flatbuffers.Builder, debugDecalShotSeq:number) {
+  builder.addFieldInt32(19, debugDecalShotSeq, 0);
+}
+
+static addDebugDecalHitKind(builder:flatbuffers.Builder, debugDecalHitKind:number) {
+  builder.addFieldInt8(20, debugDecalHitKind, 0);
+}
+
+static addDebugDecalSurfaceType(builder:flatbuffers.Builder, debugDecalSurfaceType:number) {
+  builder.addFieldInt8(21, debugDecalSurfaceType, 0);
+}
+
+static addDebugDecalAuthoritativeWorldHit(builder:flatbuffers.Builder, debugDecalAuthoritativeWorldHit:boolean) {
+  builder.addFieldInt8(22, +debugDecalAuthoritativeWorldHit, +false);
+}
+
+static addDebugDecalUsedProjectedHit(builder:flatbuffers.Builder, debugDecalUsedProjectedHit:boolean) {
+  builder.addFieldInt8(23, +debugDecalUsedProjectedHit, +false);
+}
+
+static addDebugDecalUsedImpactProjection(builder:flatbuffers.Builder, debugDecalUsedImpactProjection:boolean) {
+  builder.addFieldInt8(24, +debugDecalUsedImpactProjection, +false);
+}
+
+static addDebugDecalSpawned(builder:flatbuffers.Builder, debugDecalSpawned:boolean) {
+  builder.addFieldInt8(25, +debugDecalSpawned, +false);
+}
+
+static addDebugDecalInFrustum(builder:flatbuffers.Builder, debugDecalInFrustum:boolean) {
+  builder.addFieldInt8(26, +debugDecalInFrustum, +false);
+}
+
+static addDebugDecalDistance(builder:flatbuffers.Builder, debugDecalDistance:number) {
+  builder.addFieldFloat64(27, debugDecalDistance, -1.0);
+}
+
+static addDebugDecalPositionX(builder:flatbuffers.Builder, debugDecalPositionX:number) {
+  builder.addFieldFloat64(28, debugDecalPositionX, 0.0);
+}
+
+static addDebugDecalPositionY(builder:flatbuffers.Builder, debugDecalPositionY:number) {
+  builder.addFieldFloat64(29, debugDecalPositionY, 0.0);
+}
+
+static addDebugDecalPositionZ(builder:flatbuffers.Builder, debugDecalPositionZ:number) {
+  builder.addFieldFloat64(30, debugDecalPositionZ, 0.0);
+}
+
+static addDebugDecalNormalX(builder:flatbuffers.Builder, debugDecalNormalX:number) {
+  builder.addFieldFloat64(31, debugDecalNormalX, 0.0);
+}
+
+static addDebugDecalNormalY(builder:flatbuffers.Builder, debugDecalNormalY:number) {
+  builder.addFieldFloat64(32, debugDecalNormalY, 0.0);
+}
+
+static addDebugDecalNormalZ(builder:flatbuffers.Builder, debugDecalNormalZ:number) {
+  builder.addFieldFloat64(33, debugDecalNormalZ, 0.0);
+}
+
+static addDebugTraceHitPositionX(builder:flatbuffers.Builder, debugTraceHitPositionX:number) {
+  builder.addFieldFloat64(34, debugTraceHitPositionX, 0.0);
+}
+
+static addDebugTraceHitPositionY(builder:flatbuffers.Builder, debugTraceHitPositionY:number) {
+  builder.addFieldFloat64(35, debugTraceHitPositionY, 0.0);
+}
+
+static addDebugTraceHitPositionZ(builder:flatbuffers.Builder, debugTraceHitPositionZ:number) {
+  builder.addFieldFloat64(36, debugTraceHitPositionZ, 0.0);
+}
+
+static addDebugTraceHitNormalX(builder:flatbuffers.Builder, debugTraceHitNormalX:number) {
+  builder.addFieldFloat64(37, debugTraceHitNormalX, 0.0);
+}
+
+static addDebugTraceHitNormalY(builder:flatbuffers.Builder, debugTraceHitNormalY:number) {
+  builder.addFieldFloat64(38, debugTraceHitNormalY, 0.0);
+}
+
+static addDebugTraceHitNormalZ(builder:flatbuffers.Builder, debugTraceHitNormalZ:number) {
+  builder.addFieldFloat64(39, debugTraceHitNormalZ, 0.0);
+}
+
 static endInputCmd(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createInputCmd(builder:flatbuffers.Builder, inputSeq:number, moveX:number, moveY:number, lookDeltaX:number, lookDeltaY:number, viewYaw:number, viewPitch:number, weaponSlot:number, jump:boolean, fire:boolean, ads:boolean, sprint:boolean, dash:boolean, grapple:boolean, shield:boolean, shockwave:boolean, crouch:boolean):flatbuffers.Offset {
+static createInputCmd(builder:flatbuffers.Builder, inputSeq:number, moveX:number, moveY:number, lookDeltaX:number, lookDeltaY:number, viewYaw:number, viewPitch:number, weaponSlot:number, jump:boolean, fire:boolean, ads:boolean, sprint:boolean, dash:boolean, grapple:boolean, shield:boolean, shockwave:boolean, crouch:boolean, debugDecalReportPresent:boolean, debugDecalServerTick:number, debugDecalShotSeq:number, debugDecalHitKind:number, debugDecalSurfaceType:number, debugDecalAuthoritativeWorldHit:boolean, debugDecalUsedProjectedHit:boolean, debugDecalUsedImpactProjection:boolean, debugDecalSpawned:boolean, debugDecalInFrustum:boolean, debugDecalDistance:number, debugDecalPositionX:number, debugDecalPositionY:number, debugDecalPositionZ:number, debugDecalNormalX:number, debugDecalNormalY:number, debugDecalNormalZ:number, debugTraceHitPositionX:number, debugTraceHitPositionY:number, debugTraceHitPositionZ:number, debugTraceHitNormalX:number, debugTraceHitNormalY:number, debugTraceHitNormalZ:number):flatbuffers.Offset {
   InputCmd.startInputCmd(builder);
   InputCmd.addInputSeq(builder, inputSeq);
   InputCmd.addMoveX(builder, moveX);
@@ -205,6 +412,29 @@ static createInputCmd(builder:flatbuffers.Builder, inputSeq:number, moveX:number
   InputCmd.addShield(builder, shield);
   InputCmd.addShockwave(builder, shockwave);
   InputCmd.addCrouch(builder, crouch);
+  InputCmd.addDebugDecalReportPresent(builder, debugDecalReportPresent);
+  InputCmd.addDebugDecalServerTick(builder, debugDecalServerTick);
+  InputCmd.addDebugDecalShotSeq(builder, debugDecalShotSeq);
+  InputCmd.addDebugDecalHitKind(builder, debugDecalHitKind);
+  InputCmd.addDebugDecalSurfaceType(builder, debugDecalSurfaceType);
+  InputCmd.addDebugDecalAuthoritativeWorldHit(builder, debugDecalAuthoritativeWorldHit);
+  InputCmd.addDebugDecalUsedProjectedHit(builder, debugDecalUsedProjectedHit);
+  InputCmd.addDebugDecalUsedImpactProjection(builder, debugDecalUsedImpactProjection);
+  InputCmd.addDebugDecalSpawned(builder, debugDecalSpawned);
+  InputCmd.addDebugDecalInFrustum(builder, debugDecalInFrustum);
+  InputCmd.addDebugDecalDistance(builder, debugDecalDistance);
+  InputCmd.addDebugDecalPositionX(builder, debugDecalPositionX);
+  InputCmd.addDebugDecalPositionY(builder, debugDecalPositionY);
+  InputCmd.addDebugDecalPositionZ(builder, debugDecalPositionZ);
+  InputCmd.addDebugDecalNormalX(builder, debugDecalNormalX);
+  InputCmd.addDebugDecalNormalY(builder, debugDecalNormalY);
+  InputCmd.addDebugDecalNormalZ(builder, debugDecalNormalZ);
+  InputCmd.addDebugTraceHitPositionX(builder, debugTraceHitPositionX);
+  InputCmd.addDebugTraceHitPositionY(builder, debugTraceHitPositionY);
+  InputCmd.addDebugTraceHitPositionZ(builder, debugTraceHitPositionZ);
+  InputCmd.addDebugTraceHitNormalX(builder, debugTraceHitNormalX);
+  InputCmd.addDebugTraceHitNormalY(builder, debugTraceHitNormalY);
+  InputCmd.addDebugTraceHitNormalZ(builder, debugTraceHitNormalZ);
   return InputCmd.endInputCmd(builder);
 }
 
@@ -226,7 +456,30 @@ unpack(): InputCmdT {
     this.grapple(),
     this.shield(),
     this.shockwave(),
-    this.crouch()
+    this.crouch(),
+    this.debugDecalReportPresent(),
+    this.debugDecalServerTick(),
+    this.debugDecalShotSeq(),
+    this.debugDecalHitKind(),
+    this.debugDecalSurfaceType(),
+    this.debugDecalAuthoritativeWorldHit(),
+    this.debugDecalUsedProjectedHit(),
+    this.debugDecalUsedImpactProjection(),
+    this.debugDecalSpawned(),
+    this.debugDecalInFrustum(),
+    this.debugDecalDistance(),
+    this.debugDecalPositionX(),
+    this.debugDecalPositionY(),
+    this.debugDecalPositionZ(),
+    this.debugDecalNormalX(),
+    this.debugDecalNormalY(),
+    this.debugDecalNormalZ(),
+    this.debugTraceHitPositionX(),
+    this.debugTraceHitPositionY(),
+    this.debugTraceHitPositionZ(),
+    this.debugTraceHitNormalX(),
+    this.debugTraceHitNormalY(),
+    this.debugTraceHitNormalZ()
   );
 }
 
@@ -249,6 +502,29 @@ unpackTo(_o: InputCmdT): void {
   _o.shield = this.shield();
   _o.shockwave = this.shockwave();
   _o.crouch = this.crouch();
+  _o.debugDecalReportPresent = this.debugDecalReportPresent();
+  _o.debugDecalServerTick = this.debugDecalServerTick();
+  _o.debugDecalShotSeq = this.debugDecalShotSeq();
+  _o.debugDecalHitKind = this.debugDecalHitKind();
+  _o.debugDecalSurfaceType = this.debugDecalSurfaceType();
+  _o.debugDecalAuthoritativeWorldHit = this.debugDecalAuthoritativeWorldHit();
+  _o.debugDecalUsedProjectedHit = this.debugDecalUsedProjectedHit();
+  _o.debugDecalUsedImpactProjection = this.debugDecalUsedImpactProjection();
+  _o.debugDecalSpawned = this.debugDecalSpawned();
+  _o.debugDecalInFrustum = this.debugDecalInFrustum();
+  _o.debugDecalDistance = this.debugDecalDistance();
+  _o.debugDecalPositionX = this.debugDecalPositionX();
+  _o.debugDecalPositionY = this.debugDecalPositionY();
+  _o.debugDecalPositionZ = this.debugDecalPositionZ();
+  _o.debugDecalNormalX = this.debugDecalNormalX();
+  _o.debugDecalNormalY = this.debugDecalNormalY();
+  _o.debugDecalNormalZ = this.debugDecalNormalZ();
+  _o.debugTraceHitPositionX = this.debugTraceHitPositionX();
+  _o.debugTraceHitPositionY = this.debugTraceHitPositionY();
+  _o.debugTraceHitPositionZ = this.debugTraceHitPositionZ();
+  _o.debugTraceHitNormalX = this.debugTraceHitNormalX();
+  _o.debugTraceHitNormalY = this.debugTraceHitNormalY();
+  _o.debugTraceHitNormalZ = this.debugTraceHitNormalZ();
 }
 }
 
@@ -270,7 +546,30 @@ constructor(
   public grapple: boolean = false,
   public shield: boolean = false,
   public shockwave: boolean = false,
-  public crouch: boolean = false
+  public crouch: boolean = false,
+  public debugDecalReportPresent: boolean = false,
+  public debugDecalServerTick: number = 0,
+  public debugDecalShotSeq: number = 0,
+  public debugDecalHitKind: number = 0,
+  public debugDecalSurfaceType: number = 0,
+  public debugDecalAuthoritativeWorldHit: boolean = false,
+  public debugDecalUsedProjectedHit: boolean = false,
+  public debugDecalUsedImpactProjection: boolean = false,
+  public debugDecalSpawned: boolean = false,
+  public debugDecalInFrustum: boolean = false,
+  public debugDecalDistance: number = -1.0,
+  public debugDecalPositionX: number = 0.0,
+  public debugDecalPositionY: number = 0.0,
+  public debugDecalPositionZ: number = 0.0,
+  public debugDecalNormalX: number = 0.0,
+  public debugDecalNormalY: number = 0.0,
+  public debugDecalNormalZ: number = 0.0,
+  public debugTraceHitPositionX: number = 0.0,
+  public debugTraceHitPositionY: number = 0.0,
+  public debugTraceHitPositionZ: number = 0.0,
+  public debugTraceHitNormalX: number = 0.0,
+  public debugTraceHitNormalY: number = 0.0,
+  public debugTraceHitNormalZ: number = 0.0
 ){}
 
 
@@ -292,7 +591,30 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
     this.grapple,
     this.shield,
     this.shockwave,
-    this.crouch
+    this.crouch,
+    this.debugDecalReportPresent,
+    this.debugDecalServerTick,
+    this.debugDecalShotSeq,
+    this.debugDecalHitKind,
+    this.debugDecalSurfaceType,
+    this.debugDecalAuthoritativeWorldHit,
+    this.debugDecalUsedProjectedHit,
+    this.debugDecalUsedImpactProjection,
+    this.debugDecalSpawned,
+    this.debugDecalInFrustum,
+    this.debugDecalDistance,
+    this.debugDecalPositionX,
+    this.debugDecalPositionY,
+    this.debugDecalPositionZ,
+    this.debugDecalNormalX,
+    this.debugDecalNormalY,
+    this.debugDecalNormalZ,
+    this.debugTraceHitPositionX,
+    this.debugTraceHitPositionY,
+    this.debugTraceHitPositionZ,
+    this.debugTraceHitNormalX,
+    this.debugTraceHitNormalY,
+    this.debugTraceHitNormalZ
   );
 }
 }

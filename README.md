@@ -63,10 +63,16 @@ To run server + client together (HTTP signaling, default):
 ./tools/run_dev.sh
 ```
 
+`run_dev.sh` defaults the server world-hit backend to `mesh_only` (triangle-authoritative building hits). Override with:
+
+```bash
+./tools/run_dev.sh --world-hit-backend hybrid
+```
+
 To enable shot debug logging and write per-shot JSON lines to `tmp/shot_debug.log`:
 
 ```bash
-AFPS_LOG_SHOTS=1 AFPS_SHOT_LOG_PATH=tmp/shot_debug.log ./tools/run_dev.sh
+AFPS_WORLD_HIT_BACKEND=mesh_only AFPS_LOG_SHOTS=1 AFPS_SHOT_LOG_PATH=tmp/shot_debug.log ./tools/run_dev.sh
 
 # rebuild building mesh-collider registry from OBJ assets
 node tools/build_collision_meshes.mjs
@@ -145,6 +151,7 @@ Recommended (strict collision-mesh validation + auto-rebuild if needed):
 
 ```bash
 AFPS_STRICT_COLLISION_MESH=1 \
+AFPS_WORLD_HIT_BACKEND=mesh_only \
 ./build/afps_server --http --auth-token devtoken --host 0.0.0.0 --port 8443 --snapshot-keyframe-interval 5
 ```
 

@@ -161,6 +161,84 @@ TEST_CASE("ParseFireWeaponRequestPayload reads origin and direction") {
   CHECK(request.debug_projection_telemetry_enabled);
 }
 
+TEST_CASE("ParseInputCmdPayload reads decal debug telemetry") {
+  flatbuffers::FlatBufferBuilder builder(256);
+  const auto offset = afps::protocol::CreateInputCmd(
+      builder,
+      21,
+      0.1,
+      -0.2,
+      0.3,
+      -0.4,
+      1.5,
+      -0.6,
+      2,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      777,
+      55,
+      1,
+      2,
+      true,
+      true,
+      false,
+      true,
+      true,
+      3.25,
+      11.0,
+      12.0,
+      13.0,
+      0.0,
+      1.0,
+      0.0,
+      21.0,
+      22.0,
+      23.0,
+      0.2,
+      0.3,
+      0.4);
+  builder.Finish(offset);
+  const std::vector<uint8_t> payload(builder.GetBufferPointer(),
+                                     builder.GetBufferPointer() + builder.GetSize());
+
+  InputCmd cmd;
+  std::string error;
+  CHECK(ParseInputCmdPayload(payload, cmd, error));
+  CHECK(error.empty());
+  CHECK(cmd.input_seq == 21);
+  CHECK(cmd.fire);
+  CHECK(cmd.crouch);
+  CHECK(cmd.debug_decal_report_present);
+  CHECK(cmd.debug_decal_server_tick == 777);
+  CHECK(cmd.debug_decal_shot_seq == 55);
+  CHECK(static_cast<int>(cmd.debug_decal_hit_kind) == 1);
+  CHECK(static_cast<int>(cmd.debug_decal_surface_type) == 2);
+  CHECK(cmd.debug_decal_authoritative_world_hit);
+  CHECK(cmd.debug_decal_used_projected_hit);
+  CHECK_FALSE(cmd.debug_decal_used_impact_projection);
+  CHECK(cmd.debug_decal_spawned);
+  CHECK(cmd.debug_decal_in_frustum);
+  CHECK(cmd.debug_decal_distance == doctest::Approx(3.25));
+  CHECK(cmd.debug_decal_position_x == doctest::Approx(11.0));
+  CHECK(cmd.debug_decal_position_y == doctest::Approx(12.0));
+  CHECK(cmd.debug_decal_position_z == doctest::Approx(13.0));
+  CHECK(cmd.debug_decal_normal_y == doctest::Approx(1.0));
+  CHECK(cmd.debug_trace_hit_position_x == doctest::Approx(21.0));
+  CHECK(cmd.debug_trace_hit_position_y == doctest::Approx(22.0));
+  CHECK(cmd.debug_trace_hit_position_z == doctest::Approx(23.0));
+  CHECK(cmd.debug_trace_hit_normal_x == doctest::Approx(0.2));
+  CHECK(cmd.debug_trace_hit_normal_y == doctest::Approx(0.3));
+  CHECK(cmd.debug_trace_hit_normal_z == doctest::Approx(0.4));
+}
+
 TEST_CASE("BuildGameEventBatch emits projectile spawn fields") {
   GameEventBatch batch;
   batch.server_tick = 77;

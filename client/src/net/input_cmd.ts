@@ -1,5 +1,30 @@
 import type { InputSample } from '../input/sampler';
 
+export interface DecalDebugReport {
+  serverTick: number;
+  shotSeq: number;
+  hitKind: number;
+  surfaceType: number;
+  authoritativeWorldHit: boolean;
+  usedProjectedHit: boolean;
+  usedImpactProjection: boolean;
+  decalSpawned: boolean;
+  decalInFrustum: boolean;
+  decalDistance: number;
+  decalPositionX: number;
+  decalPositionY: number;
+  decalPositionZ: number;
+  decalNormalX: number;
+  decalNormalY: number;
+  decalNormalZ: number;
+  traceHitPositionX: number;
+  traceHitPositionY: number;
+  traceHitPositionZ: number;
+  traceHitNormalX: number;
+  traceHitNormalY: number;
+  traceHitNormalZ: number;
+}
+
 export interface InputCmd {
   type: 'InputCmd';
   inputSeq: number;
@@ -19,6 +44,7 @@ export interface InputCmd {
   grapple: boolean;
   shield: boolean;
   shockwave: boolean;
+  debugDecalReport?: DecalDebugReport;
 }
 
 const clampAxis = (value: number) => {

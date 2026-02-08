@@ -6,7 +6,7 @@ This document lists rectangle-based collider strategies for AFPS, with tradeoffs
 
 - Collider shape: axis-aligned 3D boxes (`AABB`).
 - Runtime storage: `CollisionWorld.colliders`.
-- Authoritative world hitscan raycast: hybrid AABB + mesh/BVH.
+- Authoritative world hitscan raycast: backend-policy mesh path (`mesh_only` default).
 - Movement blocking raycast/sweep: AABB.
 - Main code paths:
   - `shared/sim/sim.h`
@@ -17,10 +17,10 @@ This document lists rectangle-based collider strategies for AFPS, with tradeoffs
 ## Runtime Today
 
 - Player movement and collision response remain AABB-based.
-- Authoritative hitscan world hit uses:
-  - AABB broadphase/fallback.
-  - Mesh/BVH narrow-phase for final building surface hit point/normal.
-  - AABB building hit -> mesh snap pass; if no nearby triangle is found, the server rejects that building AABB hit to avoid mid-air decals.
+- Authoritative hitscan world hit uses backend policy (`AFPS_WORLD_HIT_BACKEND`):
+  - `mesh_only` (default): mesh/BVH authoritative for building surfaces; AABB fallback only for non-building bounds (`collider_id <= 0`).
+  - `hybrid`: mesh preferred, AABB fallback allowed.
+  - `aabb`: mesh path disabled.
 - Near-muzzle corner retry supports ignoring either:
   - `ignore_collider_id` (AABB), or
   - mapped mesh `instance_id` (mesh/BVH path).
@@ -102,7 +102,7 @@ This document lists rectangle-based collider strategies for AFPS, with tradeoffs
 - Multiplayer determinism: high after full server/client implementation.
 - Status in repo: not implemented.
 
-## Option 7: Hybrid (AABB For Movement, Mesh/BVH For Decal Placement)
+## Option 7: Mesh-Authoritative Hits (AABB For Movement, Mesh/BVH For Shot Surfaces)
 
 - Description: keep rectangle colliders for movement/broadphase, but use mesh/BVH for authoritative world-hit surface resolution.
 - Pros:
@@ -114,7 +114,7 @@ This document lists rectangle-based collider strategies for AFPS, with tradeoffs
   - still needs AABB fallback handling for non-building geometry.
 - Fit quality for decals/hits: high.
 - Multiplayer determinism for gameplay: high.
-- Status in repo: implemented for authoritative hitscan world-hit resolution.
+- Status in repo: implemented (`mesh_only` default; `hybrid` and `aabb` supported).
 
 ## Option 8: Full Mesh Collision For Movement (Not Recommended Now)
 
@@ -133,7 +133,7 @@ This document lists rectangle-based collider strategies for AFPS, with tradeoffs
 
 - Short term:
   - keep compound AABB for movement collision and spawn blocking.
-  - keep authoritative hitscan on hybrid AABB + mesh/BVH path.
+  - keep authoritative hitscan on mesh/BVH backend (`mesh_only`) for building impacts.
   - keep triangle registry complete for all building prefabs.
 - Medium term:
   - add focused dense compound AABB profiles only for movement snag hotspots.

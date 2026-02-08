@@ -79,6 +79,29 @@ struct InputCmd {
   bool shield = false;
   bool shockwave = false;
   bool crouch = false;
+  bool debug_decal_report_present = false;
+  int debug_decal_server_tick = 0;
+  int debug_decal_shot_seq = 0;
+  uint8_t debug_decal_hit_kind = 0;
+  uint8_t debug_decal_surface_type = 0;
+  bool debug_decal_authoritative_world_hit = false;
+  bool debug_decal_used_projected_hit = false;
+  bool debug_decal_used_impact_projection = false;
+  bool debug_decal_spawned = false;
+  bool debug_decal_in_frustum = false;
+  double debug_decal_distance = -1.0;
+  double debug_decal_position_x = 0.0;
+  double debug_decal_position_y = 0.0;
+  double debug_decal_position_z = 0.0;
+  double debug_decal_normal_x = 0.0;
+  double debug_decal_normal_y = 0.0;
+  double debug_decal_normal_z = 0.0;
+  double debug_trace_hit_position_x = 0.0;
+  double debug_trace_hit_position_y = 0.0;
+  double debug_trace_hit_position_z = 0.0;
+  double debug_trace_hit_normal_x = 0.0;
+  double debug_trace_hit_normal_y = 0.0;
+  double debug_trace_hit_normal_z = 0.0;
 };
 
 struct FireWeaponRequest {

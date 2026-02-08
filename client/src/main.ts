@@ -148,6 +148,7 @@ type ProjectionTelemetryEvent = {
   };
   timestampMs: number;
 };
+type DecalDebugReport = import('./net/input_cmd').DecalDebugReport;
 
 const dotVec = (a: Vec3, b: Vec3) => a.x * b.x + a.y * b.y + a.z * b.z;
 
@@ -1768,6 +1769,8 @@ if (!signalingUrl) {
     const projectileWeaponSlotById = new Map<number, number>();
     const seenShotTraceByKey = new Map<string, number>();
     const seenProjectileImpactById = new Map<number, number>();
+    const pendingDecalDebugReports: DecalDebugReport[] = [];
+    const MAX_PENDING_DECAL_DEBUG_REPORTS = 64;
     const pruneSeenFx = (serverTick: number) => {
       if (!Number.isFinite(serverTick) || serverTick < 0) {
         return;
@@ -1796,6 +1799,46 @@ if (!signalingUrl) {
           break;
         }
         seenProjectileImpactById.delete(first);
+      }
+    };
+    const enqueueDecalDebugReport = (report: DecalDebugReport) => {
+      pendingDecalDebugReports.push(report);
+      if (pendingDecalDebugReports.length > MAX_PENDING_DECAL_DEBUG_REPORTS) {
+        pendingDecalDebugReports.splice(0, pendingDecalDebugReports.length - MAX_PENDING_DECAL_DEBUG_REPORTS);
+      }
+    };
+    const measureDecalVisibility = (position: Vec3) => {
+      const camera = app.state.camera as unknown as THREE.Camera | null;
+      if (!camera) {
+        return { inFrustum: false, distance: -1 };
+      }
+      const cameraPos = (camera as unknown as { position?: Vec3 }).position;
+      const distance =
+        cameraPos &&
+        Number.isFinite(cameraPos.x) &&
+        Number.isFinite(cameraPos.y) &&
+        Number.isFinite(cameraPos.z)
+          ? Math.hypot(position.x - cameraPos.x, position.y - cameraPos.y, position.z - cameraPos.z)
+          : -1;
+      try {
+        const matrix4Ctor = (three as unknown as { Matrix4?: typeof THREE.Matrix4 }).Matrix4;
+        const frustumCtor = (three as unknown as { Frustum?: typeof THREE.Frustum }).Frustum;
+        const vector3Ctor = (three as unknown as { Vector3?: typeof THREE.Vector3 }).Vector3;
+        if (!matrix4Ctor || !frustumCtor || !vector3Ctor) {
+          return { inFrustum: false, distance };
+        }
+        (camera as unknown as { updateMatrixWorld?: (force?: boolean) => void }).updateMatrixWorld?.(true);
+        const projectionMatrix = (camera as unknown as { projectionMatrix?: THREE.Matrix4 }).projectionMatrix;
+        const matrixWorldInverse = (camera as unknown as { matrixWorldInverse?: THREE.Matrix4 }).matrixWorldInverse;
+        if (!projectionMatrix || !matrixWorldInverse) {
+          return { inFrustum: false, distance };
+        }
+        const proj = new matrix4Ctor().multiplyMatrices(projectionMatrix, matrixWorldInverse);
+        const frustum = new frustumCtor().setFromProjectionMatrix(proj);
+        const point = new vector3Ctor(position.x, position.y, position.z);
+        return { inFrustum: frustum.containsPoint(point), distance };
+      } catch {
+        return { inFrustum: false, distance };
       }
     };
 
@@ -2498,6 +2541,7 @@ const debugFxLog = (...args: unknown[]) => {
           }
           case 'ShotTraceFx': {
             const traceKey = `${event.shooterId}:${event.shotSeq}`;
+            const isLocalShot = Boolean(localConnectionId) && event.shooterId === localConnectionId;
             if (seenShotTraceByKey.has(traceKey)) {
               debugFxLog('shot-trace-duplicate', { traceKey, shooterId: event.shooterId, shotSeq: event.shotSeq });
               break;
@@ -2515,6 +2559,33 @@ const debugFxLog = (...args: unknown[]) => {
                 shotSeq: event.shotSeq,
                 reason: 'authoritative_none'
               });
+              if (debugOverlaysVisible && isLocalShot) {
+                const visibility = measureDecalVisibility(trace.hitPos);
+                enqueueDecalDebugReport({
+                  serverTick: batch.serverTick,
+                  shotSeq: event.shotSeq,
+                  hitKind: trace.hitKind,
+                  surfaceType: trace.surfaceType,
+                  authoritativeWorldHit: false,
+                  usedProjectedHit: false,
+                  usedImpactProjection: false,
+                  decalSpawned: false,
+                  decalInFrustum: visibility.inFrustum,
+                  decalDistance: visibility.distance,
+                  decalPositionX: trace.hitPos.x,
+                  decalPositionY: trace.hitPos.y,
+                  decalPositionZ: trace.hitPos.z,
+                  decalNormalX: trace.normal.x,
+                  decalNormalY: trace.normal.y,
+                  decalNormalZ: trace.normal.z,
+                  traceHitPositionX: trace.hitPos.x,
+                  traceHitPositionY: trace.hitPos.y,
+                  traceHitPositionZ: trace.hitPos.z,
+                  traceHitNormalX: trace.normal.x,
+                  traceHitNormalY: trace.normal.y,
+                  traceHitNormalZ: trace.normal.z
+                });
+              }
               break;
             }
             const isAuthoritativeWorldHit = trace.hitKind === 1;
@@ -2560,7 +2631,9 @@ const debugFxLog = (...args: unknown[]) => {
               surfaceType: trace.surfaceType,
               seed
             });
+            let decalSpawned = false;
             if (fxSettings.decals && trace.hitKind === 1) {
+              decalSpawned = true;
               let decalTtl: number | undefined;
               if (!isAuthoritativeWorldHit && !projectedWorldHit && !projectedImpact) {
                 const firedDownward = trace.dir.y < -0.05;
@@ -2584,6 +2657,33 @@ const debugFxLog = (...args: unknown[]) => {
                 shotSeq: event.shotSeq,
                 surfaceType: trace.surfaceType,
                 decalTtl: decalTtl ?? null
+              });
+            }
+            if (debugOverlaysVisible && isLocalShot) {
+              const visibility = measureDecalVisibility(impactPos);
+              enqueueDecalDebugReport({
+                serverTick: batch.serverTick,
+                shotSeq: event.shotSeq,
+                hitKind: trace.hitKind,
+                surfaceType: trace.surfaceType,
+                authoritativeWorldHit: isAuthoritativeWorldHit,
+                usedProjectedHit: projectedWorldHit !== null,
+                usedImpactProjection: projectedImpact !== null,
+                decalSpawned,
+                decalInFrustum: visibility.inFrustum,
+                decalDistance: visibility.distance,
+                decalPositionX: impactPos.x,
+                decalPositionY: impactPos.y,
+                decalPositionZ: impactPos.z,
+                decalNormalX: impactNormal.x,
+                decalNormalY: impactNormal.y,
+                decalNormalZ: impactNormal.z,
+                traceHitPositionX: trace.hitPos.x,
+                traceHitPositionY: trace.hitPos.y,
+                traceHitPositionZ: trace.hitPos.z,
+                traceHitNormalX: trace.normal.x,
+                traceHitNormalY: trace.normal.y,
+                traceHitNormalZ: trace.normal.z
               });
             }
             break;
@@ -2717,6 +2817,7 @@ const debugFxLog = (...args: unknown[]) => {
           logger,
           onSend: (cmd) => {
             if (reconnecting) {
+              cmd.debugDecalReport = undefined;
               cmd.moveX = 0;
               cmd.moveY = 0;
               cmd.lookDeltaX = 0;
@@ -2732,6 +2833,10 @@ const debugFxLog = (...args: unknown[]) => {
               cmd.shockwave = false;
               return;
             }
+            cmd.debugDecalReport =
+              debugOverlaysVisible && pendingDecalDebugReports.length > 0
+                ? pendingDecalDebugReports.shift()
+                : undefined;
             const lookX = cmd.lookDeltaX;
             const lookY = cmd.lookDeltaY;
             adsTarget = cmd.ads ? 1 : 0;

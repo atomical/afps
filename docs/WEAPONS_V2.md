@@ -45,7 +45,8 @@ Client responsibilities:
 - Compute tracer length as `max(0, hitDistance - 0.2)` when drawing from muzzle.
 - Spawn impact VFX at `hitPos*Q` when `hitKind != None`.
 - Spawn decals at `hitPos*Q` only when `hitKind == World` and `fxSettings.decals == true`.
-- For `hitKind == World`, project onto tagged static map meshes using the shot line first (muzzle ray + short backtrack probe), then fall back to authoritative hit position when no mesh hit is available. This keeps decals on visible walls/roofs even when gameplay colliders are coarse.
+- For authoritative `hitKind == World`, use server `hitPos` and `normal` directly (plus tiny normal offset) and skip client reprojection.
+- Surface projection helpers are only for debug/miss visualization paths.
 
 Debug aid:
 - `window.__afpsWorldSurface` exposes `projectTraceWorldHit`, `raycastStaticSurface`, and `getPlayerPose` for browser/UI diagnostics.

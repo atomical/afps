@@ -216,6 +216,40 @@ bool ParseInputCmdPayload(const std::vector<uint8_t> &payload, InputCmd &out, st
   out.shield = cmd->shield();
   out.shockwave = cmd->shockwave();
   out.crouch = cmd->crouch();
+  out.debug_decal_report_present = cmd->debug_decal_report_present();
+  out.debug_decal_server_tick = cmd->debug_decal_server_tick();
+  out.debug_decal_shot_seq = cmd->debug_decal_shot_seq();
+  out.debug_decal_hit_kind = cmd->debug_decal_hit_kind();
+  out.debug_decal_surface_type = cmd->debug_decal_surface_type();
+  out.debug_decal_authoritative_world_hit = cmd->debug_decal_authoritative_world_hit();
+  out.debug_decal_used_projected_hit = cmd->debug_decal_used_projected_hit();
+  out.debug_decal_used_impact_projection = cmd->debug_decal_used_impact_projection();
+  out.debug_decal_spawned = cmd->debug_decal_spawned();
+  out.debug_decal_in_frustum = cmd->debug_decal_in_frustum();
+  out.debug_decal_distance = cmd->debug_decal_distance();
+  out.debug_decal_position_x = cmd->debug_decal_position_x();
+  out.debug_decal_position_y = cmd->debug_decal_position_y();
+  out.debug_decal_position_z = cmd->debug_decal_position_z();
+  out.debug_decal_normal_x = cmd->debug_decal_normal_x();
+  out.debug_decal_normal_y = cmd->debug_decal_normal_y();
+  out.debug_decal_normal_z = cmd->debug_decal_normal_z();
+  out.debug_trace_hit_position_x = cmd->debug_trace_hit_position_x();
+  out.debug_trace_hit_position_y = cmd->debug_trace_hit_position_y();
+  out.debug_trace_hit_position_z = cmd->debug_trace_hit_position_z();
+  out.debug_trace_hit_normal_x = cmd->debug_trace_hit_normal_x();
+  out.debug_trace_hit_normal_y = cmd->debug_trace_hit_normal_y();
+  out.debug_trace_hit_normal_z = cmd->debug_trace_hit_normal_z();
+  if (out.debug_decal_report_present &&
+      (!IsFinite(out.debug_decal_distance) ||
+       !IsFinite(out.debug_decal_position_x) || !IsFinite(out.debug_decal_position_y) ||
+       !IsFinite(out.debug_decal_position_z) || !IsFinite(out.debug_decal_normal_x) ||
+       !IsFinite(out.debug_decal_normal_y) || !IsFinite(out.debug_decal_normal_z) ||
+       !IsFinite(out.debug_trace_hit_position_x) || !IsFinite(out.debug_trace_hit_position_y) ||
+       !IsFinite(out.debug_trace_hit_position_z) || !IsFinite(out.debug_trace_hit_normal_x) ||
+       !IsFinite(out.debug_trace_hit_normal_y) || !IsFinite(out.debug_trace_hit_normal_z))) {
+    error = "invalid_field: debug_decal_report";
+    return false;
+  }
   return true;
 }
 

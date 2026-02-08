@@ -69,6 +69,7 @@ When enabled, the server emits JSON lines with `event:"shot_debug"` on every hit
 - player-hit candidate result
 - eye world hit, muzzle probe hit, retry hit, and final world hit
 - source decision (`world_hit_source`: `eye`, `muzzle_block`, `muzzle_retry`, `eye_near_muzzle_suppressed`, `arena_side_ignored`)
+- backend policy (`world_hit_backend_mode`: `mesh_only|hybrid|aabb`)
 - final authoritative hit outcome (`kind`, target id, distance, position, normal, surface)
 
 This is intended for correlation with client projection telemetry (`window.__afpsProjectionTelemetry`) when decals appear in the wrong place.
