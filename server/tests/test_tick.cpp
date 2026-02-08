@@ -23,3 +23,23 @@ TEST_CASE("TickAccumulator clamps invalid tick rate") {
   CHECK(accumulator.tick_rate() == 1);
   CHECK(accumulator.tick_duration().count() > 0);
 }
+
+#ifdef AFPS_ENABLE_WEBRTC
+TEST_CASE("mesh_only backend rejects building AABB fallback") {
+  afps::server::WorldHitFallbackPolicyInput input;
+  input.backend_mode = afps::server::WorldHitBackendMode::MeshOnly;
+  input.aabb_hit = true;
+  input.aabb_collider_id = 42;
+  input.mesh_hit = false;
+  CHECK_FALSE(afps::server::WorldHitAllowsAabbFallback(input));
+}
+
+TEST_CASE("mesh_only backend still permits non-building fallback") {
+  afps::server::WorldHitFallbackPolicyInput input;
+  input.backend_mode = afps::server::WorldHitBackendMode::MeshOnly;
+  input.aabb_hit = true;
+  input.aabb_collider_id = -1;
+  input.mesh_hit = false;
+  CHECK(afps::server::WorldHitAllowsAabbFallback(input));
+}
+#endif

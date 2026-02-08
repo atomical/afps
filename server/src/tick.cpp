@@ -62,7 +62,35 @@ bool TickAccumulator::initialized() const {
 #include <iostream>
 #include <sstream>
 
+namespace afps::server {
+
+bool WorldHitAllowsAabbFallback(const WorldHitFallbackPolicyInput &input) {
+  if (!input.aabb_hit) {
+    return false;
+  }
+  switch (input.backend_mode) {
+    case WorldHitBackendMode::Aabb:
+      return true;
+    case WorldHitBackendMode::Hybrid:
+      return !input.mesh_hit;
+    case WorldHitBackendMode::MeshOnly:
+    default:
+      // In mesh-only mode, building colliders (positive ids) are never valid
+      // fallback targets for authoritative world hit/decal anchoring.
+      if (input.aabb_collider_id > 0) {
+        return false;
+      }
+      // Arena bounds/floor (-1/0) may still provide fallback world hits.
+      return !input.mesh_hit;
+  }
+}
+
+}  // namespace afps::server
+
 namespace {
+using afps::server::WorldHitBackendMode;
+using afps::server::WorldHitFallbackPolicyInput;
+
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kProjectileTtlSeconds = 3.0;
 constexpr double kProjectileRadius = 0.15;
@@ -314,12 +342,6 @@ bool EnvFlagEnabled(const char *raw) {
   });
   return value == "1" || value == "true" || value == "yes" || value == "on";
 }
-
-enum class WorldHitBackendMode : uint8_t {
-  Aabb = 0,
-  Hybrid = 1,
-  MeshOnly = 2,
-};
 
 const char *WorldHitBackendModeName(WorldHitBackendMode mode) {
   switch (mode) {
@@ -1294,12 +1316,13 @@ WorldHitscanHit ResolveWorldHitscan(const afps::combat::Vec3 &origin,
       ResolveWorldHitscanDetailed(origin, dir, max_range, options, instances, registry, prefab_lookup,
                                   resolved_ignore_instance_id);
   if (!mesh_hit.hit) {
-    if (backend_mode == WorldHitBackendMode::Hybrid) {
-      return aabb_hit;
-    }
-    // In mesh-only mode, allow non-building AABB hits (arena floor/walls) but
-    // reject building AABB fallbacks so decals never anchor to coarse boxes.
-    if (aabb_hit.hit && aabb_hit.collider_id <= 0) {
+    const WorldHitFallbackPolicyInput fallback_input{
+        backend_mode,
+        aabb_hit.hit,
+        aabb_hit.collider_id,
+        false,
+    };
+    if (afps::server::WorldHitAllowsAabbFallback(fallback_input)) {
       return aabb_hit;
     }
     WorldHitscanHit no_hit;

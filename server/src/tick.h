@@ -36,6 +36,25 @@ private:
 #include "weapons/weapon_defs.h"
 #include "world_collision_mesh.h"
 
+namespace afps::server {
+
+enum class WorldHitBackendMode : uint8_t {
+  Aabb = 0,
+  Hybrid = 1,
+  MeshOnly = 2,
+};
+
+struct WorldHitFallbackPolicyInput {
+  WorldHitBackendMode backend_mode = WorldHitBackendMode::MeshOnly;
+  bool aabb_hit = false;
+  int aabb_collider_id = -1;
+  bool mesh_hit = false;
+};
+
+bool WorldHitAllowsAabbFallback(const WorldHitFallbackPolicyInput &input);
+
+}  // namespace afps::server
+
 class TickLoop {
 public:
   TickLoop(SignalingStore &store,
