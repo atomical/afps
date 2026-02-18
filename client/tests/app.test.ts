@@ -3,6 +3,10 @@ const loadRetroUrbanMapMock = vi.fn();
 vi.mock('../src/environment/retro_urban_map', () => ({
   loadRetroUrbanMap: (...args: unknown[]) => loadRetroUrbanMapMock(...args)
 }));
+const createProceduralCloudLayerMock = vi.fn();
+vi.mock('../src/environment/procedural_clouds', () => ({
+  createProceduralCloudLayer: (...args: unknown[]) => createProceduralCloudLayerMock(...args)
+}));
 const loadWeaponViewmodelMock = vi.fn();
 const attachWeaponViewmodelMock = vi.fn();
 vi.mock('../src/environment/weapon_viewmodel', () => ({
@@ -123,6 +127,7 @@ describe('createApp', () => {
 
   beforeEach(() => {
     loadRetroUrbanMapMock.mockReset();
+    createProceduralCloudLayerMock.mockReset();
     loadWeaponViewmodelMock.mockReset();
     attachWeaponViewmodelMock.mockReset();
     FakeEffectComposer.instances = [];
@@ -1492,6 +1497,47 @@ describe('createApp', () => {
     expect(loadWeaponViewmodelMock).toHaveBeenCalledWith(
       expect.objectContaining({ weaponId: WEAPON_DEFS[0]?.id })
     );
+  });
+
+  it('creates, updates, and disposes procedural cloud layers with map loads', async () => {
+    const three = createFakeThree();
+    const canvas = document.createElement('canvas');
+    const makeMap = (seed: number) => ({
+      seed,
+      colliders: [],
+      pickupSpawns: [],
+      placements: 0,
+      loaded: 0,
+      failed: 0,
+      dispose: vi.fn()
+    });
+    const cloudA = { update: vi.fn(), dispose: vi.fn() };
+    const cloudB = { update: vi.fn(), dispose: vi.fn() };
+
+    loadRetroUrbanMapMock.mockResolvedValueOnce(makeMap(0)).mockResolvedValueOnce(makeMap(7));
+    createProceduralCloudLayerMock.mockReturnValueOnce(cloudA).mockReturnValueOnce(cloudB);
+
+    const app = createApp({ three, canvas, width: 640, height: 480, devicePixelRatio: 1, loadEnvironment: true });
+    await flushAsync();
+
+    expect(createProceduralCloudLayerMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ seed: 0, arenaHalfSize: SIM_CONFIG.arenaHalfSize })
+    );
+
+    app.renderFrame(0.1, 1000);
+    expect(cloudA.update).toHaveBeenCalled();
+
+    app.setMapSeed(7);
+    await flushAsync();
+    expect(cloudA.dispose).toHaveBeenCalledTimes(1);
+    expect(createProceduralCloudLayerMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ seed: 7, arenaHalfSize: SIM_CONFIG.arenaHalfSize })
+    );
+
+    app.dispose();
+    expect(cloudB.dispose).toHaveBeenCalledTimes(1);
   });
 
   it('supports map seed updates and applies loaded colliders to replacement sims', async () => {

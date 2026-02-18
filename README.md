@@ -43,10 +43,17 @@ Optional map/debug flags:
 ```bash
 VITE_PROCEDURAL_MAP=true \
 VITE_PROCEDURAL_GENERATOR=advanced \
+VITE_PROCEDURAL_CLOUDS=true \
 VITE_DEBUG_COLLIDERS=true \
 VITE_DEBUG_INTERIORS=true \
 VITE_DEBUG_ROAD_GRAPH=true \
 npm run dev
+```
+
+Disable procedural cloud layer (enabled by default on procedural maps):
+
+```bash
+VITE_PROCEDURAL_CLOUDS=false npm run dev
 ```
 
 For static map manifests (including generated advanced maps), override the manifest URL:

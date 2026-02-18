@@ -2,6 +2,7 @@ import type { App, AppDimensions, AppState, NetworkSnapshot, Object3DLike, Three
 import type { InputCmd } from './net/input_cmd';
 import { ClientPrediction, type PredictionSim } from './net/prediction';
 import { SnapshotBuffer } from './net/snapshot_buffer';
+import { createProceduralCloudLayer, type ProceduralCloudLayer } from './environment/procedural_clouds';
 import { loadRetroUrbanMap, type LoadedRetroUrbanMap } from './environment/retro_urban_map';
 import { attachWeaponViewmodel, loadWeaponViewmodel } from './environment/weapon_viewmodel';
 import { SIM_CONFIG, resolveEyeHeight } from './sim/config';
@@ -29,6 +30,7 @@ const DEAD_CAMERA_FALL_ROLL = 0.55;
 const DEAD_CAMERA_DROP_METERS = 0.8;
 const MAP_SEED_FLAG = 'VITE_MAP_SEED';
 const PROCEDURAL_MAP_FLAG = 'VITE_PROCEDURAL_MAP';
+const PROCEDURAL_CLOUDS_FLAG = 'VITE_PROCEDURAL_CLOUDS';
 
 const parseMapSeed = (value: unknown) => {
   const parsed = Number.parseInt(String(value ?? ''), 10);
@@ -36,6 +38,20 @@ const parseMapSeed = (value: unknown) => {
     return 0;
   }
   return Math.floor(parsed) >>> 0;
+};
+
+const parseBooleanFlag = (value: unknown, defaultValue: boolean) => {
+  if (value === undefined || value === null || value === '') {
+    return defaultValue;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on') {
+    return true;
+  }
+  if (normalized === '0' || normalized === 'false' || normalized === 'no' || normalized === 'off') {
+    return false;
+  }
+  return defaultValue;
 };
 
 const DEFAULTS = {
@@ -517,14 +533,31 @@ export const createApp = ({
   prediction.setTickRate(DEFAULTS.tickRate);
   let worldColliders: AabbCollider[] = [];
   let mapHandle: LoadedRetroUrbanMap | null = null;
+  let cloudLayer: ProceduralCloudLayer | null = null;
   let mapLoadToken = 0;
   let activeMapSeed = parseMapSeed(import.meta.env?.[MAP_SEED_FLAG]);
   const proceduralFlag = import.meta.env?.[PROCEDURAL_MAP_FLAG];
-  const proceduralEnabled = proceduralFlag === undefined || proceduralFlag === '' || proceduralFlag === 'true';
+  const proceduralEnabled = parseBooleanFlag(proceduralFlag, true);
+  const proceduralCloudsEnabled = parseBooleanFlag(import.meta.env?.[PROCEDURAL_CLOUDS_FLAG], true);
 
   const setWorldColliders = (colliders: readonly AabbCollider[]) => {
     worldColliders = Array.isArray(colliders) ? [...colliders] : [];
     prediction.setColliders(worldColliders);
+  };
+
+  const resetCloudLayer = (seed: number, procedural: boolean) => {
+    cloudLayer?.dispose();
+    cloudLayer = null;
+    if (!loadEnvironment || !procedural || !proceduralCloudsEnabled) {
+      return;
+    }
+    cloudLayer =
+      createProceduralCloudLayer({
+        three,
+        scene,
+        seed,
+        arenaHalfSize: SIM_CONFIG.arenaHalfSize
+      }) ?? null;
   };
 
   const loadMap = async (seed: number, procedural: boolean) => {
@@ -549,6 +582,7 @@ export const createApp = ({
     mapHandle?.dispose();
     mapHandle = next;
     setWorldColliders(next.colliders);
+    resetCloudLayer(seed, procedural);
   };
 
   const setMapSeed = (seed: number) => {
@@ -1134,6 +1168,11 @@ export const createApp = ({
     camera.rotation.x = -lookPitch - DEAD_CAMERA_FALL_PITCH * deadBlend;
     camera.rotation.z = -DEAD_CAMERA_FALL_ROLL * deadBlend;
     beforeRenderHook?.(safeDelta, now);
+    cloudLayer?.update(safeDelta, {
+      x: camera.position.x,
+      y: camera.position.y,
+      z: camera.position.z
+    });
     refreshOutlineFlash(now);
     if (composer) {
       composer.render();
@@ -1155,6 +1194,8 @@ export const createApp = ({
 
   const dispose = () => {
     mapLoadToken += 1;
+    cloudLayer?.dispose();
+    cloudLayer = null;
     mapHandle?.dispose();
     mapHandle = null;
     if (weaponViewmodelRoot && weaponViewmodelParent?.remove) {
