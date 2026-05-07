@@ -21,6 +21,7 @@ export default defineConfig({
         '**/src/main.ts',
         '**/src/ui/prejoin.ts',
         '**/src/players/**',
+        'src/editor/**',
         'src/net/fbs/**',
         'src/ui/**',
         'src/audio/**',

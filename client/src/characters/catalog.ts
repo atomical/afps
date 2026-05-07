@@ -1,3 +1,5 @@
+import { loadWeaponMountCatalog, resolveWeaponMount } from './weapon_mounts';
+
 export interface WeaponOffset {
   position?: [number, number, number];
   rotation?: [number, number, number];
@@ -12,6 +14,7 @@ export interface CharacterEntry {
   previewUrl?: string;
   handBone?: string;
   weaponOffset?: WeaponOffset;
+  weaponOffsetsById?: Record<string, WeaponOffset>;
 }
 
 export interface CharacterCatalog {
@@ -75,6 +78,20 @@ const normalizeOffset = (value: unknown): WeaponOffset | undefined => {
   return Object.keys(offset).length > 0 ? offset : undefined;
 };
 
+const normalizeOffsetMap = (value: unknown): Record<string, WeaponOffset> | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const next: Record<string, WeaponOffset> = {};
+  for (const [weaponId, candidate] of Object.entries(value)) {
+    const offset = normalizeOffset(candidate);
+    if (offset) {
+      next[weaponId] = offset;
+    }
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
+};
+
 const normalizeEntry = (value: unknown): CharacterEntry | null => {
   if (!isRecord(value)) {
     return null;
@@ -91,7 +108,8 @@ const normalizeEntry = (value: unknown): CharacterEntry | null => {
     skinUrl: toString(value.skinUrl) ?? undefined,
     previewUrl: toString(value.previewUrl) ?? undefined,
     handBone: toString(value.handBone) ?? undefined,
-    weaponOffset: normalizeOffset(value.weaponOffset)
+    weaponOffset: normalizeOffset(value.weaponOffset),
+    weaponOffsetsById: normalizeOffsetMap(value.weaponOffsetsById)
   };
   return entry;
 };
@@ -109,6 +127,44 @@ const normalizeCatalog = (value: unknown): CharacterCatalog | null => {
   return { entries, defaultId: resolvedDefault };
 };
 
+const applyWeaponMounts = async (catalog: CharacterCatalog): Promise<CharacterCatalog> => {
+  const mounts = await loadWeaponMountCatalog();
+  if (mounts.entries.length === 0) {
+    return catalog;
+  }
+  const entries = catalog.entries.map((entry) => {
+    const mountEntry = mounts.byCharacter[entry.id];
+    const resolved = resolveWeaponMount({
+      catalog: mounts,
+      characterId: entry.id,
+      fallbackHandBone: entry.handBone,
+      fallbackOffset: entry.weaponOffset
+    });
+    const weaponOffsetsById = mountEntry?.weaponOffsetsById
+      ? Object.fromEntries(
+          Object.entries(mountEntry.weaponOffsetsById).map(([weaponId, offset]) => [
+            weaponId,
+            {
+              ...(offset.position ? { position: [...offset.position] as [number, number, number] } : {}),
+              ...(offset.rotation ? { rotation: [...offset.rotation] as [number, number, number] } : {}),
+              ...(typeof offset.scale === 'number' ? { scale: offset.scale } : {})
+            }
+          ])
+        )
+      : entry.weaponOffsetsById;
+    return {
+      ...entry,
+      handBone: resolved.handBone,
+      weaponOffset: resolved.weaponOffset,
+      weaponOffsetsById
+    };
+  });
+  return {
+    ...catalog,
+    entries
+  };
+};
+
 export const loadCharacterCatalog = async (manifestUrl = MANIFEST_URL): Promise<CharacterCatalog> => {
   if (typeof fetch !== 'function') {
     return FALLBACK_CATALOG;
@@ -119,8 +175,8 @@ export const loadCharacterCatalog = async (manifestUrl = MANIFEST_URL): Promise<
       return FALLBACK_CATALOG;
     }
     const data = (await response.json()) as unknown;
-    const catalog = normalizeCatalog(data);
-    return catalog ?? FALLBACK_CATALOG;
+    const catalog = normalizeCatalog(data) ?? FALLBACK_CATALOG;
+    return applyWeaponMounts(catalog);
   } catch {
     return FALLBACK_CATALOG;
   }

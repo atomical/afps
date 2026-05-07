@@ -20,8 +20,8 @@ double WrapAngle(double angle) {
   return wrapped - kPi;
 }
 
-double RaycastAabb2D(double origin_x, double origin_y, double dir_x, double dir_y, double min_x, double max_x,
-                     double min_y, double max_y) {
+double RaycastAabb2D(double origin_x, double origin_y, double dir_x, double dir_y, double min_x,
+                     double max_x, double min_y, double max_y) {
   const double inf = std::numeric_limits<double>::infinity();
   const double epsilon = 1e-8;
   double t_min = -inf;
@@ -69,14 +69,16 @@ double RaycastObstacle(const Vec3 &origin, const Vec3 &dir, const afps::sim::Sim
       !std::isfinite(config.obstacle_min_y) || !std::isfinite(config.obstacle_max_y)) {
     return std::numeric_limits<double>::infinity();
   }
-  if (config.obstacle_min_x >= config.obstacle_max_x || config.obstacle_min_y >= config.obstacle_max_y) {
+  if (config.obstacle_min_x >= config.obstacle_max_x ||
+      config.obstacle_min_y >= config.obstacle_max_y) {
     return std::numeric_limits<double>::infinity();
   }
-  return RaycastAabb2D(origin.x, origin.y, dir.x, dir.y, config.obstacle_min_x, config.obstacle_max_x,
-                       config.obstacle_min_y, config.obstacle_max_y);
+  return RaycastAabb2D(origin.x, origin.y, dir.x, dir.y, config.obstacle_min_x,
+                       config.obstacle_max_x, config.obstacle_min_y, config.obstacle_max_y);
 }
 
-bool RaycastCylinder(const Vec3 &origin, const Vec3 &dir, const Vec3 &base, double height, double radius, double &t) {
+bool RaycastCylinder(const Vec3 &origin, const Vec3 &dir, const Vec3 &base, double height,
+                     double radius, double &t) {
   const double epsilon = 1e-8;
   const double a = dir.x * dir.x + dir.y * dir.y;
   const double ox = origin.x - base.x;
@@ -115,12 +117,8 @@ bool RaycastCylinder(const Vec3 &origin, const Vec3 &dir, const Vec3 &base, doub
   return true;
 }
 
-bool SegmentCylinder(const Vec3 &origin,
-                     const Vec3 &delta,
-                     const Vec3 &base,
-                     double height,
-                     double radius,
-                     double &t) {
+bool SegmentCylinder(const Vec3 &origin, const Vec3 &delta, const Vec3 &base, double height,
+                     double radius, double &t) {
   const double epsilon = 1e-8;
   const double a = delta.x * delta.x + delta.y * delta.y;
   const double ox = origin.x - base.x;
@@ -193,7 +191,7 @@ double ResolveHeight(const afps::sim::SimConfig &config) {
   }
   return kPlayerHeight;
 }
-}  // namespace
+} // namespace
 
 PoseHistory::PoseHistory(size_t max_samples) : max_samples_(max_samples) {}
 
@@ -277,15 +275,13 @@ double ApplyShieldMultiplier(double damage, bool shield_active, double shield_mu
   if (!shield_active) {
     return damage;
   }
-  const double multiplier = std::isfinite(shield_multiplier) ? std::max(0.0, std::min(1.0, shield_multiplier)) : 1.0;
+  const double multiplier =
+      std::isfinite(shield_multiplier) ? std::max(0.0, std::min(1.0, shield_multiplier)) : 1.0;
   return damage * multiplier;
 }
 
-bool ApplyDamageWithShield(CombatState &target,
-                           CombatState *attacker,
-                           double damage,
-                           bool shield_active,
-                           double shield_multiplier) {
+bool ApplyDamageWithShield(CombatState &target, CombatState *attacker, double damage,
+                           bool shield_active, double shield_multiplier) {
   const double adjusted = ApplyShieldMultiplier(damage, shield_active, shield_multiplier);
   return ApplyDamage(target, attacker, adjusted);
 }
@@ -316,7 +312,8 @@ ViewAngles SanitizeViewAngles(double yaw, double pitch) {
 
 Vec3 ViewDirection(const ViewAngles &angles) {
   const double cos_pitch = std::cos(angles.pitch);
-  Vec3 dir{std::sin(angles.yaw) * cos_pitch, -std::cos(angles.yaw) * cos_pitch, std::sin(angles.pitch)};
+  Vec3 dir{std::sin(angles.yaw) * cos_pitch, -std::cos(angles.yaw) * cos_pitch,
+           std::sin(angles.pitch)};
   const double len = std::sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
   if (len <= 0.0 || !std::isfinite(len)) {
     return {0.0, -1.0, 0.0};
@@ -327,13 +324,13 @@ Vec3 ViewDirection(const ViewAngles &angles) {
   return dir;
 }
 
-bool IsShieldFacing(const Vec3 &target_pos,
-                    const ViewAngles &target_view,
-                    const Vec3 &source_pos,
+bool IsShieldFacing(const Vec3 &target_pos, const ViewAngles &target_view, const Vec3 &source_pos,
                     double min_dot) {
   const Vec3 forward = ViewDirection(target_view);
-  Vec3 to_source{source_pos.x - target_pos.x, source_pos.y - target_pos.y, source_pos.z - target_pos.z};
-  const double len = std::sqrt(to_source.x * to_source.x + to_source.y * to_source.y + to_source.z * to_source.z);
+  Vec3 to_source{source_pos.x - target_pos.x, source_pos.y - target_pos.y,
+                 source_pos.z - target_pos.z};
+  const double len =
+      std::sqrt(to_source.x * to_source.x + to_source.y * to_source.y + to_source.z * to_source.z);
   if (len <= 1e-6 || !std::isfinite(len)) {
     return true;
   }
@@ -350,10 +347,8 @@ bool IsShieldFacing(const Vec3 &target_pos,
 
 HitResult ResolveHitscan(const std::string &shooter_id,
                          const std::unordered_map<std::string, PoseHistory> &histories,
-                         int rewind_tick,
-                         const ViewAngles &view,
-                         const afps::sim::SimConfig &config,
-                         double range,
+                         int rewind_tick, const ViewAngles &view,
+                         const afps::sim::SimConfig &config, double range,
                          const afps::sim::CollisionWorld *world) {
   HitResult result;
   const auto shooter_iter = histories.find(shooter_id);
@@ -372,13 +367,10 @@ HitResult ResolveHitscan(const std::string &shooter_id,
   }
 
   const Vec3 origin{shooter_state.x, shooter_state.y, shooter_state.z + kPlayerEyeHeight};
-  const double max_range = (std::isfinite(range) && range > 0.0)
-                               ? range
-                               : std::numeric_limits<double>::infinity();
-  const afps::sim::RaycastHit world_hit = afps::sim::RaycastWorld({origin.x, origin.y, origin.z},
-                                                                   {dir.x, dir.y, dir.z},
-                                                                   config,
-                                                                   world);
+  const double max_range =
+      (std::isfinite(range) && range > 0.0) ? range : std::numeric_limits<double>::infinity();
+  const afps::sim::RaycastHit world_hit =
+      afps::sim::RaycastWorld({origin.x, origin.y, origin.z}, {dir.x, dir.y, dir.z}, config, world);
   double world_distance = std::numeric_limits<double>::infinity();
   if (world_hit.hit && std::isfinite(world_hit.t) && world_hit.t >= 0.0) {
     world_distance = world_hit.t;
@@ -420,17 +412,17 @@ HitResult ResolveHitscan(const std::string &shooter_id,
   result.hit = true;
   result.target_id = best_target;
   result.distance = best_t;
-  result.position = {origin.x + dir.x * best_t, origin.y + dir.y * best_t, origin.z + dir.z * best_t};
+  result.position = {origin.x + dir.x * best_t, origin.y + dir.y * best_t,
+                     origin.z + dir.z * best_t};
   return result;
 }
 
-ProjectileImpact ResolveProjectileImpact(
-    const ProjectileState &projectile,
-    const Vec3 &delta,
-    const afps::sim::SimConfig &config,
-    const std::unordered_map<std::string, afps::sim::PlayerState> &players,
-    const std::string &ignore_id,
-    const afps::sim::CollisionWorld *world) {
+ProjectileImpact
+ResolveProjectileImpact(const ProjectileState &projectile, const Vec3 &delta,
+                        const afps::sim::SimConfig &config,
+                        const std::unordered_map<std::string, afps::sim::PlayerState> &players,
+                        const std::string &ignore_id, const afps::sim::CollisionWorld *world,
+                        const ProjectileWorldImpactResolver &world_resolver) {
   ProjectileImpact impact;
   if (!std::isfinite(delta.x) || !std::isfinite(delta.y) || !std::isfinite(delta.z)) {
     return impact;
@@ -463,43 +455,55 @@ ProjectileImpact ResolveProjectileImpact(
     }
   }
 
-  double world_t = std::numeric_limits<double>::infinity();
-  Vec3 world_normal{0.0, 0.0, 1.0};
-  uint8_t world_surface_type = 0;
-  const afps::sim::RaycastHit world_hit = afps::sim::RaycastWorld({origin.x, origin.y, origin.z},
-                                                                   {delta.x, delta.y, delta.z},
-                                                                   config,
-                                                                   world);
-  if (world_hit.hit && std::isfinite(world_hit.t) && world_hit.t >= 0.0 && world_hit.t <= 1.0) {
-    world_t = world_hit.t;
-    world_normal = {world_hit.normal_x, world_hit.normal_y, world_hit.normal_z};
-    world_surface_type = world_hit.surface_type;
+  ProjectileWorldImpact world_impact;
+  if (world_resolver) {
+    world_impact = world_resolver(projectile, delta, config, world);
+    if (!world_impact.hit || !std::isfinite(world_impact.t) || world_impact.t < 0.0 ||
+        world_impact.t > 1.0) {
+      world_impact = ProjectileWorldImpact{};
+    }
+  } else {
+    const afps::sim::RaycastHit world_hit = afps::sim::RaycastWorld(
+        {origin.x, origin.y, origin.z}, {delta.x, delta.y, delta.z}, config, world);
+    if (world_hit.hit && std::isfinite(world_hit.t) && world_hit.t >= 0.0 && world_hit.t <= 1.0) {
+      world_impact.hit = true;
+      world_impact.t = world_hit.t;
+      world_impact.position = {origin.x + delta.x * world_hit.t, origin.y + delta.y * world_hit.t,
+                               origin.z + delta.z * world_hit.t};
+      world_impact.normal = {world_hit.normal_x, world_hit.normal_y, world_hit.normal_z};
+      world_impact.surface_type = world_hit.surface_type;
+    }
   }
-  if (!std::isfinite(world_t) && std::isfinite(delta.z) && delta.z < 0.0) {
+  if (!world_impact.hit && std::isfinite(delta.z) && delta.z < 0.0) {
     if (origin.z <= 0.0) {
-      world_t = 0.0;
-      world_normal = {0.0, 0.0, 1.0};
-      world_surface_type = 2;
+      world_impact.hit = true;
+      world_impact.t = 0.0;
+      world_impact.position = origin;
+      world_impact.normal = {0.0, 0.0, 1.0};
+      world_impact.surface_type = 2;
     } else {
       const double t_ground = (0.0 - origin.z) / delta.z;
       if (t_ground >= 0.0 && t_ground <= 1.0) {
-        world_t = t_ground;
-        world_normal = {0.0, 0.0, 1.0};
-        world_surface_type = 2;
+        world_impact.hit = true;
+        world_impact.t = t_ground;
+        world_impact.position = {origin.x + delta.x * t_ground, origin.y + delta.y * t_ground,
+                                 origin.z + delta.z * t_ground};
+        world_impact.normal = {0.0, 0.0, 1.0};
+        world_impact.surface_type = 2;
       }
     }
   }
 
   bool hit_world = false;
   if (!best_target.empty()) {
-    if (std::isfinite(world_t) && world_t <= best_t) {
+    if (world_impact.hit && std::isfinite(world_impact.t) && world_impact.t <= best_t) {
       hit_world = true;
       best_target.clear();
-      best_t = world_t;
+      best_t = world_impact.t;
     }
-  } else if (std::isfinite(world_t)) {
+  } else if (world_impact.hit && std::isfinite(world_impact.t)) {
     hit_world = true;
-    best_t = world_t;
+    best_t = world_impact.t;
   }
 
   if (!std::isfinite(best_t) || best_t < 0.0 || best_t > 1.0) {
@@ -510,20 +514,23 @@ ProjectileImpact ResolveProjectileImpact(
   impact.hit_world = hit_world;
   impact.target_id = best_target;
   impact.t = best_t;
-  impact.position = {origin.x + delta.x * best_t, origin.y + delta.y * best_t, origin.z + delta.z * best_t};
+  impact.position = {origin.x + delta.x * best_t, origin.y + delta.y * best_t,
+                     origin.z + delta.z * best_t};
   if (hit_world) {
-    impact.normal = world_normal;
-    impact.surface_type = world_surface_type;
+    if (std::isfinite(world_impact.position.x) && std::isfinite(world_impact.position.y) &&
+        std::isfinite(world_impact.position.z)) {
+      impact.position = world_impact.position;
+    }
+    impact.normal = world_impact.normal;
+    impact.surface_type = world_impact.surface_type;
   }
   return impact;
 }
 
-std::vector<ExplosionHit> ComputeExplosionDamage(
-    const Vec3 &center,
-    double radius,
-    double max_damage,
-    const std::unordered_map<std::string, afps::sim::PlayerState> &players,
-    const std::string &ignore_id) {
+std::vector<ExplosionHit>
+ComputeExplosionDamage(const Vec3 &center, double radius, double max_damage,
+                       const std::unordered_map<std::string, afps::sim::PlayerState> &players,
+                       const std::string &ignore_id) {
   std::vector<ExplosionHit> hits;
   if (!std::isfinite(max_damage) || max_damage <= 0.0) {
     return hits;
@@ -556,15 +563,11 @@ std::vector<ExplosionHit> ComputeExplosionDamage(
   return hits;
 }
 
-std::vector<ShockwaveHit> ComputeShockwaveHits(
-    const Vec3 &center,
-    double radius,
-    double max_impulse,
-    double max_damage,
-    const afps::sim::SimConfig &config,
-    const std::unordered_map<std::string, afps::sim::PlayerState> &players,
-    const std::string &ignore_id,
-    const afps::sim::CollisionWorld *world) {
+std::vector<ShockwaveHit>
+ComputeShockwaveHits(const Vec3 &center, double radius, double max_impulse, double max_damage,
+                     const afps::sim::SimConfig &config,
+                     const std::unordered_map<std::string, afps::sim::PlayerState> &players,
+                     const std::string &ignore_id, const afps::sim::CollisionWorld *world) {
   std::vector<ShockwaveHit> hits;
   if (!std::isfinite(radius) || radius <= 0.0) {
     return hits;
@@ -625,4 +628,4 @@ std::vector<ShockwaveHit> ComputeShockwaveHits(
   return hits;
 }
 
-}  // namespace afps::combat
+} // namespace afps::combat

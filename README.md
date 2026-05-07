@@ -8,6 +8,7 @@ Living spec: `docs/LIVING_SPEC.md`.
 - Network stack overview: `docs/NETWORK_STACK.md`
 - Protocol reference: `docs/PROTOCOL.md`
 - Netcode flow: `docs/NETCODE.md`
+- Weapon mount editor: `docs/WEAPON_MOUNT_EDITOR.md`
 - Advanced suburban map generation: `docs/ADVANCED_SUBURBAN_GENERATOR.md`
 - World collision meshes + shot-debug triage: `docs/WORLD_COLLISION_MESHES.md`
 - Rectangle collider strategy matrix: `docs/RECTANGLE_COLLIDER_OPTIONS.md`
@@ -35,7 +36,7 @@ npm run dev
 To auto-connect to the signaling server, set:
 
 ```bash
-VITE_SIGNALING_URL=http://localhost:8443 VITE_SIGNALING_AUTH_TOKEN=devtoken npm run dev
+VITE_SIGNALING_URL=http://localhost:7001 VITE_SIGNALING_AUTH_TOKEN=devtoken npm run dev
 ```
 
 Optional map/debug flags:
@@ -151,7 +152,7 @@ npm run wasm:check
 cd server
 cmake -S . -B build
 cmake --build build
-./build/afps_server --http --auth-token devtoken --host 0.0.0.0 --port 8443 --snapshot-keyframe-interval 5
+./build/afps_server --http --auth-token devtoken --host 0.0.0.0 --port 7001 --snapshot-keyframe-interval 5
 ```
 
 Recommended (strict collision-mesh validation + auto-rebuild if needed):
@@ -159,7 +160,7 @@ Recommended (strict collision-mesh validation + auto-rebuild if needed):
 ```bash
 AFPS_STRICT_COLLISION_MESH=1 \
 AFPS_WORLD_HIT_BACKEND=mesh_only \
-./build/afps_server --http --auth-token devtoken --host 0.0.0.0 --port 8443 --snapshot-keyframe-interval 5
+./build/afps_server --http --auth-token devtoken --host 0.0.0.0 --port 7001 --snapshot-keyframe-interval 5
 ```
 
 Set a deterministic procedural map seed:
@@ -176,7 +177,7 @@ To run HTTPS locally (optional):
 cd server
 mkdir -p certs
 openssl req -x509 -newkey rsa:2048 -keyout certs/key.pem -out certs/cert.pem -days 365 -nodes -subj "/CN=localhost"
-./build/afps_server --cert certs/cert.pem --key certs/key.pem --auth-token devtoken --host 0.0.0.0 --port 8443 --snapshot-keyframe-interval 5
+./build/afps_server --cert certs/cert.pem --key certs/key.pem --auth-token devtoken --host 0.0.0.0 --port 7001 --snapshot-keyframe-interval 5
 ```
 
 TURN (coturn) setup and TURN REST credentials:

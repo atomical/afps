@@ -785,6 +785,21 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
     considerSweepHit(best, hit.t, hit.normalX, hit.normalY, clampX, clampXValid, clampY, clampYValid);
   };
 
+  const resolveOverlaps = (expandedColliders: readonly ExpandedAabb2D[]) => {
+    for (let pass = 0; pass < 4; pass += 1) {
+      let anyOverlap = false;
+      for (const collider of expandedColliders) {
+        if (state.x >= collider.minX && state.x <= collider.maxX && state.y >= collider.minY && state.y <= collider.maxY) {
+          resolveAabbPenetration(collider.minX, collider.maxX, collider.minY, collider.maxY);
+          anyOverlap = true;
+        }
+      }
+      if (!anyOverlap) {
+        break;
+      }
+    }
+  };
+
   const advanceWithCollisions = (dt: number) => {
     const arena = getArenaBounds();
     let remaining = dt;
@@ -797,11 +812,7 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
         }
       }
 
-      for (const collider of expandedColliders) {
-        if (state.x >= collider.minX && state.x <= collider.maxX && state.y >= collider.minY && state.y <= collider.maxY) {
-          resolveAabbPenetration(collider.minX, collider.maxX, collider.minY, collider.maxY);
-        }
-      }
+      resolveOverlaps(expandedColliders);
 
       const prevX = state.x;
       const prevY = state.y;
@@ -858,11 +869,7 @@ export const createJsPredictionSim = (config: SimConfig = SIM_CONFIG): Predictio
       remaining *= 1 - best.t;
     }
 
-    for (const collider of getExpandedColliders()) {
-      if (state.x >= collider.minX && state.x <= collider.maxX && state.y >= collider.minY && state.y <= collider.maxY) {
-        resolveAabbPenetration(collider.minX, collider.maxX, collider.minY, collider.maxY);
-      }
-    }
+    resolveOverlaps(getExpandedColliders());
     if (arena) {
       resolveArenaPenetration(arena.min, arena.max);
     }

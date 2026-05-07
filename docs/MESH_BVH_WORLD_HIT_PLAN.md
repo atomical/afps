@@ -23,6 +23,7 @@ This plan implements option `1` as a production path: keep AABB colliders for mo
   - Server startup auto-build of collision mesh registry when missing/invalid/non-triangle.
   - Shot debug shadow detailed world-hit trace (`world_shadow`) logged in per-shot JSON.
   - Hitscan authoritative world-hit path switched to hybrid AABB+mesh, with mesh used for building surface hit points/normals.
+  - Projectile world impacts now use the shared mesh-aware world-hit resolver and detailed surface normals.
   - OBJ extraction pipeline for all suburban building prefabs via `tools/build_collision_meshes.mjs`.
   - Bundled registry populated with real triangles for `building-type-a..u.glb`.
 - Not yet switched:
@@ -162,8 +163,8 @@ Add generator tool:
 
 ### Phase S4: Projectile Impact Parity
 
-- Use the same detailed world-hit helper for projectile world impacts (where applicable).
-- Ensure `ProjectileImpactFx` uses detailed surface normal when `hit_world=true`.
+- Implemented: projectile impacts use the same detailed world-hit helper as hitscan.
+- Implemented: `ProjectileImpactFx` uses the detailed surface normal when `hit_world=true`.
 
 ### Phase S5: Logging
 

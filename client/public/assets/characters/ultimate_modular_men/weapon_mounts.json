@@ -1,0 +1,206 @@
+{
+  "entries": [
+    {
+      "characterId": "adventurer",
+      "handBone": "WristR",
+      "weaponOffset": {
+        "position": [
+          -0.17180363151453856,
+          0.27683039102470375,
+          0.012184126181618793
+        ],
+        "rotation": [
+          2.1997067971929463,
+          1.319895663112898,
+          0.9292937827934774
+        ],
+        "scale": 1
+      }
+    },
+    {
+      "characterId": "beach",
+      "handBone": "Wrist.R",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0,
+          1.57,
+          0
+        ],
+        "scale": 1
+      }
+    },
+    {
+      "characterId": "casual_2",
+      "handBone": "Wrist.R",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0,
+          1.57,
+          0
+        ],
+        "scale": 1
+      }
+    },
+    {
+      "characterId": "casual_hoodie",
+      "handBone": "Wrist.R",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0,
+          1.57,
+          0
+        ],
+        "scale": 1
+      }
+    },
+    {
+      "characterId": "farmer",
+      "handBone": "Wrist.R",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0,
+          1.57,
+          0
+        ],
+        "scale": 1
+      }
+    },
+    {
+      "characterId": "king",
+      "handBone": "Wrist.R",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0,
+          1.57,
+          0
+        ],
+        "scale": 1
+      }
+    },
+    {
+      "characterId": "punk",
+      "handBone": "Wrist.R",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0,
+          1.57,
+          0
+        ],
+        "scale": 1
+      }
+    },
+    {
+      "characterId": "spacesuit",
+      "handBone": "Wrist.R",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0,
+          1.57,
+          0
+        ],
+        "scale": 1
+      }
+    },
+    {
+      "characterId": "suit",
+      "handBone": "Wrist.R",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0,
+          1.57,
+          0
+        ],
+        "scale": 1
+      }
+    },
+    {
+      "characterId": "swat",
+      "handBone": "Wrist.R",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0,
+          1.57,
+          0
+        ],
+        "scale": 1
+      }
+    },
+    {
+      "characterId": "worker",
+      "handBone": "Wrist.R",
+      "weaponOffset": {
+        "position": [
+          0.04,
+          0.02,
+          -0.02
+        ],
+        "rotation": [
+          0,
+          1.57,
+          0
+        ],
+        "scale": 1
+      },
+      "weaponOffsetsById": {
+        "LMG_556": {
+          "position": [
+            0.045,
+            0.022,
+            -0.018
+          ],
+          "rotation": [
+            0.01,
+            1.57,
+            0
+          ],
+          "scale": 1.02
+        }
+      }
+    }
+  ]
+}

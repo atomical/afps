@@ -63,6 +63,16 @@ Fields:
 - `handBone` (string, optional): Overrides the default right-hand bone lookup.
 - `weaponOffset` (object, optional): Local offsets to align the weapon in the hand.
 
+### Weapon Mount Overrides
+
+Per-character and per-weapon attachment tuning can be stored separately in:
+
+```
+client/public/assets/characters/ultimate_modular_men/weapon_mounts.json
+```
+
+If present, this file overlays `handBone` / `weaponOffset` values onto the base manifest at load time.
+
 ## Expected Asset Layout (Kenney Animated Characters 1)
 
 Suggested structure (not enforced, but matches the manifest paths above):

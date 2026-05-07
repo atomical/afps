@@ -1,5 +1,6 @@
 #include "doctest.h"
 #include "tick.h"
+#include "world_hit.h"
 
 TEST_CASE("TickAccumulator advances deterministically") {
   using Clock = TickAccumulator::Clock;
@@ -14,8 +15,8 @@ TEST_CASE("TickAccumulator advances deterministically") {
   CHECK(accumulator.Advance(t0 + accumulator.tick_duration() / 2) == 0);
   CHECK(accumulator.Advance(t0 + accumulator.tick_duration()) == 1);
   CHECK(accumulator.Advance(t0 + accumulator.tick_duration() * 3) == 2);
-  CHECK(accumulator.Advance(t0 + accumulator.tick_duration() * 6
-                             + accumulator.tick_duration() / 2) == 3);
+  CHECK(accumulator.Advance(t0 + accumulator.tick_duration() * 6 +
+                            accumulator.tick_duration() / 2) == 3);
 }
 
 TEST_CASE("TickAccumulator clamps invalid tick rate") {

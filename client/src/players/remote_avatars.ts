@@ -6,6 +6,8 @@ import { LOADOUT_BITS, hasLoadoutBit } from '../weapons/loadout';
 import type { PlayerProfile } from '../net/protocol';
 import { decodePitchQ, decodeYawQ } from '../net/quantization';
 import { SIM_CONFIG, resolveCrouchHeight, resolvePlayerHeight } from '../sim/config';
+import { resolveWeaponModelSpec as resolveWeaponVisualSpec } from '../weapons/model_catalog';
+import { resolveGripPose } from './hand_grip';
 
 type AnimationActionLike = {
   play: () => void;
@@ -28,6 +30,7 @@ type RemoteAvatar = {
   weapon: Object3DLike;
   weaponParent: Object3DLike;
   weaponOffset?: WeaponOffset;
+  weaponOffsetsById?: Record<string, WeaponOffset>;
   characterId?: string;
   handBone?: string;
   weaponModelKey?: string;
@@ -51,11 +54,14 @@ type RemoteAvatar = {
   health?: number;
   deadBlend?: number;
   crouchBones?: CrouchBoneBinding[];
+  handGripBones?: HandGripBoneBinding[];
   loadoutBits?: number;
   adsBlend?: number;
   sprintBlend?: number;
   reloadBlend?: number;
   overheatBlend?: number;
+  handGripBlend?: number;
+  triggerPull?: number;
   aimPitch?: number;
   recoilPitch?: number;
   recoilYaw?: number;
@@ -83,6 +89,13 @@ type CrouchBoneBinding = {
   bone: Object3DLike;
   baseQuat: QuaternionTuple;
   targetQuat?: QuaternionTuple;
+};
+
+type HandGripBoneBinding = {
+  bone: Object3DLike;
+  baseQuat: QuaternionTuple;
+  gripDelta: QuaternionTuple;
+  triggerDelta?: QuaternionTuple;
 };
 
 export interface RemoteAvatarManager {
@@ -134,8 +147,10 @@ const SPRINT_BLEND_SPEED = 10;
 const RELOAD_BLEND_SPEED = 8;
 const OVERHEAT_BLEND_SPEED = 7;
 const CROUCH_BLEND_SPEED = 14;
+const HAND_GRIP_BLEND_SPEED = 12;
 const AIM_PITCH_BLEND_SPEED = 16;
 const RECOIL_DECAY_SPEED = 18;
+const TRIGGER_PULL_DECAY_SPEED = 28;
 const THIRD_PERSON_RECOIL_SCALE = 0.6;
 const RECOIL_POSITION_BACK = 0.06;
 const RECOIL_POSITION_UP = 0.02;
@@ -179,77 +194,6 @@ const KNEEL_POSE_QUATS: Readonly<Record<string, QuaternionTuple>> = Object.freez
 });
 const BASE_URL = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
 const NORMALIZED_BASE = BASE_URL.endsWith('/') ? BASE_URL : `${BASE_URL}/`;
-const WEAPON_MODEL_ROOT = `${NORMALIZED_BASE}assets/weapons/cc0/kenney_blaster_kit/`;
-const DEFAULT_WEAPON_MODEL = {
-  file: `${WEAPON_MODEL_ROOT}blaster-a.glb`,
-  scale: 0.6
-};
-const WEAPON_MODELS_BY_ID: Record<string, { file: string; scale: number }> = {
-  rifle: {
-    file: `${WEAPON_MODEL_ROOT}blaster-d.glb`,
-    scale: 0.62
-  },
-  AR_556: {
-    file: `${WEAPON_MODEL_ROOT}blaster-d.glb`,
-    scale: 0.62
-  },
-  launcher: {
-    file: `${WEAPON_MODEL_ROOT}blaster-f.glb`,
-    scale: 0.6
-  },
-  PISTOL_9MM: {
-    file: `${WEAPON_MODEL_ROOT}blaster-a.glb`,
-    scale: 0.58
-  },
-  PISTOL_45: {
-    file: `${WEAPON_MODEL_ROOT}blaster-b.glb`,
-    scale: 0.58
-  },
-  REVOLVER_357: {
-    file: `${WEAPON_MODEL_ROOT}blaster-b.glb`,
-    scale: 0.6
-  },
-  SMG_9MM: {
-    file: `${WEAPON_MODEL_ROOT}blaster-c.glb`,
-    scale: 0.62
-  },
-  CARBINE_762: {
-    file: `${WEAPON_MODEL_ROOT}blaster-e.glb`,
-    scale: 0.64
-  },
-  DMR_762: {
-    file: `${WEAPON_MODEL_ROOT}blaster-e.glb`,
-    scale: 0.66
-  },
-  LMG_556: {
-    file: `${WEAPON_MODEL_ROOT}blaster-h.glb`,
-    scale: 0.7
-  },
-  SHOTGUN_PUMP: {
-    file: `${WEAPON_MODEL_ROOT}blaster-g.glb`,
-    scale: 0.66
-  },
-  SHOTGUN_AUTO: {
-    file: `${WEAPON_MODEL_ROOT}blaster-g.glb`,
-    scale: 0.66
-  },
-  SNIPER_BOLT: {
-    file: `${WEAPON_MODEL_ROOT}blaster-g.glb`,
-    scale: 0.68
-  },
-  GRENADE_LAUNCHER: {
-    file: `${WEAPON_MODEL_ROOT}blaster-f.glb`,
-    scale: 0.6
-  },
-  ROCKET_LAUNCHER: {
-    file: `${WEAPON_MODEL_ROOT}blaster-f.glb`,
-    scale: 0.6
-  },
-  ENERGY_RIFLE: {
-    file: `${WEAPON_MODEL_ROOT}blaster-a.glb`,
-    scale: 0.62
-  }
-};
 
 const resolveWeaponSlot = (slot: number) => {
   const maxSlot = Math.max(0, WEAPON_DEFS.length - 1);
@@ -257,6 +201,20 @@ const resolveWeaponSlot = (slot: number) => {
     return 0;
   }
   return Math.min(maxSlot, Math.max(0, Math.floor(slot)));
+};
+
+const resolveWeaponIdForSlot = (slot: number) => WEAPON_DEFS[resolveWeaponSlot(slot)]?.id;
+
+const resolveWeaponOffsetForSlot = (
+  slot: number,
+  defaultOffset?: WeaponOffset,
+  weaponOffsetsById?: Record<string, WeaponOffset>
+) => {
+  const weaponId = resolveWeaponIdForSlot(slot);
+  if (weaponId && weaponOffsetsById?.[weaponId]) {
+    return weaponOffsetsById[weaponId];
+  }
+  return defaultOffset;
 };
 
 const weaponScaleForSlot = (slot: number) => {
@@ -386,12 +344,9 @@ export const createRemoteAvatarManager = ({
     return null;
   };
 
-  const resolveWeaponModelSpec = (slot: number) => {
-    const weaponId = WEAPON_DEFS[resolveWeaponSlot(slot)]?.id;
-    if (weaponId && WEAPON_MODELS_BY_ID[weaponId]) {
-      return WEAPON_MODELS_BY_ID[weaponId];
-    }
-    return DEFAULT_WEAPON_MODEL;
+  const resolveWeaponModelForSlot = (slot: number) => {
+    const weaponId = resolveWeaponIdForSlot(slot);
+    return resolveWeaponVisualSpec(weaponId);
   };
 
   const cloneObject = (base: Object3DLike) => {
@@ -405,7 +360,7 @@ export const createRemoteAvatarManager = ({
   };
 
   const loadWeaponModel = async (slot: number) => {
-    const spec = resolveWeaponModelSpec(resolveWeaponSlot(slot));
+    const spec = resolveWeaponModelForSlot(resolveWeaponSlot(slot));
     let promise = weaponModelCache.get(spec.file);
     if (!promise) {
       promise = loadModelRoot(spec.file)
@@ -436,11 +391,11 @@ export const createRemoteAvatarManager = ({
       root = container;
     }
     if (root.scale?.set) {
-      root.scale.set(spec.scale, spec.scale, spec.scale);
+      root.scale.set(spec.worldScale, spec.worldScale, spec.worldScale);
       (root as unknown as { __afpsBaseScale?: { x: number; y: number; z: number } }).__afpsBaseScale = {
-        x: spec.scale,
-        y: spec.scale,
-        z: spec.scale
+        x: spec.worldScale,
+        y: spec.worldScale,
+        z: spec.worldScale
       };
     }
     return { root, key: spec.file };
@@ -704,6 +659,9 @@ export const createRemoteAvatarManager = ({
     return parent;
   };
 
+  const resolveAvatarWeaponOffset = (avatar: RemoteAvatar, slot = avatar.weaponSlot) =>
+    resolveWeaponOffsetForSlot(slot, avatar.weaponOffset, avatar.weaponOffsetsById);
+
   const computeGroundOffset = (root: Object3DLike) => {
     if (three.Box3 && three.Vector3) {
       const box = new three.Box3().setFromObject(root);
@@ -775,6 +733,17 @@ export const createRemoteAvatarManager = ({
       cx * sy * cz - sx * cy * sz,
       cx * cy * sz + sx * sy * cz,
       cx * cy * cz - sx * sy * sz
+    ]);
+  };
+
+  const multiplyQuat = (a: QuaternionTuple, b: QuaternionTuple): QuaternionTuple => {
+    const [ax, ay, az, aw] = a;
+    const [bx, by, bz, bw] = b;
+    return normalizeQuat([
+      aw * bx + ax * bw + ay * bz - az * by,
+      aw * by - ax * bz + ay * bw + az * bx,
+      aw * bz + ax * by - ay * bx + az * bw,
+      aw * bw - ax * bx - ay * by - az * bz
     ]);
   };
 
@@ -851,6 +820,72 @@ export const createRemoteAvatarManager = ({
       z0 * s0 + z1 * s1,
       w0 * s0 + w1 * s1
     ]);
+  };
+
+  const updateHandGripBindings = (avatar: RemoteAvatar) => {
+    if (typeof avatar.root.traverse !== 'function') {
+      avatar.handGripBones = [];
+      avatar.handGripBlend = 0;
+      avatar.triggerPull = 0;
+      return;
+    }
+    const weaponId = resolveWeaponIdForSlot(avatar.weaponSlot);
+    const pose = resolveGripPose(weaponId);
+    const byName = new Map<string, Object3DLike>();
+    avatar.root.traverse((child) => {
+      if (!child?.name) {
+        return;
+      }
+      byName.set(normalizeName(child.name), child);
+    });
+    const bindings: HandGripBoneBinding[] = [];
+    pose.forEach((entry) => {
+      const bone = byName.get(normalizeName(entry.bone));
+      if (!bone) {
+        return;
+      }
+      const gripDelta = eulerToQuat(entry.rotation[0], entry.rotation[1], entry.rotation[2]);
+      const triggerDelta = entry.triggerPullRotation
+        ? eulerToQuat(
+            entry.triggerPullRotation[0],
+            entry.triggerPullRotation[1],
+            entry.triggerPullRotation[2]
+          )
+        : undefined;
+      bindings.push({
+        bone,
+        baseQuat: getBoneQuat(bone),
+        gripDelta,
+        triggerDelta
+      });
+    });
+    avatar.handGripBones = bindings;
+    if (!Number.isFinite(avatar.handGripBlend)) {
+      avatar.handGripBlend = 0;
+    }
+    avatar.triggerPull = 0;
+  };
+
+  const applyHandGripPose = (avatar: RemoteAvatar) => {
+    const bindings = avatar.handGripBones ?? [];
+    if (bindings.length === 0) {
+      return;
+    }
+    const gripBlend = clamp01(Number.isFinite(avatar.handGripBlend) ? (avatar.handGripBlend as number) : 0);
+    if (gripBlend <= 0.0001) {
+      return;
+    }
+    const triggerBlend = clamp01(Number.isFinite(avatar.triggerPull) ? (avatar.triggerPull as number) : 0);
+    for (const binding of bindings) {
+      const sourceQuat = getBoneQuat(binding.bone);
+      const gripTarget = multiplyQuat(binding.baseQuat, binding.gripDelta);
+      let target = gripTarget;
+      if (triggerBlend > 0 && binding.triggerDelta) {
+        const triggerTarget = multiplyQuat(gripTarget, binding.triggerDelta);
+        target = slerpQuat(gripTarget, triggerTarget, triggerBlend);
+      }
+      setBoneQuat(binding.bone, slerpQuat(sourceQuat, target, gripBlend));
+    }
   };
 
   const hasKneelPoseTargets = (avatar: RemoteAvatar) =>
@@ -1166,9 +1201,11 @@ export const createRemoteAvatarManager = ({
       current.weapon.remove(current.aimDebug);
     }
     current.aimDebug = undefined;
-    const parent = attachWeapon(current.root, loaded.root, current.weaponOffset, current.handBone);
+    const offset = resolveAvatarWeaponOffset(current, safeSlot);
+    const parent = attachWeapon(current.root, loaded.root, offset, current.handBone);
     current.weapon = loaded.root;
     current.weaponParent = parent;
+    updateHandGripBindings(current);
     updateAimDebug(current);
   };
 
@@ -1177,12 +1214,14 @@ export const createRemoteAvatarManager = ({
     slot: number,
     nowMs: number,
     offset?: WeaponOffset,
+    weaponOffsetsById?: Record<string, WeaponOffset>,
     characterId?: string,
     handHint?: string
   ): RemoteAvatar => {
     const body = new three.Mesh(bodyGeometry, bodyMaterial) as unknown as Object3DLike;
-    const weapon = createWeaponMesh(slot, offset);
-    const weaponParent = attachWeapon(body, weapon, offset, handHint);
+    const initialOffset = resolveWeaponOffsetForSlot(slot, offset, weaponOffsetsById);
+    const weapon = createWeaponMesh(slot, initialOffset);
+    const weaponParent = attachWeapon(body, weapon, initialOffset, handHint);
     const profile = profiles.get(id);
     const label = profile?.nickname ?? id;
     const nameplate = createNameplate(label);
@@ -1196,6 +1235,7 @@ export const createRemoteAvatarManager = ({
       weapon,
       weaponParent,
       weaponOffset: offset,
+      weaponOffsetsById,
       characterId,
       handBone: handHint,
       modelUrl: undefined,
@@ -1217,6 +1257,8 @@ export const createRemoteAvatarManager = ({
       sprintBlend: 0,
       reloadBlend: 0,
       overheatBlend: 0,
+      handGripBlend: 0,
+      triggerPull: 0,
       aimPitch: 0,
       recoilPitch: 0,
       recoilYaw: 0,
@@ -1224,6 +1266,7 @@ export const createRemoteAvatarManager = ({
     };
     ensureRootBaseScale(avatar);
     updateCrouchBindings(avatar);
+    updateHandGripBindings(avatar);
     applyVisibility(avatar);
     avatars.set(id, avatar);
     void requestWeaponModel(avatar, slot);
@@ -1241,11 +1284,13 @@ export const createRemoteAvatarManager = ({
     }
     avatar.aimDebug = undefined;
     detachWeapon(avatar);
-    const nextWeapon = createWeaponMesh(safeSlot, avatar.weaponOffset);
-    const parent = attachWeapon(avatar.root, nextWeapon, avatar.weaponOffset, avatar.handBone);
+    const offset = resolveAvatarWeaponOffset(avatar, safeSlot);
+    const nextWeapon = createWeaponMesh(safeSlot, offset);
+    const parent = attachWeapon(avatar.root, nextWeapon, offset, avatar.handBone);
     avatar.weapon = nextWeapon;
     avatar.weaponParent = parent;
     avatar.weaponSlot = safeSlot;
+    updateHandGripBindings(avatar);
     updateAimDebug(avatar);
     void requestWeaponModel(avatar, safeSlot);
   };
@@ -1261,7 +1306,15 @@ export const createRemoteAvatarManager = ({
     const desiredModelUrl = entry?.modelUrl;
     const avatar =
       avatars.get(snapshot.clientId) ??
-      createAvatar(snapshot.clientId, slot, nowMs, entry?.weaponOffset, desiredCharacterId, entry?.handBone);
+      createAvatar(
+        snapshot.clientId,
+        slot,
+        nowMs,
+        entry?.weaponOffset,
+        entry?.weaponOffsetsById,
+        desiredCharacterId,
+        entry?.handBone
+      );
     avatar.lastSeenMs = nowMs;
     avatar.simPosX = snapshot.posX;
     avatar.simPosY = snapshot.posY;
@@ -1304,7 +1357,8 @@ export const createRemoteAvatarManager = ({
           const nameplate = current.nameplate;
           const handHint = entry.handBone;
           detachWeapon(current);
-          const weaponParent = attachWeapon(model.root, weapon, current.weaponOffset, handHint);
+          const offset = resolveAvatarWeaponOffset(current);
+          const weaponParent = attachWeapon(model.root, weapon, offset, handHint);
           if (nameplate) {
             model.root.add?.(nameplate.sprite);
           }
@@ -1314,6 +1368,7 @@ export const createRemoteAvatarManager = ({
           current.groundOffsetY = computeGroundOffset(model.root);
           ensureRootBaseScale(current);
           updateCrouchBindings(current);
+          updateHandGripBindings(current);
           setupAnimations(current, model);
           applyAvatarRootPosition(current);
           applyCrouchPose(current);
@@ -1478,8 +1533,15 @@ export const createRemoteAvatarManager = ({
       avatar.characterId = profile.characterId;
       avatar.handBone = entry?.handBone;
       avatar.weaponOffset = entry?.weaponOffset;
+      avatar.weaponOffsetsById = entry?.weaponOffsetsById;
       detachWeapon(avatar);
-      avatar.weaponParent = attachWeapon(avatar.root, avatar.weapon, avatar.weaponOffset, avatar.handBone);
+      avatar.weaponParent = attachWeapon(
+        avatar.root,
+        avatar.weapon,
+        resolveAvatarWeaponOffset(avatar),
+        avatar.handBone
+      );
+      updateHandGripBindings(avatar);
       if (!avatar.weaponModelKey) {
         void requestWeaponModel(avatar, avatar.weaponSlot);
       }
@@ -1505,9 +1567,16 @@ export const createRemoteAvatarManager = ({
       }
       const entry = resolveCharacterEntry(next, profile.characterId);
       avatar.weaponOffset = entry.weaponOffset;
+      avatar.weaponOffsetsById = entry.weaponOffsetsById;
       avatar.handBone = entry.handBone;
       detachWeapon(avatar);
-      avatar.weaponParent = attachWeapon(avatar.root, avatar.weapon, avatar.weaponOffset, avatar.handBone);
+      avatar.weaponParent = attachWeapon(
+        avatar.root,
+        avatar.weapon,
+        resolveAvatarWeaponOffset(avatar),
+        avatar.handBone
+      );
+      updateHandGripBindings(avatar);
       if (!avatar.weaponModelKey) {
         void requestWeaponModel(avatar, avatar.weaponSlot);
       }
@@ -1541,7 +1610,8 @@ export const createRemoteAvatarManager = ({
           const nameplate = current.nameplate;
           const handHint = entry.handBone;
           detachWeapon(current);
-          const weaponParent = attachWeapon(model.root, weapon, current.weaponOffset, handHint);
+          const offset = resolveAvatarWeaponOffset(current);
+          const weaponParent = attachWeapon(model.root, weapon, offset, handHint);
           if (nameplate) {
             model.root.add?.(nameplate.sprite);
           }
@@ -1551,6 +1621,7 @@ export const createRemoteAvatarManager = ({
           current.groundOffsetY = computeGroundOffset(model.root);
           ensureRootBaseScale(current);
           updateCrouchBindings(current);
+          updateHandGripBindings(current);
           setupAnimations(current, model);
           applyAvatarRootPosition(current);
           applyCrouchPose(current);
@@ -1607,8 +1678,14 @@ export const createRemoteAvatarManager = ({
       const isDead = (avatar.health ?? 100) <= DEAD_HEALTH_EPSILON;
       avatar.deadBlend = isDead ? 1 : 0;
       avatar.crouchBlend = approachBlend(crouchBlend, isDead ? 0 : wantsCrouch ? 1 : 0, CROUCH_BLEND_SPEED, deltaSeconds);
+      const hasHandGrip = (avatar.handGripBones?.length ?? 0) > 0;
+      const gripBlend = Number.isFinite(avatar.handGripBlend) ? (avatar.handGripBlend as number) : 0;
+      avatar.handGripBlend = approachBlend(gripBlend, hasHandGrip ? 1 : 0, HAND_GRIP_BLEND_SPEED, deltaSeconds);
+      const pull = Number.isFinite(avatar.triggerPull) ? (avatar.triggerPull as number) : 0;
+      avatar.triggerPull = approachBlend(pull, 0, TRIGGER_PULL_DECAY_SPEED, deltaSeconds);
       applyAvatarRootPosition(avatar);
       applyCrouchPose(avatar);
+      applyHandGripPose(avatar);
       applyDeathPose(avatar);
       updateWeaponPose(avatar, deltaSeconds);
     }
@@ -1630,6 +1707,7 @@ export const createRemoteAvatarManager = ({
     const nextYaw = Math.max(-0.3, Math.min(0.3, (avatar.recoilYaw ?? 0) + kick.yaw));
     avatar.recoilPitch = nextPitch;
     avatar.recoilYaw = nextYaw;
+    avatar.triggerPull = 1;
   };
 
   const setAimDebugEnabled = (enabled: boolean) => {

@@ -1,6 +1,6 @@
 # World Collision Meshes (Building Triangles + BVH)
 
-This document describes the new mesh-collider data path used for world-hit debugging and decal-trace triage.
+This document describes the mesh-collider data path used for world-hit debugging, decal-trace triage, and projectile world impacts.
 
 ## Why this exists
 
@@ -9,11 +9,12 @@ Rectangle/compound AABB colliders are fast and stable for movement, but they can
 ## Current runtime behavior
 
 - Movement + blocking collisions are still AABB-based (`afps::sim::CollisionWorld`).
-- Authoritative hitscan world-hit resolution is backend-policy driven (`AFPS_WORLD_HIT_BACKEND`):
+- Authoritative hitscan world-hit and projectile world-impact resolution are backend-policy driven (`AFPS_WORLD_HIT_BACKEND`):
   - `mesh_only` (default): triangle/BVH authoritative for buildings, AABB fallback only for non-building world bounds (`collider_id <= 0`).
   - `hybrid`: prefer mesh/BVH when available, but allow AABB fallback for misses.
   - `aabb`: disable mesh/BVH world-hit resolution.
 - Near-muzzle retry resolves ignored collider IDs to mesh instance IDs before retracing.
+- Projectile impacts use the same shared world-hit resolver, so coarse building AABBs no longer block projectiles when the mesh misses.
 - Server shot debug logging also records a shadow detailed trace (`world_shadow`) for comparison.
 - On server boot, registry validation auto-runs `tools/build_collision_meshes.mjs` if the file is missing/invalid or any prefab lacks explicit `triangles`.
 
@@ -73,7 +74,10 @@ What it does:
 - Static mesh instance transform export from map generation:
   - `server/src/map_world.cpp`
   - `server/src/map_world.h`
-- Shot shadow detailed raycast + shot log output:
+- Shared authoritative world-hit resolver:
+  - `server/src/world_hit.cpp`
+  - `server/src/world_hit.h`
+- Shot shadow detailed raycast, shot log output, and projectile resolver wiring:
   - `server/src/tick.cpp`
   - `server/src/tick.h`
 
@@ -109,6 +113,8 @@ Use this to diagnose mid-air decals:
 Coverage and parity checks are in:
 
 - `server/tests/test_world_collision_mesh.cpp`
+- `server/tests/test_world_hit.cpp`
+- projectile resolver regressions in `server/tests/test_combat.cpp`
 
 Key assertions:
 
@@ -128,7 +134,7 @@ Key assertions:
 ```bash
 AFPS_STRICT_COLLISION_MESH=1 \
 AFPS_WORLD_HIT_BACKEND=mesh_only \
-./server/build/afps_server --http --auth-token devtoken --host 0.0.0.0 --port 8443 --snapshot-keyframe-interval 5
+./server/build/afps_server --http --auth-token devtoken --host 0.0.0.0 --port 7001 --snapshot-keyframe-interval 5
 ```
 
 With shot trace logging:
@@ -138,5 +144,5 @@ AFPS_STRICT_COLLISION_MESH=1 \
 AFPS_WORLD_HIT_BACKEND=mesh_only \
 AFPS_LOG_SHOTS=1 \
 AFPS_SHOT_LOG_PATH=tmp/shot_debug.log \
-./server/build/afps_server --http --auth-token devtoken --host 0.0.0.0 --port 8443 --snapshot-keyframe-interval 5
+./server/build/afps_server --http --auth-token devtoken --host 0.0.0.0 --port 7001 --snapshot-keyframe-interval 5
 ```

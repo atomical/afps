@@ -142,6 +142,67 @@ describe('character catalog', () => {
     expect(catalog.defaultId).toBe('bravo');
   });
 
+  it('overlays mount data from weapon_mounts.json when present', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          defaultId: 'alpha',
+          entries: [
+            {
+              id: 'alpha',
+              displayName: 'Alpha',
+              handBone: 'OldHand',
+              weaponOffset: {
+                position: [0, 0, 0],
+                rotation: [0, 0, 0],
+                scale: 1
+              }
+            }
+          ]
+        })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          entries: [
+            {
+              characterId: 'alpha',
+              handBone: 'Wrist.R',
+              weaponOffset: {
+                position: [0.1, 0.2, 0.3],
+                rotation: [0.4, 0.5, 0.6],
+                scale: 1.1
+              },
+              weaponOffsetsById: {
+                AR_556: {
+                  position: [0.7, 0.8, 0.9],
+                  rotation: [0.01, 0.02, 0.03],
+                  scale: 1.05
+                }
+              }
+            }
+          ]
+        })
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const catalog = await loadCharacterCatalog('test://manifest');
+
+    expect(catalog.entries[0].handBone).toBe('Wrist.R');
+    expect(catalog.entries[0].weaponOffset).toEqual({
+      position: [0.1, 0.2, 0.3],
+      rotation: [0.4, 0.5, 0.6],
+      scale: 1.1
+    });
+    expect(catalog.entries[0].weaponOffsetsById?.AR_556).toEqual({
+      position: [0.7, 0.8, 0.9],
+      rotation: [0.01, 0.02, 0.03],
+      scale: 1.05
+    });
+  });
+
   it('resolves entries by id with default fallback', () => {
     const catalog = {
       defaultId: 'bravo',

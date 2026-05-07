@@ -53,6 +53,7 @@ set(AFPS_SERVER_SOURCES
   src/tick.cpp
   src/weapon_config.cpp
   src/world_collision_mesh.cpp
+  src/world_hit.cpp
   src/usage.cpp
 )
 
@@ -117,6 +118,7 @@ set(AFPS_SERVER_TEST_SOURCES
   tests/test_snapshot_bandwidth.cpp
   tests/test_tick.cpp
   tests/test_world_collision_mesh.cpp
+  tests/test_world_hit.cpp
   tests/test_usage.cpp
 )
 

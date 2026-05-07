@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLIENT_DIR="${CLIENT_DIR:-${ROOT_DIR}/client}"
 SERVER_DIR="${SERVER_DIR:-${ROOT_DIR}/server}"
+CONFIGURE_SERVER_BUILD_SCRIPT="${ROOT_DIR}/tools/configure_server_build.sh"
 CLIENT_COVERAGE_MODE="${CLIENT_COVERAGE_MODE:-required}"
 
 PORT_START="${UI_TEST_PORT:-5174}"
@@ -72,7 +73,7 @@ run_client_unit_tests() {
 echo "==> Running server tests"
 (
   cd "${SERVER_DIR}"
-  cmake -S . -B build
+  "${CONFIGURE_SERVER_BUILD_SCRIPT}" "${SERVER_DIR}" "${SERVER_DIR}/build"
   cmake --build build
   ctest --test-dir build
 ) || FAILED=1
@@ -86,7 +87,7 @@ run_client_unit_tests || FAILED=1
 echo "==> Starting client dev server for UI tests on port ${UI_TEST_PORT}"
 (
   cd "${CLIENT_DIR}"
-  VITE_SIGNALING_URL="${VITE_SIGNALING_URL:-http://localhost:8443}" \
+  VITE_SIGNALING_URL="${VITE_SIGNALING_URL:-http://localhost:7001}" \
   VITE_SIGNALING_AUTH_TOKEN="${VITE_SIGNALING_AUTH_TOKEN:-devtoken}" \
   VITE_DEBUG_AUDIO="${VITE_DEBUG_AUDIO:-true}" \
   VITE_DEBUG_HUD="${VITE_DEBUG_HUD:-true}" \

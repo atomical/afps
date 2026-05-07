@@ -8,7 +8,7 @@
 
 struct ServerConfig {
   std::string host = "0.0.0.0";
-  int port = 8443;
+  int port = 7001;
   std::string cert_path;
   std::string key_path;
   std::string auth_token;

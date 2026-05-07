@@ -24,13 +24,13 @@ openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -node
 ## Run
 
 ```bash
-./build/afps_server --cert certs/cert.pem --key certs/key.pem --host 0.0.0.0 --port 8443
+./build/afps_server --cert certs/cert.pem --key certs/key.pem --host 0.0.0.0 --port 7001
 ```
 
 Deterministic procedural world seed:
 
 ```bash
-./build/afps_server --cert certs/cert.pem --key certs/key.pem --map-seed 1337 --host 0.0.0.0 --port 8443
+./build/afps_server --cert certs/cert.pem --key certs/key.pem --map-seed 1337 --host 0.0.0.0 --port 7001
 ```
 
 Optional: provide ICE servers (repeatable):

@@ -2,27 +2,105 @@
 
 #include "combat.h"
 #include "sim/sim.h"
+#include "world_hit.h"
 
 #include <cmath>
 #include <limits>
 #include <random>
 #include <unordered_map>
+#include <vector>
 
-using afps::combat::PoseHistory;
-using afps::combat::ResolveHitscan;
-using afps::combat::ResolveProjectileImpact;
-using afps::combat::SanitizeViewAngles;
 using afps::combat::ApplyDamage;
 using afps::combat::ApplyDamageWithShield;
 using afps::combat::ApplyShieldMultiplier;
-using afps::combat::CreateCombatState;
-using afps::combat::IsShieldFacing;
-using afps::combat::UpdateRespawn;
-using afps::combat::ViewDirection;
-using afps::combat::ViewAngles;
 using afps::combat::ComputeExplosionDamage;
 using afps::combat::ComputeShockwaveHits;
+using afps::combat::CreateCombatState;
+using afps::combat::IsShieldFacing;
+using afps::combat::PoseHistory;
 using afps::combat::ProjectileState;
+using afps::combat::ResolveHitscan;
+using afps::combat::ResolveProjectileImpact;
+using afps::combat::SanitizeViewAngles;
+using afps::combat::UpdateRespawn;
+using afps::combat::ViewAngles;
+using afps::combat::ViewDirection;
+
+namespace {
+constexpr const char *kProjectilePrefabId = "projectile-building-test.glb";
+
+afps::world::CollisionMeshRegistry MakeProjectileCollisionMeshRegistry(bool with_triangle) {
+  afps::world::CollisionMeshRegistry registry;
+  registry.version = 1;
+
+  afps::world::CollisionMeshPrefab prefab;
+  prefab.id = kProjectilePrefabId;
+  prefab.surface_type = static_cast<uint8_t>(SurfaceType::Metal);
+  prefab.has_explicit_triangles = true;
+  prefab.bounds.min_x = 0.0;
+  prefab.bounds.min_y = -1.0;
+  prefab.bounds.min_z = 0.0;
+  prefab.bounds.max_x = 3.0;
+  prefab.bounds.max_y = 1.0;
+  prefab.bounds.max_z = 2.0;
+  if (with_triangle) {
+    prefab.triangle_count = 1;
+    prefab.triangles.push_back({1.0, -1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 2.0});
+    prefab.triangle_indices.push_back(0);
+    afps::world::CollisionMeshPrefab::BvhNode node;
+    node.bounds = prefab.bounds;
+    node.begin = 0;
+    node.end = 1;
+    node.leaf = true;
+    prefab.bvh_nodes.push_back(node);
+  }
+  registry.prefabs.push_back(prefab);
+  return registry;
+}
+
+std::vector<afps::world::StaticMeshInstance> MakeProjectileMeshInstances() {
+  afps::world::StaticMeshInstance instance;
+  instance.instance_id = 77;
+  instance.prefab_id = kProjectilePrefabId;
+  instance.scale = 1.0;
+  instance.first_collider_id = 42;
+  instance.last_collider_id = 42;
+  return {instance};
+}
+
+afps::sim::CollisionWorld MakeProjectileCoarseWorld() {
+  afps::sim::CollisionWorld world;
+  afps::sim::AddAabbCollider(world, {42, 0.0, -1.0, 0.0, 3.0, 1.0, 2.0, 1, 0});
+  return world;
+}
+
+afps::combat::ProjectileWorldImpact ResolveProjectileWorldHitWithMesh(
+    const afps::combat::ProjectileState &projectile, const afps::combat::Vec3 &delta,
+    const afps::sim::SimConfig &config, const afps::sim::CollisionWorld *world,
+    const std::vector<afps::world::StaticMeshInstance> &instances,
+    const afps::world::CollisionMeshRegistry &registry,
+    const std::unordered_map<std::string, size_t> &prefab_lookup,
+    const std::unordered_map<int, uint32_t> &collider_instance_lookup) {
+  afps::combat::ProjectileWorldImpact out;
+  const double len = std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
+  if (!std::isfinite(len) || len <= 1e-9) {
+    return out;
+  }
+  const afps::combat::Vec3 dir{delta.x / len, delta.y / len, delta.z / len};
+  const auto hit = afps::server::ResolveWorldRaycast(
+      projectile.position, dir, config, world, instances, registry, prefab_lookup, true, len,
+      afps::server::WorldHitBackendMode::MeshOnly, &collider_instance_lookup);
+  if (!hit.hit || !std::isfinite(hit.distance) || hit.distance < 0.0 || hit.distance > len) {
+    return out;
+  }
+  out.hit = true;
+  out.t = hit.distance / len;
+  out.position = hit.position;
+  out.normal = hit.normal;
+  out.surface_type = static_cast<uint8_t>(hit.surface);
+  return out;
+}
+} // namespace
 
 TEST_CASE("PoseHistory returns latest sample at or before tick") {
   PoseHistory history(3);
@@ -326,7 +404,8 @@ TEST_CASE("ResolveHitscan misses when target history does not reach rewind tick"
 
 TEST_CASE("ResolveHitscan returns no hit when shooter is missing") {
   std::unordered_map<std::string, PoseHistory> histories;
-  const auto miss = ResolveHitscan("missing", histories, 5, {0.0, 0.0}, afps::sim::kDefaultSimConfig, 50.0);
+  const auto miss =
+      ResolveHitscan("missing", histories, 5, {0.0, 0.0}, afps::sim::kDefaultSimConfig, 50.0);
   CHECK_FALSE(miss.hit);
 }
 
@@ -522,12 +601,7 @@ TEST_CASE("ResolveHitscan handles non-finite inputs safely") {
   const double nan = std::numeric_limits<double>::quiet_NaN();
   const double inf = std::numeric_limits<double>::infinity();
   const std::vector<ViewAngles> angles = {
-      {nan, 0.0},
-      {inf, 0.0},
-      {-inf, 0.0},
-      {0.0, nan},
-      {0.0, inf},
-      {nan, inf},
+      {nan, 0.0}, {inf, 0.0}, {-inf, 0.0}, {0.0, nan}, {0.0, inf}, {nan, inf},
   };
   const std::vector<double> ranges = {50.0, nan, -1.0};
 
@@ -620,7 +694,8 @@ TEST_CASE("ResolveHitscan hits angled target with yaw") {
   histories.emplace("shooter", shooter);
   histories.emplace("target", target);
 
-  const double yaw = std::atan2(target_state.x - shooter_state.x, -(target_state.y - shooter_state.y));
+  const double yaw =
+      std::atan2(target_state.x - shooter_state.x, -(target_state.y - shooter_state.y));
   const auto hit = ResolveHitscan("shooter", histories, 1, {yaw, 0.0}, config, 50.0);
   CHECK(hit.hit);
   CHECK(hit.target_id == "target");
@@ -711,6 +786,85 @@ TEST_CASE("ResolveProjectileImpact hits arena boundary when no target") {
   const auto impact = ResolveProjectileImpact(projectile, delta, config, players, "owner");
   CHECK(impact.hit);
   CHECK(impact.hit_world);
+}
+
+TEST_CASE("ResolveProjectileImpact uses mesh resolver instead of coarse building AABB") {
+  afps::sim::SimConfig config = afps::sim::kDefaultSimConfig;
+  config.arena_half_size = 0.0;
+  config.obstacle_min_x = 0.0;
+  config.obstacle_max_x = 0.0;
+  config.obstacle_min_y = 0.0;
+  config.obstacle_max_y = 0.0;
+
+  const auto registry = MakeProjectileCollisionMeshRegistry(false);
+  const auto instances = MakeProjectileMeshInstances();
+  const std::unordered_map<std::string, size_t> prefab_lookup{{kProjectilePrefabId, 0}};
+  const std::unordered_map<int, uint32_t> collider_instance_lookup{{42, 77}};
+  const auto world = MakeProjectileCoarseWorld();
+
+  std::unordered_map<std::string, afps::sim::PlayerState> players;
+  afps::sim::PlayerState target;
+  target.x = 2.5;
+  target.y = 0.0;
+  target.z = 0.0;
+  players.emplace("target", target);
+
+  ProjectileState projectile;
+  projectile.position = {-1.0, 0.0, 1.0};
+  projectile.radius = 0.0;
+
+  const afps::combat::Vec3 delta{4.0, 0.0, 0.0};
+  const afps::combat::ProjectileWorldImpactResolver resolver =
+      [&](const afps::combat::ProjectileState &state, const afps::combat::Vec3 &step,
+          const afps::sim::SimConfig &step_config, const afps::sim::CollisionWorld *step_world) {
+        return ResolveProjectileWorldHitWithMesh(state, step, step_config, step_world, instances,
+                                                 registry, prefab_lookup, collider_instance_lookup);
+      };
+
+  const auto impact =
+      ResolveProjectileImpact(projectile, delta, config, players, "owner", &world, resolver);
+  CHECK(impact.hit);
+  CHECK_FALSE(impact.hit_world);
+  CHECK(impact.target_id == "target");
+}
+
+TEST_CASE("ResolveProjectileImpact reports detailed mesh world impact") {
+  afps::sim::SimConfig config = afps::sim::kDefaultSimConfig;
+  config.arena_half_size = 0.0;
+  config.obstacle_min_x = 0.0;
+  config.obstacle_max_x = 0.0;
+  config.obstacle_min_y = 0.0;
+  config.obstacle_max_y = 0.0;
+
+  const auto registry = MakeProjectileCollisionMeshRegistry(true);
+  const auto instances = MakeProjectileMeshInstances();
+  const std::unordered_map<std::string, size_t> prefab_lookup{{kProjectilePrefabId, 0}};
+  const std::unordered_map<int, uint32_t> collider_instance_lookup{{42, 77}};
+  const auto world = MakeProjectileCoarseWorld();
+  const std::unordered_map<std::string, afps::sim::PlayerState> players;
+
+  ProjectileState projectile;
+  projectile.position = {-1.0, 0.0, 1.0};
+  projectile.radius = 0.0;
+
+  const afps::combat::Vec3 delta{4.0, 0.0, 0.0};
+  const afps::combat::ProjectileWorldImpactResolver resolver =
+      [&](const afps::combat::ProjectileState &state, const afps::combat::Vec3 &step,
+          const afps::sim::SimConfig &step_config, const afps::sim::CollisionWorld *step_world) {
+        return ResolveProjectileWorldHitWithMesh(state, step, step_config, step_world, instances,
+                                                 registry, prefab_lookup, collider_instance_lookup);
+      };
+
+  const auto impact =
+      ResolveProjectileImpact(projectile, delta, config, players, "owner", &world, resolver);
+  REQUIRE(impact.hit);
+  CHECK(impact.hit_world);
+  CHECK(impact.t == doctest::Approx(0.5));
+  CHECK(impact.position.x == doctest::Approx(1.0));
+  CHECK(impact.position.y == doctest::Approx(0.0));
+  CHECK(impact.position.z == doctest::Approx(1.0));
+  CHECK(impact.normal.x == doctest::Approx(-1.0));
+  CHECK(impact.surface_type == static_cast<uint8_t>(SurfaceType::Metal));
 }
 
 TEST_CASE("ResolveProjectileImpact rejects non-finite deltas") {
@@ -822,7 +976,8 @@ TEST_CASE("ComputeExplosionDamage rejects invalid radius or damage") {
   const auto empty_damage = ComputeExplosionDamage(center, 4.0, -5.0, players, "");
   CHECK(empty_damage.empty());
 
-  const auto empty_nan = ComputeExplosionDamage(center, std::numeric_limits<double>::quiet_NaN(), 100.0, players, "");
+  const auto empty_nan =
+      ComputeExplosionDamage(center, std::numeric_limits<double>::quiet_NaN(), 100.0, players, "");
   CHECK(empty_nan.empty());
 }
 
@@ -845,7 +1000,8 @@ TEST_CASE("ComputeExplosionDamage handles random inputs safely") {
   std::uniform_real_distribution<double> damage_dist(1.0, 200.0);
 
   for (int i = 0; i < 512; ++i) {
-    const afps::combat::Vec3 center{center_dist(rng), center_dist(rng), afps::combat::kPlayerHeight * 0.5};
+    const afps::combat::Vec3 center{center_dist(rng), center_dist(rng),
+                                    afps::combat::kPlayerHeight * 0.5};
     const double radius = radius_dist(rng);
     const double max_damage = damage_dist(rng);
     const auto hits = ComputeExplosionDamage(center, radius, max_damage, players, "");

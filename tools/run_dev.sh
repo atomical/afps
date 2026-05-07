@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLIENT_DIR="${CLIENT_DIR:-${ROOT_DIR}/client}"
 SERVER_SCRIPT="${SERVER_SCRIPT:-${ROOT_DIR}/tools/run_server.sh}"
 
-: "${VITE_SIGNALING_URL:=http://localhost:8443}"
+: "${VITE_SIGNALING_URL:=http://localhost:7001}"
 : "${VITE_SIGNALING_AUTH_TOKEN:=devtoken}"
 : "${VITE_DEBUG_LOCAL_AVATAR:=true}"
 : "${VITE_PROCEDURAL_MAP:=true}"

@@ -1187,6 +1187,36 @@ describe('ClientPrediction', () => {
     }
   });
 
+  it('resolves stacked collider overlaps with the authoritative multi-pass order', () => {
+    const sim = createJsPredictionSim({
+      ...SIM_CONFIG,
+      moveSpeed: 0,
+      accel: 0,
+      friction: 0,
+      gravity: 0,
+      arenaHalfSize: 0,
+      obstacleMinX: 0,
+      obstacleMaxX: 0,
+      obstacleMinY: 0,
+      obstacleMaxY: 0,
+      playerRadius: 0,
+      playerHeight: 1,
+      crouchHeight: 1
+    });
+    sim.setColliders?.([
+      { id: 1, minX: 0.2, maxX: 1.6, minY: 0.19, maxY: 0.83, minZ: 0, maxZ: 2 },
+      { id: 2, minX: 1.39, maxX: 2.9, minY: -0.42, maxY: 0.52, minZ: 0, maxZ: 2 },
+      { id: 3, minX: 1.1, maxX: 2.33, minY: 0.245, maxY: 1.7, minZ: 0, maxZ: 2 }
+    ]);
+
+    sim.setState(1.4611, 0.5016, 0, 0, 0, 0, 0);
+    sim.step({ moveX: 0, moveY: 0, sprint: false, jump: false, dash: false, grapple: false, shield: false, shockwave: false }, 1 / 60);
+
+    const state = sim.getState();
+    expect(state.x).toBeCloseTo(1.39);
+    expect(state.y).toBeCloseTo(0.19);
+  });
+
   it('passes through doorway gaps with multi-collider room walls', () => {
     const sim = createJsPredictionSim({
       ...SIM_CONFIG,

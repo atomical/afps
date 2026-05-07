@@ -1,7 +1,8 @@
 #pragma once
 
-#include <deque>
 #include <cstdint>
+#include <deque>
+#include <functional>
 #include <limits>
 #include <string>
 #include <unordered_map>
@@ -80,6 +81,18 @@ struct ProjectileImpact {
   uint8_t surface_type = 0;
 };
 
+struct ProjectileWorldImpact {
+  bool hit = false;
+  double t = 1.0;
+  Vec3 position{};
+  Vec3 normal{0.0, 0.0, 1.0};
+  uint8_t surface_type = 0;
+};
+
+using ProjectileWorldImpactResolver = std::function<ProjectileWorldImpact(
+    const ProjectileState &projectile, const Vec3 &delta, const afps::sim::SimConfig &config,
+    const afps::sim::CollisionWorld *world)>;
+
 struct ExplosionHit {
   std::string target_id;
   double damage = 0.0;
@@ -102,50 +115,37 @@ constexpr double kShieldBlockDot = 0.0;
 CombatState CreateCombatState();
 bool ApplyDamage(CombatState &target, CombatState *attacker, double damage);
 double ApplyShieldMultiplier(double damage, bool shield_active, double shield_multiplier);
-bool ApplyDamageWithShield(CombatState &target,
-                           CombatState *attacker,
-                           double damage,
-                           bool shield_active,
-                           double shield_multiplier);
+bool ApplyDamageWithShield(CombatState &target, CombatState *attacker, double damage,
+                           bool shield_active, double shield_multiplier);
 bool UpdateRespawn(CombatState &state, double dt);
 
 ViewAngles SanitizeViewAngles(double yaw, double pitch);
 Vec3 ViewDirection(const ViewAngles &angles);
-bool IsShieldFacing(const Vec3 &target_pos,
-                    const ViewAngles &target_view,
-                    const Vec3 &source_pos,
+bool IsShieldFacing(const Vec3 &target_pos, const ViewAngles &target_view, const Vec3 &source_pos,
                     double min_dot = kShieldBlockDot);
 
 HitResult ResolveHitscan(const std::string &shooter_id,
                          const std::unordered_map<std::string, PoseHistory> &histories,
-                         int rewind_tick,
-                         const ViewAngles &view,
-                         const afps::sim::SimConfig &config,
-                         double range,
+                         int rewind_tick, const ViewAngles &view,
+                         const afps::sim::SimConfig &config, double range,
                          const afps::sim::CollisionWorld *world = nullptr);
 
-ProjectileImpact ResolveProjectileImpact(const ProjectileState &projectile,
-                                         const Vec3 &delta,
-                                         const afps::sim::SimConfig &config,
-                                         const std::unordered_map<std::string, afps::sim::PlayerState> &players,
-                                         const std::string &ignore_id,
-                                         const afps::sim::CollisionWorld *world = nullptr);
-
-std::vector<ExplosionHit> ComputeExplosionDamage(
-    const Vec3 &center,
-    double radius,
-    double max_damage,
+ProjectileImpact ResolveProjectileImpact(
+    const ProjectileState &projectile, const Vec3 &delta, const afps::sim::SimConfig &config,
     const std::unordered_map<std::string, afps::sim::PlayerState> &players,
-    const std::string &ignore_id);
+    const std::string &ignore_id, const afps::sim::CollisionWorld *world = nullptr,
+    const ProjectileWorldImpactResolver &world_resolver = {});
 
-std::vector<ShockwaveHit> ComputeShockwaveHits(
-    const Vec3 &center,
-    double radius,
-    double max_impulse,
-    double max_damage,
-    const afps::sim::SimConfig &config,
-    const std::unordered_map<std::string, afps::sim::PlayerState> &players,
-    const std::string &ignore_id,
-    const afps::sim::CollisionWorld *world = nullptr);
+std::vector<ExplosionHit>
+ComputeExplosionDamage(const Vec3 &center, double radius, double max_damage,
+                       const std::unordered_map<std::string, afps::sim::PlayerState> &players,
+                       const std::string &ignore_id);
 
-}  // namespace afps::combat
+std::vector<ShockwaveHit>
+ComputeShockwaveHits(const Vec3 &center, double radius, double max_impulse, double max_damage,
+                     const afps::sim::SimConfig &config,
+                     const std::unordered_map<std::string, afps::sim::PlayerState> &players,
+                     const std::string &ignore_id,
+                     const afps::sim::CollisionWorld *world = nullptr);
+
+} // namespace afps::combat

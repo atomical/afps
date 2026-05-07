@@ -1,21 +1,8 @@
 import type { CameraLike, Object3DLike, SceneLike, Vector3Like } from '../types';
-
-type ViewmodelSpec = {
-  file: string;
-  position: [number, number, number];
-  rotation: [number, number, number];
-  scale: number;
-};
+import { resolveWeaponModelSpec } from '../weapons/model_catalog';
 
 const BASE_URL = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
 const NORMALIZED_BASE = BASE_URL.endsWith('/') ? BASE_URL : `${BASE_URL}/`;
-const VIEWMODEL_ROOT = `${NORMALIZED_BASE}assets/weapons/cc0/kenney_blaster_kit/`;
-const DEFAULT_VIEWMODEL: ViewmodelSpec = {
-  file: `${VIEWMODEL_ROOT}blaster-a.glb`,
-  position: [0.38, -0.32, -0.65],
-  rotation: [0.04, 0.12, 0],
-  scale: 0.55
-};
 const VIEWMODEL_YAW_OFFSET = 0;
 
 const resolveModelUrlCandidates = (url: string) => {
@@ -41,115 +28,18 @@ const resolveModelUrlCandidates = (url: string) => {
   return Array.from(candidates);
 };
 
-const VIEWMODELS_BY_ID: Record<string, ViewmodelSpec> = {
-  rifle: {
-    file: `${VIEWMODEL_ROOT}blaster-d.glb`,
-    position: [0.4, -0.34, -0.72],
-    rotation: [0.05, 0.1, 0],
-    scale: 0.6
-  },
-  AR_556: {
-    file: `${VIEWMODEL_ROOT}blaster-d.glb`,
-    position: [0.4, -0.34, -0.72],
-    rotation: [0.05, 0.1, 0],
-    scale: 0.6
-  },
-  launcher: {
-    file: `${VIEWMODEL_ROOT}blaster-f.glb`,
-    position: [0.4, -0.36, -0.72],
-    rotation: [0.06, 0.08, 0],
-    scale: 0.6
-  },
-  PISTOL_9MM: DEFAULT_VIEWMODEL,
-  PISTOL_45: {
-    ...DEFAULT_VIEWMODEL,
-    file: `${VIEWMODEL_ROOT}blaster-b.glb`
-  },
-  REVOLVER_357: {
-    ...DEFAULT_VIEWMODEL,
-    file: `${VIEWMODEL_ROOT}blaster-b.glb`,
-    scale: 0.58
-  },
-  SMG_9MM: {
-    file: `${VIEWMODEL_ROOT}blaster-c.glb`,
-    position: [0.4, -0.34, -0.72],
-    rotation: [0.05, 0.1, 0],
-    scale: 0.6
-  },
-  CARBINE_762: {
-    file: `${VIEWMODEL_ROOT}blaster-e.glb`,
-    position: [0.4, -0.35, -0.74],
-    rotation: [0.05, 0.1, 0],
-    scale: 0.62
-  },
-  DMR_762: {
-    file: `${VIEWMODEL_ROOT}blaster-e.glb`,
-    position: [0.4, -0.35, -0.74],
-    rotation: [0.05, 0.1, 0],
-    scale: 0.64
-  },
-  LMG_556: {
-    file: `${VIEWMODEL_ROOT}blaster-h.glb`,
-    position: [0.42, -0.38, -0.78],
-    rotation: [0.06, 0.08, 0],
-    scale: 0.7
-  },
-  SHOTGUN_PUMP: {
-    file: `${VIEWMODEL_ROOT}blaster-g.glb`,
-    position: [0.41, -0.36, -0.76],
-    rotation: [0.06, 0.08, 0],
-    scale: 0.66
-  },
-  SHOTGUN_AUTO: {
-    file: `${VIEWMODEL_ROOT}blaster-g.glb`,
-    position: [0.41, -0.36, -0.76],
-    rotation: [0.06, 0.08, 0],
-    scale: 0.66
-  },
-  SNIPER_BOLT: {
-    file: `${VIEWMODEL_ROOT}blaster-g.glb`,
-    position: [0.42, -0.37, -0.78],
-    rotation: [0.06, 0.08, 0],
-    scale: 0.68
-  },
-  GRENADE_LAUNCHER: {
-    file: `${VIEWMODEL_ROOT}blaster-f.glb`,
-    position: [0.4, -0.36, -0.72],
-    rotation: [0.06, 0.08, 0],
-    scale: 0.6
-  },
-  ROCKET_LAUNCHER: {
-    file: `${VIEWMODEL_ROOT}blaster-f.glb`,
-    position: [0.4, -0.36, -0.72],
-    rotation: [0.06, 0.08, 0],
-    scale: 0.6
-  },
-  ENERGY_RIFLE: {
-    file: `${VIEWMODEL_ROOT}blaster-a.glb`,
-    position: [0.4, -0.34, -0.72],
-    rotation: [0.05, 0.1, 0],
-    scale: 0.6
-  }
-};
-
 const applyTransform = (
   object: { position: Vector3Like; rotation: { x: number; y: number; z: number }; scale?: Vector3Like },
-  spec: ViewmodelSpec
+  weaponId?: string
 ) => {
-  object.position.set(...spec.position);
-  object.rotation.x = spec.rotation[0];
-  object.rotation.y = spec.rotation[1] + VIEWMODEL_YAW_OFFSET;
-  object.rotation.z = spec.rotation[2];
+  const pose = resolveWeaponModelSpec(weaponId).viewmodel;
+  object.position.set(...pose.position);
+  object.rotation.x = pose.rotation[0];
+  object.rotation.y = pose.rotation[1] + VIEWMODEL_YAW_OFFSET;
+  object.rotation.z = pose.rotation[2];
   if (object.scale) {
-    object.scale.set(spec.scale, spec.scale, spec.scale);
+    object.scale.set(pose.scale, pose.scale, pose.scale);
   }
-};
-
-const resolveSpec = (weaponId?: string) => {
-  if (weaponId && VIEWMODELS_BY_ID[weaponId]) {
-    return VIEWMODELS_BY_ID[weaponId];
-  }
-  return DEFAULT_VIEWMODEL;
 };
 
 export const attachWeaponViewmodel = (scene: SceneLike, camera: CameraLike, root: Object3DLike) => {
@@ -176,7 +66,7 @@ export const loadWeaponViewmodel = async ({
   try {
     const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
     const loader = new GLTFLoader();
-    const spec = resolveSpec(weaponId);
+    const spec = resolveWeaponModelSpec(weaponId);
     const urls = resolveModelUrlCandidates(spec.file);
     return await new Promise<Object3DLike | null>((resolve) => {
       let lastError: unknown = null;
@@ -190,7 +80,7 @@ export const loadWeaponViewmodel = async ({
           resolve(null);
           return;
         }
-        applyTransform(root, spec);
+        applyTransform(root, weaponId);
         if (attach) {
           attachWeaponViewmodel(scene, camera, root as unknown as Object3DLike);
         }

@@ -11,7 +11,7 @@ std::string UsageText(const char *argv0) {
   out << "  --key <path>    Path to TLS private key (PEM, required for HTTPS)\n";
   out << "  --auth-token <token> Shared secret for session issuance\n";
   out << "  --host <host>   Bind host (default 0.0.0.0)\n";
-  out << "  --port <port>   Bind port (default 8443)\n";
+  out << "  --port <port>   Bind port (default 7001)\n";
   out << "  --ice <url>     ICE server URL (repeatable)\n";
   out << "  --turn-secret <secret> TURN REST shared secret (enables time-limited credentials)\n";
   out << "  --turn-user <user> TURN REST username suffix (default afps)\n";
