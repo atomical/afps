@@ -191,6 +191,27 @@ double ResolveHeight(const afps::sim::SimConfig &config) {
   }
   return kPlayerHeight;
 }
+
+double ResolveHeight(const afps::sim::SimConfig &config, const afps::sim::PlayerState &state) {
+  const double height = afps::sim::ResolveCollisionPlayerHeight(config, &state);
+  if (std::isfinite(height) && height > 0.0) {
+    return height;
+  }
+  return ResolveHeight(config);
+}
+
+double ResolveEyeHeight(const afps::sim::SimConfig &config, const afps::sim::PlayerState &state) {
+  const double eye_height = afps::sim::ResolveEyeHeight(config, state.crouched);
+  if (std::isfinite(eye_height) && eye_height > 0.0) {
+    return eye_height;
+  }
+  return std::min(ResolveHeight(config, state), kPlayerEyeHeight);
+}
+
+double ResolveCenterHeight(const afps::sim::SimConfig &config,
+                           const afps::sim::PlayerState &state) {
+  return ResolveHeight(config, state) * 0.5;
+}
 } // namespace
 
 PoseHistory::PoseHistory(size_t max_samples) : max_samples_(max_samples) {}
@@ -366,7 +387,8 @@ HitResult ResolveHitscan(const std::string &shooter_id,
     return result;
   }
 
-  const Vec3 origin{shooter_state.x, shooter_state.y, shooter_state.z + kPlayerEyeHeight};
+  const Vec3 origin{shooter_state.x, shooter_state.y,
+                    shooter_state.z + ResolveEyeHeight(config, shooter_state)};
   const double max_range =
       (std::isfinite(range) && range > 0.0) ? range : std::numeric_limits<double>::infinity();
   const afps::sim::RaycastHit world_hit =
@@ -377,7 +399,6 @@ HitResult ResolveHitscan(const std::string &shooter_id,
   }
 
   const double radius = ResolveRadius(config);
-  const double height = ResolveHeight(config);
   double best_t = std::numeric_limits<double>::infinity();
   std::string best_target;
   for (const auto &entry : histories) {
@@ -389,6 +410,7 @@ HitResult ResolveHitscan(const std::string &shooter_id,
       continue;
     }
     const Vec3 base{target_state.x, target_state.y, target_state.z};
+    const double height = ResolveHeight(config, target_state);
     double t = 0.0;
     if (!RaycastCylinder(origin, dir, base, height, radius, t)) {
       continue;
@@ -434,7 +456,6 @@ ResolveProjectileImpact(const ProjectileState &projectile, const Vec3 &delta,
 
   const double radius = std::max(0.0, projectile.radius);
   const double player_radius = ResolveRadius(config) + radius;
-  const double height = ResolveHeight(config);
 
   for (const auto &entry : players) {
     if (entry.first == ignore_id) {
@@ -442,6 +463,7 @@ ResolveProjectileImpact(const ProjectileState &projectile, const Vec3 &delta,
     }
     const auto &state = entry.second;
     const Vec3 base{state.x, state.y, state.z};
+    const double height = ResolveHeight(config, state);
     double t = 0.0;
     if (!SegmentCylinder(origin, delta, base, height, player_radius, t)) {
       continue;
@@ -531,6 +553,15 @@ std::vector<ExplosionHit>
 ComputeExplosionDamage(const Vec3 &center, double radius, double max_damage,
                        const std::unordered_map<std::string, afps::sim::PlayerState> &players,
                        const std::string &ignore_id) {
+  return ComputeExplosionDamage(center, radius, max_damage, afps::sim::kDefaultSimConfig, players,
+                                ignore_id);
+}
+
+std::vector<ExplosionHit>
+ComputeExplosionDamage(const Vec3 &center, double radius, double max_damage,
+                       const afps::sim::SimConfig &config,
+                       const std::unordered_map<std::string, afps::sim::PlayerState> &players,
+                       const std::string &ignore_id) {
   std::vector<ExplosionHit> hits;
   if (!std::isfinite(max_damage) || max_damage <= 0.0) {
     return hits;
@@ -544,7 +575,7 @@ ComputeExplosionDamage(const Vec3 &center, double radius, double max_damage,
       continue;
     }
     const auto &state = entry.second;
-    const Vec3 target{state.x, state.y, state.z + (kPlayerHeight * 0.5)};
+    const Vec3 target{state.x, state.y, state.z + ResolveCenterHeight(config, state)};
     const double dx = target.x - center.x;
     const double dy = target.y - center.y;
     const double dz = target.z - center.z;
@@ -583,7 +614,7 @@ ComputeShockwaveHits(const Vec3 &center, double radius, double max_impulse, doub
       continue;
     }
     const auto &state = entry.second;
-    const Vec3 target{state.x, state.y, state.z + (kPlayerHeight * 0.5)};
+    const Vec3 target{state.x, state.y, state.z + ResolveCenterHeight(config, state)};
     const double dx = target.x - center.x;
     const double dy = target.y - center.y;
     const double dz = target.z - center.z;

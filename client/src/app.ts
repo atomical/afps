@@ -956,7 +956,7 @@ export const createApp = ({
     if (Number.isFinite(snapshot.health)) {
       lastSnapshotHealth = snapshot.health;
     }
-    prediction.reconcile(snapshot);
+    return prediction.reconcile(snapshot);
   };
 
   const setSnapshotRate = (snapshotRate: number) => {

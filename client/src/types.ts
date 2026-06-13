@@ -203,7 +203,7 @@ export interface App {
     crouched?: boolean;
     eyeHeight?: number;
   };
-  ingestSnapshot: (snapshot: NetworkSnapshot, nowMs: number) => void;
+  ingestSnapshot: (snapshot: NetworkSnapshot, nowMs: number) => number;
   setSnapshotRate: (snapshotRate: number) => void;
   recordInput: (cmd: {
     inputSeq: number;

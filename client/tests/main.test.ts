@@ -702,6 +702,7 @@ describe('main entry', () => {
     });
     envMock.getSignalingUrl.mockReturnValue('https://example.test');
     envMock.getSignalingAuthToken.mockReturnValue('token');
+    appInstance.ingestSnapshot.mockReturnValue(1.234);
 
     await import('../src/main');
     await flushPromises();
@@ -789,6 +790,7 @@ describe('main entry', () => {
     expect(hudMock.setWeapon).toHaveBeenCalledWith(1, expect.any(String));
     expect(inputSenderInstance.start).toHaveBeenCalled();
     expect(statusMock.setMetrics).toHaveBeenCalledWith(expect.stringContaining('kf 5'));
+    expect(statusMock.setMetrics).toHaveBeenCalledWith(expect.stringContaining('drift 1.23'));
 
     window.dispatchEvent(new Event('beforeunload'));
     expect(inputSenderInstance.stop).toHaveBeenCalled();

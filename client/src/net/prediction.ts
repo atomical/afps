@@ -1355,6 +1355,11 @@ export class ClientPrediction {
   }
 
   reconcile(snapshot: StateSnapshot) {
+    const predictionError = Math.hypot(
+      this.state.x - snapshot.posX,
+      this.state.y - snapshot.posY,
+      this.state.z - snapshot.posZ
+    );
     const crouched = (snapshot.playerFlags & PLAYER_FLAG_CROUCHED) !== 0;
     this.sim.setState(
       snapshot.posX,
@@ -1376,6 +1381,7 @@ export class ClientPrediction {
     }
 
     this.syncState();
+    return Number.isFinite(predictionError) ? predictionError : 0;
   }
 
   private applyInput(cmd: InputCmd) {

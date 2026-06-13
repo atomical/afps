@@ -141,6 +141,12 @@ ComputeExplosionDamage(const Vec3 &center, double radius, double max_damage,
                        const std::unordered_map<std::string, afps::sim::PlayerState> &players,
                        const std::string &ignore_id);
 
+std::vector<ExplosionHit>
+ComputeExplosionDamage(const Vec3 &center, double radius, double max_damage,
+                       const afps::sim::SimConfig &config,
+                       const std::unordered_map<std::string, afps::sim::PlayerState> &players,
+                       const std::string &ignore_id);
+
 std::vector<ShockwaveHit>
 ComputeShockwaveHits(const Vec3 &center, double radius, double max_impulse, double max_damage,
                      const afps::sim::SimConfig &config,

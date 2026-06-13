@@ -1059,8 +1059,10 @@ void TickLoop::Step() {
       return false;
     }
     const auto view = resolve_view(target_id);
+    const double target_height =
+        afps::sim::ResolveCollisionPlayerHeight(sim_config_, &state_iter->second);
     const afps::combat::Vec3 target_pos{state_iter->second.x, state_iter->second.y,
-                                        state_iter->second.z + (afps::combat::kPlayerHeight * 0.5)};
+                                        state_iter->second.z + (target_height * 0.5)};
     return afps::combat::IsShieldFacing(target_pos, view, source_pos);
   };
 
@@ -1246,8 +1248,10 @@ void TickLoop::Step() {
           input.shield, input.shockwave, input.view_yaw, input.view_pitch, input.crouch);
       afps::sim::StepPlayer(state, sim_input, sim_config_, dt, &collision_world_);
       if (state.shockwave_triggered) {
+        const double shockwave_height =
+            afps::sim::ResolveCollisionPlayerHeight(sim_config_, &state);
         shockwave_events.push_back(
-            {connection_id, {state.x, state.y, state.z + (afps::combat::kPlayerHeight * 0.5)}});
+            {connection_id, {state.x, state.y, state.z + (shockwave_height * 0.5)}});
       }
     } else {
       state.vel_x = 0.0;
@@ -1641,8 +1645,10 @@ void TickLoop::Step() {
       } else {
         shooter_pose = state_iter->second;
       }
+      const double shooter_eye_height =
+          afps::sim::ResolveEyeHeight(sim_config_, shooter_pose.crouched);
       const afps::combat::Vec3 origin{shooter_pose.x, shooter_pose.y,
-                                      shooter_pose.z + afps::combat::kPlayerEyeHeight};
+                                      shooter_pose.z + shooter_eye_height};
       const afps::combat::Vec3 muzzle = Add(origin, Mul(shot_dir, kShotMuzzleOffsetMeters));
       const double max_range =
           (std::isfinite(weapon->range) && weapon->range > 0.0) ? weapon->range : 0.0;
@@ -1878,7 +1884,8 @@ void TickLoop::Step() {
           continue;
         }
         const afps::combat::Vec3 axis_start{pose.x, pose.y, pose.z};
-        const afps::combat::Vec3 axis_end{pose.x, pose.y, pose.z + afps::combat::kPlayerHeight};
+        const double pose_height = afps::sim::ResolveCollisionPlayerHeight(sim_config_, &pose);
+        const afps::combat::Vec3 axis_end{pose.x, pose.y, pose.z + pose_height};
         const double dist_sq =
             SegmentSegmentDistanceSquared(segment_start, segment_end, axis_start, axis_end);
         if (dist_sq > threshold_sq) {
@@ -1897,8 +1904,10 @@ void TickLoop::Step() {
         emit_fx_to(target_id, near_miss);
       }
     } else if (weapon->kind == afps::weapons::WeaponKind::kProjectile) {
+      const double shooter_eye_height =
+          afps::sim::ResolveEyeHeight(sim_config_, state_iter->second.crouched);
       const afps::combat::Vec3 origin{state_iter->second.x, state_iter->second.y,
-                                      state_iter->second.z + afps::combat::kPlayerEyeHeight};
+                                      state_iter->second.z + shooter_eye_height};
       const afps::combat::Vec3 muzzle = Add(origin, Mul(shot_dir, 0.2));
       if (weapon->projectile_speed > 0.0 && std::isfinite(weapon->projectile_speed)) {
         afps::combat::ProjectileState projectile;
@@ -2009,8 +2018,9 @@ void TickLoop::Step() {
           projectile, delta, sim_config_, alive_players, projectile.owner_id, &collision_world_,
           projectile_world_resolver);
       if (impact.hit) {
-        const auto hits = afps::combat::ComputeExplosionDamage(
-            impact.position, projectile.explosion_radius, projectile.damage, alive_players, "");
+        const auto hits =
+            afps::combat::ComputeExplosionDamage(impact.position, projectile.explosion_radius,
+                                                 projectile.damage, sim_config_, alive_players, "");
         for (const auto &hit : hits) {
           auto target_iter = combat_states_.find(hit.target_id);
           if (target_iter == combat_states_.end() || !target_iter->second.alive) {

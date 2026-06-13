@@ -420,6 +420,18 @@ describe('ClientPrediction', () => {
     expect(state.lastProcessedInputSeq).toBe(1);
   });
 
+  it('returns the positional correction distance while reconciling', () => {
+    const prediction = new ClientPrediction();
+    prediction.recordInput(makeInput(1, 1, 0));
+    const predicted = prediction.getState();
+
+    const error = prediction.reconcile(
+      makeSnapshot(1, predicted.x + 3, predicted.y + 4, predicted.z + 12)
+    );
+
+    expect(error).toBeCloseTo(13);
+  });
+
   it('ignores out-of-order inputs', () => {
     const prediction = new ClientPrediction();
 

@@ -387,7 +387,7 @@ describe('createApp', () => {
 
     app.setSnapshotRate(10);
     expect(app.getRenderTick()).toBeNull();
-    app.ingestSnapshot(
+    const firstDrift = app.ingestSnapshot(
       {
         type: 'StateSnapshot',
         serverTick: 1,
@@ -407,7 +407,7 @@ describe('createApp', () => {
       },
       0
     );
-    app.ingestSnapshot(
+    const secondDrift = app.ingestSnapshot(
       {
         type: 'StateSnapshot',
         serverTick: 2,
@@ -427,6 +427,9 @@ describe('createApp', () => {
       },
       100
     );
+
+    expect(firstDrift).toBeCloseTo(0);
+    expect(secondDrift).toBeCloseTo(Math.hypot(10, 4, 2));
 
     app.renderFrame(0, 250);
 

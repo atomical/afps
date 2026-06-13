@@ -273,6 +273,33 @@ TEST_CASE("ComputeShockwaveHits respects line of sight") {
   CHECK(hits.empty());
 }
 
+TEST_CASE("ComputeShockwaveHits uses crouched player center height") {
+  afps::sim::SimConfig config = afps::sim::kDefaultSimConfig;
+  config.arena_half_size = 50.0;
+  config.obstacle_min_x = 0.0;
+  config.obstacle_max_x = 0.0;
+  config.obstacle_min_y = 0.0;
+  config.obstacle_max_y = 0.0;
+  config.player_height = 1.7;
+  config.crouch_height = 0.8;
+
+  std::unordered_map<std::string, afps::sim::PlayerState> players;
+  afps::sim::PlayerState target{};
+  target.crouched = true;
+  players.emplace("target", target);
+
+  const afps::combat::Vec3 standing_center{0.0, 0.0, afps::combat::kPlayerHeight * 0.5};
+  const auto crouched_hits =
+      ComputeShockwaveHits(standing_center, 0.3, 10.0, 5.0, config, players, "");
+  CHECK(crouched_hits.empty());
+
+  players["target"].crouched = false;
+  const auto standing_hits =
+      ComputeShockwaveHits(standing_center, 0.3, 10.0, 5.0, config, players, "");
+  REQUIRE(standing_hits.size() == 1);
+  CHECK(standing_hits[0].target_id == "target");
+}
+
 TEST_CASE("UpdateRespawn restores health after timer") {
   auto state = CreateCombatState();
   CHECK(ApplyDamage(state, nullptr, 150.0));
@@ -738,6 +765,80 @@ TEST_CASE("ResolveHitscan rewinds shooter position") {
   CHECK_FALSE(moved_miss.hit);
 }
 
+TEST_CASE("ResolveHitscan uses crouched shooter eye height") {
+  afps::sim::SimConfig config = afps::sim::kDefaultSimConfig;
+  config.arena_half_size = 100.0;
+  config.obstacle_min_x = 0.0;
+  config.obstacle_max_x = 0.0;
+  config.obstacle_min_y = 0.0;
+  config.obstacle_max_y = 0.0;
+  config.player_height = 1.0;
+  config.crouch_height = 0.6;
+
+  PoseHistory shooter(5);
+  afps::sim::PlayerState shooter_state;
+  shooter_state.crouched = true;
+  shooter.Push(1, shooter_state);
+
+  PoseHistory target(5);
+  afps::sim::PlayerState target_state;
+  target_state.x = 0.0;
+  target_state.y = -5.0;
+  target_state.z = 0.0;
+  target.Push(1, target_state);
+
+  std::unordered_map<std::string, PoseHistory> histories;
+  histories.emplace("shooter", shooter);
+  histories.emplace("target", target);
+
+  const auto hit = ResolveHitscan("shooter", histories, 1, {0.0, 0.0}, config, 50.0);
+  REQUIRE(hit.hit);
+  CHECK(hit.target_id == "target");
+  CHECK(hit.position.z == doctest::Approx(afps::sim::ResolveEyeHeight(config, true)));
+}
+
+TEST_CASE("ResolveHitscan misses above crouched target hit volume") {
+  afps::sim::SimConfig config = afps::sim::kDefaultSimConfig;
+  config.arena_half_size = 100.0;
+  config.obstacle_min_x = 0.0;
+  config.obstacle_max_x = 0.0;
+  config.obstacle_min_y = 0.0;
+  config.obstacle_max_y = 0.0;
+  config.player_height = 1.7;
+  config.crouch_height = 0.8;
+
+  PoseHistory shooter(5);
+  afps::sim::PlayerState shooter_state;
+  shooter.Push(1, shooter_state);
+
+  PoseHistory crouched_target(5);
+  afps::sim::PlayerState target_state;
+  target_state.x = 0.0;
+  target_state.y = -5.0;
+  target_state.z = 0.0;
+  target_state.crouched = true;
+  crouched_target.Push(1, target_state);
+
+  std::unordered_map<std::string, PoseHistory> crouched_histories;
+  crouched_histories.emplace("shooter", shooter);
+  crouched_histories.emplace("target", crouched_target);
+  const auto crouched_miss =
+      ResolveHitscan("shooter", crouched_histories, 1, {0.0, 0.0}, config, 50.0);
+  CHECK_FALSE(crouched_miss.hit);
+
+  PoseHistory standing_target(5);
+  target_state.crouched = false;
+  standing_target.Push(1, target_state);
+
+  std::unordered_map<std::string, PoseHistory> standing_histories;
+  standing_histories.emplace("shooter", shooter);
+  standing_histories.emplace("target", standing_target);
+  const auto standing_hit =
+      ResolveHitscan("shooter", standing_histories, 1, {0.0, 0.0}, config, 50.0);
+  REQUIRE(standing_hit.hit);
+  CHECK(standing_hit.target_id == "target");
+}
+
 TEST_CASE("ResolveProjectileImpact hits player before world") {
   afps::sim::SimConfig config = afps::sim::kDefaultSimConfig;
   config.arena_half_size = 50.0;
@@ -764,6 +865,41 @@ TEST_CASE("ResolveProjectileImpact hits player before world") {
   CHECK(impact.hit);
   CHECK(impact.target_id == "target");
   CHECK_FALSE(impact.hit_world);
+}
+
+TEST_CASE("ResolveProjectileImpact misses above crouched target hit volume") {
+  afps::sim::SimConfig config = afps::sim::kDefaultSimConfig;
+  config.arena_half_size = 50.0;
+  config.obstacle_min_x = 0.0;
+  config.obstacle_max_x = 0.0;
+  config.obstacle_min_y = 0.0;
+  config.obstacle_max_y = 0.0;
+  config.player_height = 1.7;
+  config.crouch_height = 0.8;
+
+  std::unordered_map<std::string, afps::sim::PlayerState> players;
+  afps::sim::PlayerState target;
+  target.x = 0.0;
+  target.y = -3.0;
+  target.z = 0.0;
+  target.crouched = true;
+  players.emplace("target", target);
+
+  ProjectileState projectile;
+  projectile.position = {0.0, 0.0, 1.4};
+  projectile.velocity = {0.0, -10.0, 0.0};
+  projectile.radius = 0.0;
+
+  const afps::combat::Vec3 delta{projectile.velocity.x * 0.5, projectile.velocity.y * 0.5,
+                                 projectile.velocity.z * 0.5};
+  const auto crouched_miss = ResolveProjectileImpact(projectile, delta, config, players, "owner");
+  CHECK_FALSE(crouched_miss.hit);
+
+  players["target"].crouched = false;
+  const auto standing_hit = ResolveProjectileImpact(projectile, delta, config, players, "owner");
+  REQUIRE(standing_hit.hit);
+  CHECK(standing_hit.target_id == "target");
+  CHECK_FALSE(standing_hit.hit_world);
 }
 
 TEST_CASE("ResolveProjectileImpact hits arena boundary when no target") {
@@ -959,6 +1095,32 @@ TEST_CASE("ComputeExplosionDamage applies falloff") {
   }
   CHECK(damage_a == doctest::Approx(max_damage));
   CHECK(damage_b == doctest::Approx(max_damage * 0.5));
+}
+
+TEST_CASE("ComputeExplosionDamage uses crouched player center height with config") {
+  afps::sim::SimConfig config = afps::sim::kDefaultSimConfig;
+  config.player_height = 1.7;
+  config.crouch_height = 0.8;
+
+  std::unordered_map<std::string, afps::sim::PlayerState> players;
+  afps::sim::PlayerState target;
+  target.x = 0.0;
+  target.y = 0.0;
+  target.z = 0.0;
+  target.crouched = true;
+  players.emplace("target", target);
+
+  const afps::combat::Vec3 standing_center{0.0, 0.0, afps::combat::kPlayerHeight * 0.5};
+  const auto crouched_hits =
+      ComputeExplosionDamage(standing_center, 0.3, 100.0, config, players, "");
+  CHECK(crouched_hits.empty());
+
+  players["target"].crouched = false;
+  const auto standing_hits =
+      ComputeExplosionDamage(standing_center, 0.3, 100.0, config, players, "");
+  REQUIRE(standing_hits.size() == 1);
+  CHECK(standing_hits[0].target_id == "target");
+  CHECK(standing_hits[0].damage == doctest::Approx(100.0));
 }
 
 TEST_CASE("ComputeExplosionDamage rejects invalid radius or damage") {
